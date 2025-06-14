@@ -11,6 +11,10 @@ import string
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 ADMIN_ID = 123456789  # Remplace par ton ID Telegram
 
 def generate_filename():
