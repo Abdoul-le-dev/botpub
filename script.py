@@ -72,12 +72,11 @@ token = os.getenv("token")
 NAME, PHONE, COUNTRY = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = user.id
-    await context.bot.send_message(
-        chat_id=user_id,
-        text="Ta préinscription va se dérouler en 3 étapes.\nÇa prendra maximum 2 minutes, alors on y va à fond !\n\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n..." \
-        ""),
-
+    
+    await update.message.reply_text(
+    "Ta préinscription va se dérouler en 3 étapes.\n"
+        "Ça prendra maximum 2 minutes, alors on y va à fond !\n\n"
+        "\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n...")
     return NAME
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -130,6 +129,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == "cta_start":
+        update.message = query.message
         await start(update, context)
 
 
@@ -137,7 +137,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == '__main__':
 
-    init_db
+    init_db()
     
     app = Application.builder().token(token).build()
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
