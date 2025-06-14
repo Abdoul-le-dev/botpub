@@ -3,7 +3,7 @@ from telegram import Update
 from database.database import init_db
 from database.database import save_user
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import ChatJoinRequestHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
+from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
 import sqlite3
 import pandas as pd
 import random
@@ -37,10 +37,23 @@ async def export_and_send_excel(update: Update, context: ContextTypes.DEFAULT_TY
 async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.chat_join_request.from_user
     user_id = user.id
+    user_name = update.effective_user.first_name or " Futur trader"
 
     # Envoie un message privé
     try:
-        await context.bot.send_message(chat_id=user_id, text="Hello 👋, bienvenue !")
+        await update.effective_chat.send_message(
+        f"👋 Bienvenue {user_name} !\nPrépare-toi à découvrir une formation exclusive offerte 🎓"
+    )
+        with open("vid1.mp4", "rb") as video:
+            await context.bot.send_video(chat_id=update.effective_chat.id, video=video, caption="Bienvenue  dans notre groupe ! 🎉\n\n")
+
+        bouton = InlineKeyboardButton("🚀 Oui, je veux la formation !", callback_data="cta_start")
+        clavier = InlineKeyboardMarkup([[bouton]])
+        await update.message.reply_text(
+            "🔥 Tu es à un clic de démarrer la formation offerte !", reply_markup=clavier
+        )
+
+        
     except Exception as e:
         print(f"Impossible d’envoyer un message à {user_id} : {e}")
     await update.chat_join_request.approve()  
@@ -107,6 +120,13 @@ async def handle_data_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     await export_and_send_excel(update, context)
 
+async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "cta_start":
+        await start(update, context)
+
 
 
 
@@ -127,6 +147,8 @@ if __name__ == '__main__':
     )
 
     app.add_handler(CommandHandler("data", handle_data_command))
+
+    app.add_handler(CallbackQueryHandler(handle_callback))
 
     app.add_handler(conv_handler)
     print('running...')
