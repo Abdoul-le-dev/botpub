@@ -71,7 +71,19 @@ token = os.getenv("token")
 # États du formulaire
 NAME, PHONE, COUNTRY = range(3)
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None):
+    if chat_id:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="Ta préinscription va se dérouler en 3 étapes.\n...Ça prendra maximum 2 minutes, alors on y va à fond !\n\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n..."
+        )
+    else:
+        await update.message.reply_text(
+            "Ta préinscription va se dérouler en 3 étapes.\n...Ça prendra maximum 2 minutes, alors on y va à fond !\n\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n..."
+        )
+    return NAME
+
+async def starts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
     "Ta préinscription va se dérouler en 3 étapes.\n"
@@ -130,7 +142,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if query.data == "cta_start":
         update.message = query.message
-        await start(update, context)
+        chat_id = query.from_user.id
+        await start(update, context, chat_id=chat_id)
+        
 
 
 
