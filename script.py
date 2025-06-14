@@ -52,7 +52,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         bouton = InlineKeyboardButton("🚀 Oui, je veux la formation !", callback_data="cta_start")
         clavier = InlineKeyboardMarkup([[bouton]])
         await context.bot.send_message(
-        chat_id=update.effective_chat.id or update.effective_user.id,
+        chat_id=user_id,
         text="🔥 Tu es à un clic de démarrer la formation offerte !",
         reply_markup=clavier)
 
