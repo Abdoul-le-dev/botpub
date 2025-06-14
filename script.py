@@ -72,10 +72,12 @@ token = os.getenv("token")
 NAME, PHONE, COUNTRY = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-    "Ta préinscription va se dérouler en 3 étapes.\n"
-        "Ça prendra maximum 2 minutes, alors on y va à fond !\n\n"
-        "\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n...")
+    user_id = user.id
+    await context.bot.send_message(
+        chat_id=user_id,
+        text="Ta préinscription va se dérouler en 3 étapes.\nÇa prendra maximum 2 minutes, alors on y va à fond !\n\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n..." \
+        ""),
+
     return NAME
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
