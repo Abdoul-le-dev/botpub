@@ -157,7 +157,7 @@ if __name__ == '__main__':
     app = Application.builder().token(token).build()
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("/maFormation", start)],
+        entry_points=[CommandHandler("maFormation", start)],
         states={
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
