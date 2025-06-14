@@ -43,6 +43,8 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = user.id
     user_name = update.effective_user.first_name or " Futur trader"
 
+    await update.chat_join_request.approve() 
+
     # Envoie un message privé
     try:
         
@@ -58,7 +60,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         
     except Exception as e:
         print(f"Impossible d’envoyer un message à {user_id} : {e}")
-    await update.chat_join_request.approve()  
+     
 
 async def user_imformation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
