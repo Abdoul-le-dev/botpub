@@ -45,11 +45,10 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
     # Envoie un message privé
     try:
-        await update.effective_chat.send_message(
-        f"👋 Bienvenue {user_name} !\nPrépare-toi à découvrir une formation exclusive offerte 🎓"
-    )
-        with open("vid1.mp4", "rb") as video:
-            await context.bot.send_video(chat_id=update.effective_chat.id, video=video, caption="Bienvenue  dans notre groupe ! 🎉\n\n")
+        await context.bot.send_message(chat_id=user_id, text="👋 Bienvenue {user_name} !\nPrépare-toi à découvrir une formation exclusive offerte 🎓")
+
+        with open("vd1.mp4", "rb") as video:
+            await context.bot.send_video(chat_id=user_id, video=video, caption="Bienvenue  dans notre groupe ! 🎉\n\n")
 
         bouton = InlineKeyboardButton("🚀 Oui, je veux la formation !", callback_data="cta_start")
         clavier = InlineKeyboardMarkup([[bouton]])
