@@ -9,7 +9,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             phone TEXT NOT NULL,
-            country TEXT
+            country TEXT,
             created_at TEXT NOT NULL
         )
     ''')
