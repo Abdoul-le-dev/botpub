@@ -49,12 +49,11 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         with open("video.mp4", "rb") as video:
             await context.bot.send_video(chat_id=user_id, video=video)
 
-        bouton = InlineKeyboardButton("🚀 Oui, je veux la formation !", callback_data="cta_start")
-        clavier = InlineKeyboardMarkup([[bouton]])
+        
         await context.bot.send_message(
         chat_id=user_id,
-        text="🔥 Tu es à un clic de démarrer la formation offerte !",
-        reply_markup=clavier)
+        text="🔥 Clique sur /maFormation !",
+        )
 
         
     except Exception as e:
@@ -156,7 +155,7 @@ if __name__ == '__main__':
     app = Application.builder().token(token).build()
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[CommandHandler("/maFormation", start)],
         states={
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
