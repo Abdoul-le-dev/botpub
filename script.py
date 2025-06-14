@@ -141,7 +141,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == "cta_start":
-        update.message = query.message
+       
         chat_id = query.from_user.id
         await start(update, context, chat_id=chat_id)
         
