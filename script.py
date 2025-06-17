@@ -116,7 +116,7 @@ async def get_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Téléphone : {data['phone']}\n"
         f"Pays : {data['country']}"
     )
-    user = update.chat_join_request.from_user
+    user = update.effective_user
     user_id = user.id
     save_user(data["name"], data["phone"], data["country"],user_id)
     keyboard = InlineKeyboardMarkup([
