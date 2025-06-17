@@ -55,7 +55,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         
         await context.bot.send_message(
         chat_id=user_id,
-        text="🔥 Clique sur /maFormation !",
+        text="🔥 Prêt à passer à l’action ? Clique sur /maFormation et démarre ta préinscription. /maFormationOfferte"
         )
 
         
@@ -165,6 +165,15 @@ if __name__ == '__main__':
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("maFormation", start)],
+        states={
+            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
+            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
+            COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_country)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    convs_handler = ConversationHandler(
+        entry_points=[CommandHandler("maFormationOfferte", start)],
         states={
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
