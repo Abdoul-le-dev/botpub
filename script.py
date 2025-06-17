@@ -74,8 +74,9 @@ token = os.getenv("token")
 NAME, PHONE, COUNTRY = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None):
-    print(chat_id)
-    if user_exists(chat_id):
+    user = update.effective_user
+    user_id = user.id
+    if user_exists(user_id):
         await update.message.reply_text("Tu es déjà inscrit ✅")
     else:
         if chat_id:
