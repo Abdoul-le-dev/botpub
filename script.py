@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-ADMIN_ID = 123456789  # Remplace par ton ID Telegram
+ADMIN_ID = 571718066  # Remplace par ton ID Telegram
 
 def generate_filename():
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
@@ -131,7 +131,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_data_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id == ADMIN_ID:
+    if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Désolé, cette commande est réservée à l’administrateur.")
         return
 
