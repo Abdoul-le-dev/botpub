@@ -55,7 +55,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         
         await context.bot.send_message(
         chat_id=user_id,
-        text="🔥 Prêt à passer à l’action ? Clique sur /maFormation et démarre ta préinscription. /maFormationOfferte"
+        text="🔥 Prêt à passer à l’action ? Clique sur /maFormation et démarre ta préinscription.Clique /maFormation"
         )
 
         
