@@ -26,11 +26,11 @@ async def export_and_send_excel(update: Update, context: ContextTypes.DEFAULT_TY
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
 
-    cursor.execute("SELECT id, name, phone, country, created_at FROM users")
+    cursor.execute("SELECT id, name, phone, country, created_at, telegram_id FROM users")
     rows = cursor.fetchall()
     conn.close()
 
-    df = pd.DataFrame(rows, columns=["ID", "Nom", "Téléphone", "Pays", "Inscrit le"])
+    df = pd.DataFrame(rows, columns=["ID", "Nom", "Téléphone", "Pays", "Inscrit le","ID_TELEGRAM" ])
     filename = generate_filename()
     df.to_excel(filename, index=False)
 
@@ -74,6 +74,7 @@ token = os.getenv("token")
 NAME, PHONE, COUNTRY = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None):
+    print(chat_id)
     if user_exists(chat_id):
         await update.message.reply_text("Tu es déjà inscrit ✅")
     else:
