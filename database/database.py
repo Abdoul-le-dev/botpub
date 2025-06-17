@@ -19,7 +19,7 @@ def init_db():
 
 
 
-def save_user(name, phone, country=None):
+def save_user(name, phone, country=None, telegram_id=None):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
 
@@ -39,9 +39,19 @@ def save_user(name, phone, country=None):
 
     # Insertion des données
     cursor.execute('''
-        INSERT INTO users (name, phone, country, created_at)
-        VALUES (?, ?, ?, ?)
-    ''', (name, phone, country, now))
+        INSERT INTO users (name, phone, country, created_at,telegram_id)
+        VALUES (?, ?, ?, ?,?)
+    ''', (name, phone, country, now,telegram_id))
 
     conn.commit()
     conn.close()
+
+def user_exists(telegram_id):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT 1 FROM users WHERE telegram_id = ?", (telegram_id,))
+    result = cursor.fetchone()
+
+    conn.close()
+    return result is not None

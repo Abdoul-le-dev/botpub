@@ -2,6 +2,7 @@ import os
 from telegram import Update
 from database.database import init_db
 from database.database import save_user
+from database.database import user_exists
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
 import sqlite3
@@ -73,16 +74,19 @@ token = os.getenv("token")
 NAME, PHONE, COUNTRY = range(3)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None):
-    if chat_id:
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="Ta préinscription va se dérouler en 3 étapes.\n...Ça prendra maximum 2 minutes, alors on y va à fond !\n\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n..."
-        )
+    if user_exists(chat_id):
+        await update.message.reply_text("Tu es déjà inscrit ✅")
     else:
-        await update.message.reply_text(
-            "Ta préinscription va se dérouler en 3 étapes.\n...Ça prendra maximum 2 minutes, alors on y va à fond !\n\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n..."
-        )
-    return NAME
+        if chat_id:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="Ta préinscription va se dérouler en 3 étapes.\n...Ça prendra maximum 2 minutes, alors on y va à fond !\n\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n..."
+            )
+        else:
+            await update.message.reply_text(
+                "Ta préinscription va se dérouler en 3 étapes.\n...Ça prendra maximum 2 minutes, alors on y va à fond !\n\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n..."
+            )
+        return NAME
 
 async def starts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
@@ -112,8 +116,9 @@ async def get_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Téléphone : {data['phone']}\n"
         f"Pays : {data['country']}"
     )
-
-    save_user(data["name"], data["phone"], data["country"])
+    user = update.chat_join_request.from_user
+    user_id = user.id
+    save_user(data["name"], data["phone"], data["country"],user_id)
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("Aller sur rmiclass.net", url="https://app.rmiclass.net/reff/538699")]
     ])

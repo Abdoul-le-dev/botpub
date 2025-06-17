@@ -1,4 +1,5 @@
 import sqlite3
+from database.database import init_db
 
 conn = sqlite3.connect("preinscriptions.db")
 cursor = conn.cursor()
