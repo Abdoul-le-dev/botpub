@@ -55,7 +55,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     # Envoie un message privé
     try:
         
-        with open("video2.mp4", "rb") as video:
+        with open("video3.mp4", "rb") as video:
             await context.bot.send_video(chat_id=user_id, video=video)
 
         
