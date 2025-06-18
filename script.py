@@ -12,6 +12,8 @@ import string
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from telegram.error import BadRequest
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -43,19 +45,23 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     user = update.chat_join_request.from_user
     user_id = user.id
     user_name = update.effective_user.first_name or " Futur trader"
-
-    await update.chat_join_request.approve() 
+    
+    try:
+        await update.chat_join_request.approve() 
+    except BadRequest as e:
+        if "User_already_participant" in str(e):
+            print("Déjà membre, pas besoin d’approuver.")    
 
     # Envoie un message privé
     try:
         
-        with open("video.mp4", "rb") as video:
+        with open("video2.mp4", "rb") as video:
             await context.bot.send_video(chat_id=user_id, video=video)
 
         
         await context.bot.send_message(
         chat_id=user_id,
-        text="🔥 🔥 Formation 100% gratuite ! Clique sur /maFormationGratuite"
+        text="🔥🔥 Participe au jeu concours ! Clique sur /JeParticipeAuJeuConcours 🎉🎁"
         )
 
         
@@ -82,21 +88,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
         if chat_id:
             await context.bot.send_message(
                 chat_id=chat_id,
-                text="Ta préinscription va se dérouler en 3 étapes.\n...Ça prendra maximum 2 minutes, alors on y va à fond !\n\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n..."
+                text="Ta préinscription va se dérouler en 3 étapes ⏳✨ pour le jeu concours 🎉🎁.\n...Ça prendra maximum 2 minutes, alors on y va à fond !\n\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n..."
             )
         else:
             await update.message.reply_text(
-                "Ta préinscription va se dérouler en 3 étapes.\n...Ça prendra maximum 2 minutes, alors on y va à fond !\n\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n..."
+                "Ta préinscription va se dérouler en 3 étapes ⏳✨ pour le jeu concours 🎉🎁.\n...Ça prendra maximum 2 minutes, alors on y va à fond !\n\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n..."
             )
         return NAME
-
-async def starts(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    
-    await update.message.reply_text(
-    "Ta préinscription va se dérouler en 3 étapes.\n"
-        "Ça prendra maximum 2 minutes, alors on y va à fond !\n\n"
-        "\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n...")
-    return NAME
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["name"] = update.message.text
@@ -113,7 +111,7 @@ async def get_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["country"] = update.message.text
     data = context.user_data
     await update.message.reply_text(
-        f"✅ Inscription terminée !\n\n"
+        f"✅ Bravo, votre inscription est confirmée ! 🥳✅\n\n"
         f"Nom : {data['name']}\n"
         f"Téléphone : {data['phone']}\n"
         f"Pays : {data['country']}"
@@ -122,11 +120,13 @@ async def get_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = user.id
     save_user(data["name"], data["phone"], data["country"],user_id)
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Aller sur rmiclass.net", url="https://app.rmiclass.net/reff/538699")]
+        [InlineKeyboardButton("🎓 Suivre la formation gratuite 📈 ", url="https://app.rmiclass.net/reff/538699")]
     ])
 
     await update.message.reply_text(
-        "✅ Votre préinscription a été effectuée avec succès !\n"
+        "✅🎉 Inscription au jeu concours validée ! 🎊🔥!\n\n"
+        "📌👉 Épingle vite notre assistant bot pour recevoir toutes les notif’s importantes 📲🔔 \n\n"
+        "⏳⏰ En attendant dimanche, profite GRATUITEMENT de notre initiation au trading ici 👉 \n\n"
         "Rends-toi sur https://app.rmiclass.net/reff/538699, crée ton compte, puis découvre notre initiation au trading.",
         reply_markup=keyboard
     )
@@ -155,6 +155,28 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
 
 
+ASK_ID, ASK_TEXT = range(2)
+
+async def start_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🆔 Envoie l’ID Telegram du destinataire :")
+    return ASK_ID
+
+async def receive_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["target_id"] = update.message.text.strip()
+    await update.message.reply_text("✏️ Quel message veux-tu envoyer ?")
+    return ASK_TEXT
+
+async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    target_id = context.user_data["target_id"]
+    text = update.message.text
+
+    try:
+        await context.bot.send_message(chat_id=int(target_id), text=text)
+        await update.message.reply_text("✅ Message envoyé !")
+    except:
+        await update.message.reply_text("❌ Erreur : ID invalide ou l’utilisateur n’a pas démarré le bot.")
+    return ConversationHandler.END
+
 
 
 if __name__ == '__main__':
@@ -164,7 +186,7 @@ if __name__ == '__main__':
     app = Application.builder().token(token).build()
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("maFormationGratuite", start)],
+        entry_points=[CommandHandler("start", start)],
         states={
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
@@ -172,6 +194,29 @@ if __name__ == '__main__':
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
+
+    conv_handler_jeu = ConversationHandler(
+        entry_points=[CommandHandler("JeParticipeAuJeuConcours", start)],
+        states={
+            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
+            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
+            COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_country)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    convs_handler = ConversationHandler(
+    entry_points=[CommandHandler("message", start_message)],
+    states={
+        ASK_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_id)],
+        ASK_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_text)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)]
+)
+
+    app.add_handler(convs_handler)
+
+    app.add_handler(conv_handler_jeu)
     
 
     app.add_handler(CommandHandler("data", handle_data_command))
