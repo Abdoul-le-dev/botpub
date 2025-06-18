@@ -6,7 +6,7 @@ cursor = conn.cursor()
 
 # On ajoute la colonne telegram_id (si elle n’existe pas déjà)
 try:
-    cursor.execute("ALTER TABLE users ADD COLUMN telegram_id TEXT")
+ 
     cursor.execute("ALTER TABLE users ADD COLUMN contexte_user TEXT")
     print("✅ Colonne 'contexte_user' ajoutée.")
 except Exception as e:
