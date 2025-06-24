@@ -313,7 +313,7 @@ if __name__ == '__main__':
 
     app.add_handler(conv_handler)
 
-    app.add_handler(CommandHandler("gagnants", export_and_send_pdf))
+    app.add_handler(CommandHandler("LesGagnants", export_and_send_pdf))
 
     app.add_handler(CommandHandler("lastMessage", last_message))
 
