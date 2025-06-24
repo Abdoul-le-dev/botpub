@@ -7,7 +7,13 @@ import asyncio
 
 CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(3)
 
+ADMIN_ID = 571718066
+
 async def choose_format(update, context):
+
+    if update.effective_user.id != ADMIN_ID or update.effective_user.id== 6992809421: 
+        await update.message.reply_text("⛔ Désolé, cette commande est réservée à l’administrateur.")
+        return
     
     await update.message.reply_text(
         "📤 Choisis le format de ton message à diffuser, en envoyant simplement le **chiffre correspondant** :\n\n"

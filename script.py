@@ -266,7 +266,7 @@ if __name__ == '__main__':
     ))
 
     conv_handlerMsg = ConversationHandler(
-    entry_points=[CommandHandler('msg', choose_format)],
+    entry_points=[CommandHandler('msgMasse', choose_format)],
     states={
         CHOOSE_FORMAT: [MessageHandler(filters.Regex('^[1-5]$'), handle_format_choice)],
         GET_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, get_media)],
