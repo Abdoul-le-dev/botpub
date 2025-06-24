@@ -129,18 +129,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
         return NAME
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not update.message or not update.message.text:
+        await update.message.reply_text("❌ Merci d’envoyer un texte valide.")
+        return NAME
+    
     context.user_data["name"] = update.message.text
     await update.message.reply_text("Étape 2/3 :📞 Quel est ton numéro de téléphone ?"
                                     "\n\n Format international recommandé, ex : +22997203304")
     return PHONE
 
 async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        await update.message.reply_text("❌ Merci d’envoyer un texte valide.")
+        return PHONE
     context.user_data["phone"] = update.message.text
     await update.message.reply_text("Étape 3/3 :🌍 Dans quel pays vis-tu ?")
     return COUNTRY
 
 async def get_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["country"] = update.message.text
+    if not update.message or not update.message.text:
+        await update.message.reply_text("❌ Merci d’envoyer un texte valide.")
+        return COUNTRY
     data = context.user_data
     await update.message.reply_text(
         f"✅ Bravo, votre inscription est confirmée ! 🥳✅\n\n"
