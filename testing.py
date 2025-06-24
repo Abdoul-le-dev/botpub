@@ -81,7 +81,8 @@ async def get_text(update, context):
     context_user_data = context.user_data.copy()  # Copie des données utilisateur pour la diffusion
     await update.message.reply_text(f"✅ , ton message est prêt à être diffusé ! ")
     
-    await broadcast_messages(context.bot, update.effective_user.id, context_user_data)
+    asyncio.create_task(broadcast_messages(context.bot, update.effective_user.id, context.user_data))
+    #await broadcast_messages(context.bot, update.effective_user.id, context_user_data)
     return ConversationHandler.END
 
 
