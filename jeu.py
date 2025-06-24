@@ -55,10 +55,14 @@ async def export_and_send_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
     conn.close()
 
     user_map = {u[0]: u for u in users}
-    lignes = [
-        f"Nom : {user_map[uid][1]} | Prénom : - | Pays : {user_map[uid][2]} | ID Telegram : {user_map[uid][3]}"
-        for uid in ids_final
-    ]
+    lignes = []
+    for uid in ids_final:
+        user = user_map.get(uid)
+        if user:
+            lignes.append(f"Nom : {user[1]} | Prénom : - | Pays : {user[2]} | ID Telegram : {user[3]}")
+        else:
+            print(f"⚠️ ID {uid} est absent de la table users. Ignoré.")
+
     # Ajout des deux personnes fixes
     lignes.append("Nom : Rico | Prénom : Gabin | Pays : Afrique du Sud | ID Telegram : 1234")
     lignes.append("Nom : Rico | Prénom : Gabin | Pays : Afrique du Sud | ID Telegram : 1234")
