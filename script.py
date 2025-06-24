@@ -10,6 +10,7 @@ import sqlite3
 import pandas as pd
 import random
 import string
+from message_de_masse import broadcast_message
 from stats import last_message
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -21,6 +22,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 ADMIN_ID = 571718066  # Remplace par ton ID Telegram
+
+
+ASK_BROADCAST = 99
 
 def generate_filename():
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
@@ -201,6 +205,17 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+async def ask_broadcast(update, context):
+    await update.message.reply_text("📨 Quel message veux-tu envoyer à tous ?")
+    return ASK_BROADCAST
+
+async def send_broadcast(update, context):
+    message = update.message.text
+    await broadcast_message(context.bot, update.effective_user.id, message)
+    return ConversationHandler.END
+
+
+
 
 if __name__ == '__main__':
 
@@ -235,7 +250,12 @@ if __name__ == '__main__':
         ASK_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_text)],
     },
     fallbacks=[CommandHandler("cancel", cancel)]
-)
+    )
+    app.add_handler(ConversationHandler(
+        entry_points=[CommandHandler("MessageDeMasse", ask_broadcast)],
+        states={ASK_BROADCAST: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_broadcast)]},
+        fallbacks=[]
+    ))
 
     app.add_handler(convs_handler)
 
@@ -251,6 +271,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("lastMessage", last_message))
 
     app.add_handler(MessageHandler(filters.ALL, log_unhandled_message))
+
     print('running...')
     
     app.run_polling(poll_interval=1)

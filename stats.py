@@ -1,25 +1,12 @@
 import os
 from telegram import Update
-from database.database import init_db
-from database.database import save_user
-from database.database import user_exists
-from database.database import save_message
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
-import sqlite3
-import pandas as pd
-import random
-import string
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from telegram.error import BadRequest
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-token = os.getenv("token")
+import sqlite3
 
 async def last_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect('preinscriptions.db')
