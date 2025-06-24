@@ -3,12 +3,14 @@ from telegram import Update
 from database.database import init_db
 from database.database import save_user
 from database.database import user_exists
+from database.database import save_message
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
 import sqlite3
 import pandas as pd
 import random
 import string
+from stats import last_message
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -72,7 +74,28 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
 async def user_imformation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
 
+async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    msg = update.message
 
+    user_id = user.id
+    message_id = msg.message_id
+    message_text = msg.text or "<non-text>"
+    if msg.text:
+        message_type = "text"
+    elif msg.photo:
+        message_type = "photo"
+    elif msg.document:
+        message_type = "document"
+    elif msg.video:
+        message_type = "video"
+    elif msg.audio:
+        message_type = "audio"
+    else:
+        message_type = "other"
+    
+
+    save_message(user_id, message_id, message_text, None, message_type)
 
 token = os.getenv("token")
 
@@ -224,6 +247,10 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(handle_callback))
 
     app.add_handler(conv_handler)
+
+    app.add_handler(CommandHandler("lastMessage", last_message))
+
+    app.add_handler(MessageHandler(filters.ALL, log_unhandled_message))
     print('running...')
     
     app.run_polling(poll_interval=1)

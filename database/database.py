@@ -55,3 +55,14 @@ def user_exists(telegram_id):
 
     conn.close()
     return result is not None
+
+def save_message(user_id, message_id, message_text, answer = None, message_type ="text"):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute('''
+        INSERT INTO messages (user_id, message_id,message_text, answer, message_type, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (user_id, message_id, message_text,answer, message_type, now))
+    conn.commit()
+    conn.close()
