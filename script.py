@@ -165,7 +165,7 @@ async def get_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Formulaire annulé.")
+    await update.message.reply_text("❌ Annulé.")
     return ConversationHandler.END
 
 
@@ -262,7 +262,7 @@ if __name__ == '__main__':
     app.add_handler(ConversationHandler(
         entry_points=[CommandHandler("MessageDeMasse", ask_broadcast)],
         states={ASK_BROADCAST: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_broadcast)]},
-        fallbacks=[]
+        fallbacks=[CommandHandler('cancel', cancel)]
     ))
 
     conv_handlerMsg = ConversationHandler(
@@ -288,7 +288,7 @@ if __name__ == '__main__':
 
     app.add_handler(CommandHandler("lastMessage", last_message))
 
-    app.add_handler(MessageHandler(filters.ALL, log_unhandled_message))
+    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, log_unhandled_message))
 
     print('running...')
     
