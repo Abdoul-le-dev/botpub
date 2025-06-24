@@ -4,6 +4,7 @@ from reportlab.pdfgen import canvas
 from telegram import Update
 from telegram.ext import ContextTypes
 
+ADMIN_ID = 571718066
 def generate_pdf(filename, lignes):
     c = canvas.Canvas(filename)
     c.setFont("Helvetica", 12)
