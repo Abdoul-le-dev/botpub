@@ -33,7 +33,7 @@ async def export_and_send_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
     # 1. Tirage au hasard 10 utilisateurs (id >= 6000)
     eligible_random_ids = [uid for uid in all_user_ids if uid >= 6000]
     random.shuffle(eligible_random_ids)
-    ids_random = eligible_random_ids[:10]
+    ids_random = eligible_random_ids[:5]
 
     # 2. Top 8 utilisateurs par nombre de messages (décroissant)
     cursor.execute('''
@@ -55,8 +55,8 @@ async def export_and_send_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
     gagnants_set.update(top_8_filtered)
 
     # 5. Vérifier si on a au moins 18 gagnants valides, sinon compléter aléatoirement
-    if len(gagnants_set) < 18:
-        remaining_needed = 18 - len(gagnants_set)
+    if len(gagnants_set) < 13:
+        remaining_needed = 13 - len(gagnants_set)
         # candidats restants exclus déjà pris
         candidats_restants = list(all_user_ids - gagnants_set)
         random.shuffle(candidats_restants)
@@ -84,7 +84,7 @@ async def export_and_send_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat_id=update.effective_user.id,
     text=(
         "🎉 M. Fiacre KPANOU,\n\n"
-        "Voici la liste officielle des 20 gagnants du concours de Juin 2025 🏆.\n\n"
+        "Voici la liste officielle des 15 gagnants restant du concours de Juin 2025 🏆.\n\n"
         "👏 Félicitations à tous les lauréats pour leur engagement et leur régularité.\n"
         "📎 Le fichier PDF est joint pour référence.\n\n"
         "Bonne chance à tous pour les prochaines éditions ! 🚀"
