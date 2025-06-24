@@ -1,6 +1,6 @@
 import os
 from telegram import Update
-
+from jeu import export_and_send_pdf
 from database.database import init_db
 from database.database import save_user
 from database.database import user_exists
@@ -312,6 +312,8 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(handle_callback))
 
     app.add_handler(conv_handler)
+
+    app.add_handler(CommandHandler("gagnants", export_and_send_pdf))
 
     app.add_handler(CommandHandler("lastMessage", last_message))
 
