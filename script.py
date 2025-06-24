@@ -1,5 +1,6 @@
 import os
 from telegram import Update
+
 from database.database import init_db
 from database.database import save_user
 from database.database import user_exists
@@ -9,6 +10,7 @@ from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Applicatio
 import sqlite3
 import pandas as pd
 import random
+from testing import  choose_format,handle_format_choice, get_media, get_text
 import string
 from message_de_masse import broadcast_message
 from stats import last_message
@@ -18,6 +20,7 @@ from telegram.ext import ContextTypes
 from telegram.error import BadRequest
 
 from dotenv import load_dotenv
+from telegram.ext import filters
 
 load_dotenv()
 
@@ -25,6 +28,8 @@ ADMIN_ID = 571718066  # Remplace par ton ID Telegram
 
 
 ASK_BROADCAST = 99
+
+CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(3)
 
 def generate_filename():
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
@@ -257,6 +262,16 @@ if __name__ == '__main__':
         fallbacks=[]
     ))
 
+    conv_handlerMsg = ConversationHandler(
+    entry_points=[CommandHandler('msg', choose_format)],
+    states={
+        CHOOSE_FORMAT: [MessageHandler(filters.Regex('^[1-5]$'), handle_format_choice)],
+        GET_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, get_media)],
+        GET_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_text)],
+    },
+    fallbacks=[CommandHandler('cancel', cancel)],
+)
+    app.add_handler(conv_handlerMsg)
     app.add_handler(convs_handler)
 
     app.add_handler(conv_handler_jeu)
