@@ -170,7 +170,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_data_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id != ADMIN_ID or update.effective_user.id== 6992809421: 
         await update.message.reply_text("⛔ Désolé, cette commande est réservée à l’administrateur.")
         return
 
@@ -211,6 +211,9 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def ask_broadcast(update, context):
+    if update.effective_user.id != ADMIN_ID or update.effective_user.id== 6992809421: 
+        await update.message.reply_text("⛔ Désolé, cette commande est réservée à l’administrateur.")
+        return
     await update.message.reply_text("📨 Quel message veux-tu envoyer à tous ?")
     return ASK_BROADCAST
 

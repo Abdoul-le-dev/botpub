@@ -8,9 +8,15 @@ from telegram.error import BadRequest
 
 import sqlite3
 
+ADMIN_ID = 571718066 
+
 async def last_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
+
+    if update.effective_user.id != ADMIN_ID or update.effective_user.id== 6992809421: 
+        await update.message.reply_text("⛔ Désolé, cette commande est réservée à l’administrateur.")
+        return
 
     # Total utilisateurs
     cursor.execute("SELECT COUNT(*) FROM users")
