@@ -19,58 +19,72 @@ async def export_and_send_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Charger tous les utilisateurs valides
+    # Récupérer tous les utilisateurs valides
     cursor.execute("SELECT id, name, country, telegram_id FROM users")
     all_users = cursor.fetchall()
-    all_user_ids = {u[0] for u in all_users}
-    user_data = {u[0]: u for u in all_users}
+    user_map = {u[0]: u for u in all_users}
+    all_user_ids = set(user_map.keys())
 
-    # --- 1. Tirage aléatoire (10 IDs avec id >= 6000) ---
+    # 1. Tirage au hasard 10 utilisateurs (id >= 6000)
     eligible_random_ids = [uid for uid in all_user_ids if uid >= 6000]
     random.shuffle(eligible_random_ids)
     ids_random = eligible_random_ids[:10]
 
-    # --- 2. Top 8 utilisateurs (par message) puis tri croissant ---
+    # 2. Top 8 utilisateurs par nombre de messages (décroissant)
     cursor.execute('''
         SELECT user_id, COUNT(*) as total
         FROM messages
         GROUP BY user_id
         ORDER BY total DESC
-        LIMIT 20
+        LIMIT 8
     ''')
-    top_users_raw = cursor.fetchall()
+    top_8_raw = cursor.fetchall()
+    # Extrait uniquement les ids top 8
+    top_8_ids = [uid for uid, _ in top_8_raw]
 
-    top_users_valid = [(uid, total) for uid, total in top_users_raw if uid in all_user_ids and uid not in ids_random]
-    top_users_sorted = sorted(top_users_valid[:8], key=lambda x: x[1])  # tri croissant
+    # 3. Filtrer top 8 pour exclure ceux déjà dans ids_random
+    top_8_filtered = [uid for uid in top_8_ids if uid not in ids_random and uid in all_user_ids]
 
-    top_ids = [uid for uid, _ in top_users_sorted]
+    # 4. Combiner les listes et assurer unicité
+    gagnants_set = set(ids_random)
+    gagnants_set.update(top_8_filtered)
 
-    # --- 3. Fusionner les gagnants ---
-    final_ids = ids_random + top_ids
+    # 5. Vérifier si on a au moins 18 gagnants valides, sinon compléter aléatoirement
+    if len(gagnants_set) < 18:
+        remaining_needed = 18 - len(gagnants_set)
+        # candidats restants exclus déjà pris
+        candidats_restants = list(all_user_ids - gagnants_set)
+        random.shuffle(candidats_restants)
+        gagnants_set.update(candidats_restants[:remaining_needed])
 
-    # --- 4. Génération de la liste formatée ---
+    gagnants_list = list(gagnants_set)
+
+    # 6. Ajouter 2 gagnants fixes
     lignes = []
-    for uid in final_ids:
-        user = user_data.get(uid)
+    for uid in gagnants_list:
+        user = user_map.get(uid)
         if user:
             lignes.append(f"Nom : {user[1]} | Prénom : - | Pays : {user[2]} | ID Telegram : {user[3]}")
 
-    # --- 5. Ajout des deux gagnants fixes ---
     lignes.append("Nom : Rico | Prénom : Gabin | Pays : Afrique du Sud | ID Telegram : 1234")
     lignes.append("Nom : Rico | Prénom : Gabin | Pays : Afrique du Sud | ID Telegram : 1234")
 
-    # --- 6. Générer PDF ---
+    # 7. Générer PDF
     filename = 'gagnants_juin_2025.pdf'
     generate_pdf(filename, lignes)
 
-    # --- 7. Envoi à l’admin ---
+    # 8. Envoyer message d’intro
     await context.bot.send_message(
         chat_id=update.effective_user.id,
-        text="🎉 M Fiacre KPANOU, voici les 20 gagnants du concours de Juin 2025 :"
+        text="🎉 M Fiacre KPANOU, voici la liste des 20 gagnants du concours de Juin 2025 :"
     )
 
+    # 9. Envoyer les messages un par un
     for i, ligne in enumerate(lignes, start=1):
         await context.bot.send_message(chat_id=update.effective_user.id, text=f"{i}. {ligne}")
 
+    # 10. Envoyer PDF
     with open(filename, 'rb') as doc:
         await context.bot.send_document(chat_id=update.effective_user.id, document=doc)
+
+    conn.close()
