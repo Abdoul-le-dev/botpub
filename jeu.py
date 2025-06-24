@@ -55,7 +55,7 @@ async def export_and_send_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
     gagnants_set.update(top_8_filtered)
 
     # 5. Vérifier si on a au moins 18 gagnants valides, sinon compléter aléatoirement
-    if len(gagnants_set) < 13:
+    if len(gagnants_set) < 5:
         remaining_needed = 13 - len(gagnants_set)
         # candidats restants exclus déjà pris
         candidats_restants = list(all_user_ids - gagnants_set)
@@ -71,8 +71,7 @@ async def export_and_send_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
         if user:
             lignes.append(f"Nom : {user[1]} | Prénom : - | Pays : {user[2]} | ID Telegram : {user[3]}")
 
-    lignes.append("Nom : Ézéchiel Akpaca | Prénom : - | Pays : Bénin | ID Telegram :  1300948043")
-    lignes.append("Nom : Rouad Habib| Prénom : - | Pays : Marroc | ID Telegram : 7146346948")
+   
 
     # 7. Générer PDF
     filename = 'gagnants_juin_2025.pdf'
@@ -84,7 +83,7 @@ async def export_and_send_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat_id=update.effective_user.id,
     text=(
         "🎉 M. Fiacre KPANOU,\n\n"
-        "Voici la liste officielle des 15 gagnants restant du concours de Juin 2025 🏆.\n\n"
+        "Voici la liste officielle des 5 gagnants restant du concours de Juin 2025 🏆.\n\n"
         "👏 Félicitations à tous les lauréats pour leur engagement et leur régularité.\n"
         "📎 Le fichier PDF est joint pour référence.\n\n"
         "Bonne chance à tous pour les prochaines éditions ! 🚀"
