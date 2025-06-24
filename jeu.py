@@ -72,23 +72,19 @@ async def export_and_send_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
             lignes.append(f"Nom : {user[1]} | Prénom : - | Pays : {user[2]} | ID Telegram : {user[3]}")
 
     lignes.append("Nom : Ézéchiel Akpaca | Prénom : - | Pays : Bénin | ID Telegram :  1300948043")
-    lignes.append("Nom : Rouad| Prénom : Habib | Pays : Marroc | ID Telegram : 7146346948")
+    lignes.append("Nom : Rouad Habib| Prénom : - | Pays : Marroc | ID Telegram : 7146346948")
 
     # 7. Générer PDF
     filename = 'gagnants_juin_2025.pdf'
     generate_pdf(filename, lignes)
 
     # 8. Envoyer message d’intro
-    await context.bot.send_message(
-        chat_id=update.effective_user.id,
-        text="🎉 M Fiacre KPANOU, voici la liste des 20 gagnants du concours de Juin 2025 :"
-    )
 
     await context.bot.send_message(
     chat_id=update.effective_user.id,
     text=(
-        "🎉 *M. Fiacre KPANOU*,\n\n"
-        "Voici la *liste officielle des 20 gagnants* du concours de *Juin 2025* 🏆.\n\n"
+        "🎉 M. Fiacre KPANOU,\n\n"
+        "Voici la liste officielle des 20 gagnants du concours de Juin 2025 🏆.\n\n"
         "👏 Félicitations à tous les lauréats pour leur engagement et leur régularité.\n"
         "📎 Le fichier PDF est joint pour référence.\n\n"
         "Bonne chance à tous pour les prochaines éditions ! 🚀"
