@@ -88,6 +88,9 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
     msg = update.message
 
     user_id = user.id
+    if not msg:
+        print("⚠️ Mise à jour sans message texte. Ignorée.")
+        return
     message_id = msg.message_id
     message_text = msg.text or "<non-text>"
     if msg.text:
@@ -131,7 +134,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not update.message or not update.message.text:
-        await update.message.reply_text("❌ Merci d’envoyer un texte valide.")
+        if update.effective_chat:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="❌ Merci d’envoyer un texte valide."
+            )
         return NAME
     
     context.user_data["name"] = update.message.text
@@ -141,8 +148,13 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
-        await update.message.reply_text("❌ Merci d’envoyer un texte valide.")
+        if update.effective_chat:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="❌ Merci d’envoyer ton numéro."
+            )
         return PHONE
+    
     context.user_data["phone"] = update.message.text
     await update.message.reply_text("Étape 3/3 :🌍 Dans quel pays vis-tu ?")
     return COUNTRY
@@ -150,7 +162,11 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["country"] = update.message.text
     if not update.message or not update.message.text:
-        await update.message.reply_text("❌ Merci d’envoyer un texte valide.")
+        if update.effective_chat:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="❌ Merci d’envoyer le nom de ton pays."
+            )
         return COUNTRY
     data = context.user_data
     await update.message.reply_text(
