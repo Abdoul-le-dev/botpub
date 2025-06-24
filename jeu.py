@@ -19,67 +19,51 @@ async def export_and_send_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Charger tous les IDs
-    cursor.execute("SELECT id FROM users")
-    all_user_ids = [row[0] for row in cursor.fetchall()]
+    # Charger tous les utilisateurs valides
+    cursor.execute("SELECT id, name, country, telegram_id FROM users")
+    all_users = cursor.fetchall()
+    all_user_ids = {u[0] for u in all_users}
+    user_data = {u[0]: u for u in all_users}
 
-    # 1. Tirage aléatoire (max 10)
-    random_ids = []
-    random_pool = [uid for uid in all_user_ids if uid >= 6000]
-    while len(random_ids) < 10 and random_pool:
-        uid = random.choice(random_pool)
-        if uid not in random_ids:
-            random_ids.append(uid)
+    # --- 1. Tirage aléatoire (10 IDs avec id >= 6000) ---
+    eligible_random_ids = [uid for uid in all_user_ids if uid >= 6000]
+    random.shuffle(eligible_random_ids)
+    ids_random = eligible_random_ids[:10]
 
-    # 2. Top 8 utilisateurs actifs
-    used_ids = set(random_ids)
-    cursor.execute(f'''
+    # --- 2. Top 8 utilisateurs (par message) puis tri croissant ---
+    cursor.execute('''
         SELECT user_id, COUNT(*) as total
         FROM messages
-        WHERE user_id NOT IN ({','.join(['?'] * len(used_ids))})
         GROUP BY user_id
         ORDER BY total DESC
-        LIMIT 15
-    ''', tuple(used_ids))
-    top_ids = []
-    for row in cursor.fetchall():
-        uid = row[0]
-        if uid in all_user_ids and uid not in used_ids:
-            top_ids.append(uid)
-            used_ids.add(uid)
-        if len(top_ids) == 8:
-            break
+        LIMIT 20
+    ''')
+    top_users_raw = cursor.fetchall()
 
-    # 3. Récupération des infos
-    ids_final = random_ids + top_ids
-    placeholders = ','.join(['?'] * len(ids_final))
-    cursor.execute(f'''
-        SELECT id, name, country, telegram_id
-        FROM users
-        WHERE id IN ({placeholders})
-    ''', tuple(ids_final))
-    users = cursor.fetchall()
-    conn.close()
+    top_users_valid = [(uid, total) for uid, total in top_users_raw if uid in all_user_ids and uid not in ids_random]
+    top_users_sorted = sorted(top_users_valid[:8], key=lambda x: x[1])  # tri croissant
 
-    user_map = {u[0]: u for u in users}
+    top_ids = [uid for uid, _ in top_users_sorted]
+
+    # --- 3. Fusionner les gagnants ---
+    final_ids = ids_random + top_ids
+
+    # --- 4. Génération de la liste formatée ---
     lignes = []
-
-    for uid in ids_final:
-        user = user_map.get(uid)
+    for uid in final_ids:
+        user = user_data.get(uid)
         if user:
             lignes.append(f"Nom : {user[1]} | Prénom : - | Pays : {user[2]} | ID Telegram : {user[3]}")
-        else:
-            print(f"⚠️ ID {uid} absent de la table users.")
 
-    # 4. Ajout des 2 personnes fixes
+    # --- 5. Ajout des deux gagnants fixes ---
     lignes.append("Nom : Rico | Prénom : Gabin | Pays : Afrique du Sud | ID Telegram : 1234")
     lignes.append("Nom : Rico | Prénom : Gabin | Pays : Afrique du Sud | ID Telegram : 1234")
 
-    # 5. Générer PDF
+    # --- 6. Générer PDF ---
     filename = 'gagnants_juin_2025.pdf'
     generate_pdf(filename, lignes)
 
-    # 6. Envoi des gagnants à l'admin
+    # --- 7. Envoi à l’admin ---
     await context.bot.send_message(
         chat_id=update.effective_user.id,
         text="🎉 M Fiacre KPANOU, voici les 20 gagnants du concours de Juin 2025 :"
@@ -88,6 +72,5 @@ async def export_and_send_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
     for i, ligne in enumerate(lignes, start=1):
         await context.bot.send_message(chat_id=update.effective_user.id, text=f"{i}. {ligne}")
 
-    # 7. Envoi du PDF
     with open(filename, 'rb') as doc:
         await context.bot.send_document(chat_id=update.effective_user.id, document=doc)
