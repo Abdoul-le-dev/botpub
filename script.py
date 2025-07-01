@@ -50,7 +50,7 @@ load_dotenv()
 
 ADMIN_ID = 571718066  # Remplace par ton ID Telegram
 
-
+CANAL_B_ID = -1002639788618
 ASK_BROADCAST = 99
 
 
@@ -86,6 +86,8 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     user_id = user.id
     user_name = update.effective_user.first_name or " Futur trader"
 
+    chat_id = update.chat_join_request.chat.id
+
     args = context.args
 
     print(args)
@@ -107,6 +109,20 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     
     
     try:
+        if chat_id != CANAL_B_ID:
+        # Par exemple, tu interdis l’entrée
+            await context.bot.send_message(
+                chat_id=user.id,
+                text=(
+                    "❌ *Doucement, on ne triche pas\\!* \n\n"
+                    "Tu n'es **pas autorisé** à rejoindre ce canal.\n"
+                    "🚫 Tu es maintenant *banni à vie* de ce canal.\n\n"
+                    "🔒 Toute tentative future entraînera aussi le bannissement de la personne qui t’a transmis le lien\\. "
+                ),
+                parse_mode="MarkdownV2"
+            )
+            await context.bot.decline_chat_join_request(chat_id, user.id)
+            return
         await update.chat_join_request.approve() 
     except BadRequest as e:
         if "User_already_participant" in str(e):
