@@ -234,7 +234,7 @@ if __name__ == '__main__':
     init_db()
     
     app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
-    app.add_handler(MessageHandler(filters.ALL, detect_channel))
+    #app.add_handler(MessageHandler(filters.ALL, detect_channel))
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
