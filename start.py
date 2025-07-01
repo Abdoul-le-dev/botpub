@@ -50,11 +50,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
     #PromoV100
     if args and args[0] == "V100":
         if user_has_categorie(user_id):
-            await update.message.reply_text(
-            "👌 **Tu as terminé ton process ✅**\n"
-            "*Sois patient, l\\'ami, c\\'est pour bientôt \\!*\n\n"
-            "📌 __Épingle ce canal__ pour rester à l\\'affût des **nouvelles informations**\\.",
-            parse_mode="MarkdownV2"
+            await context.bot.send_message(
+                chat_id=user_id,
+                text="👌 **Tu as terminé ton process ✅**\n"
+                "*Sois patient, l\\'ami, c\\'est pour bientôt \\!*\n\n"
+                "📌 __Épingle ce canal__ pour rester à l\\'affût des **nouvelles informations**\\.",
+                parse_mode="MarkdownV2"
         )
 
 
