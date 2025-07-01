@@ -108,11 +108,11 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     
     
-    try:
-        print(chat_id)
-        if chat_id == CANAL_B_ID:
+    
+    print(chat_id)
+    if chat_id == CANAL_B_ID:
         # Par exemple, tu interdis l’entrée
-            await context.bot.send_message(
+        await context.bot.send_message(
                 chat_id=user.id,
                 text=(
                     "❌ *Doucement, on ne triche pas\\!* \n\n"
@@ -122,28 +122,30 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
                 ),
                 parse_mode="MarkdownV2"
             )
-            await context.bot.decline_chat_join_request(chat_id, user.id)
-            return
-        await update.chat_join_request.approve() 
-    except BadRequest as e:
-        if "User_already_participant" in str(e):
-            print("Déjà membre, pas besoin d’approuver.")    
+        await context.bot.decline_chat_join_request(chat_id, user.id)
+        return
+    else:
+        try:
+            await update.chat_join_request.approve() 
+        except BadRequest as e:
+            if "User_already_participant" in str(e):
+                print("Déjà membre, pas besoin d’approuver.")    
 
-    # Envoie un message privé
-    try:
-        
-        with open("video3.mp4", "rb") as video:
-           await context.bot.send_video(chat_id=user_id, video=video)
+        # Envoie un message privé
+        try:
+            
+            with open("video3.mp4", "rb") as video:
+                await context.bot.send_video(chat_id=user_id, video=video)
 
-        
-        await context.bot.send_message(
-        chat_id=user_id,
-        text="🔥🔥 Participe au jeu concours ! Clique sur /JeParticipeAuJeuConcours 🎉🎁"
-        )
+            
+            await context.bot.send_message(
+            chat_id=user_id,
+            text="🔥🔥 Participe au jeu concours ! Clique sur /JeParticipeAuJeuConcours 🎉🎁"
+            )
 
-        
-    except Exception as e:
-        print(f"Impossible d’envoyer un message à {user_id} : {e}")
+            
+        except Exception as e:
+            print(f"Impossible d’envoyer un message à {user_id} : {e}")
      
 
 async def user_imformation(update: Update, context: ContextTypes.DEFAULT_TYPE):
