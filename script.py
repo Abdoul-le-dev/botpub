@@ -91,7 +91,12 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     print(args)
 
     if user_has_categorie(user_id):
-        await update.chat_join_request.approve()
+        try:
+            await update.chat_join_request.approve()
+        except BadRequest as e:
+            if "User_already_participant" in str(e):
+                print("Déjà membre, il est membre.") 
+                print(e)     
         await update.message.reply_text(
             f"👌 **C'est bon je t'ai intégrer au canal ✅**\n"
             f"*C'est pour bientôt et prépare toi, je te dirai tout !*\n\n"
@@ -110,8 +115,8 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     # Envoie un message privé
     try:
         
-       # with open("video3.mp4", "rb") as video:
-           # await context.bot.send_video(chat_id=user_id, video=video)
+        with open("video3.mp4", "rb") as video:
+           await context.bot.send_video(chat_id=user_id, video=video)
 
         
         await context.bot.send_message(
