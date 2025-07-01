@@ -310,7 +310,7 @@ async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message = await update.message.reply_text(
     "🔗 *Voici ton lien unique d’accès au canal :*\n"
-    "[👉 Rejoins le canal maintenant](https://t.me/+2Ux_t2z0fxoxMDA0)\n\n"
+    "[👉 Rejoins le canal maintenant](https://t.me/+Wwu28BoDMOUzMTQ0)\n\n"
     "⏳ La formation démarre bientôt, sois prêt !\n\n"
     "⚠️ Ce lien est personnel. Si quelqu’un d’autre l’utilise, tu seras automatiquement banni.",
     parse_mode="Markdown"
@@ -319,7 +319,7 @@ async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
 
     # Attendre 5 minutes (300 secondes)
-    await wait_5_seconds()
+    await wait_5_minutes()
 
     # Supprimer le message
     await context.bot.delete_message(chat_id=chat_id, message_id=message.message_id)
