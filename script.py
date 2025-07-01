@@ -50,7 +50,7 @@ load_dotenv()
 
 ADMIN_ID = 571718066  # Remplace par ton ID Telegram
 
-CANAL_B_ID = 1002639788618 
+CANAL_B_ID = -1002639788618 
 ASK_BROADCAST = 99
 
 
@@ -110,7 +110,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     
     try:
         print(chat_id)
-        if chat_id != CANAL_B_ID:
+        if chat_id == CANAL_B_ID:
         # Par exemple, tu interdis l’entrée
             await context.bot.send_message(
                 chat_id=user.id,
