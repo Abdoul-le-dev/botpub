@@ -319,25 +319,32 @@ async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     parse_mode="Markdown"
 )
 
-    
+    asyncio.create_task(delete_and_offer_later(context, chat_id, message.message_id))
 
-    # Attendre 5 minutes (300 secondes)
-    await wait_5_minutes()
-
-    # Supprimer le message
-    await context.bot.delete_message(chat_id=chat_id, message_id=message.message_id)
-
-    keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🎓 Suivre la formation gratuite 📈 ", url="https://app.rmiclass.net/reff/538699")]
-            ])
-
-    await update.message.reply_text("⏳ Ton lien a expiré!\n\n"
-            "⏳⏰ En attendant dimanche, profite GRATUITEMENT de notre initiation au trading ici 👉 \n\n"
-            "Rends-toi sur https://app.rmiclass.net/reff/538699, crée ton compte, puis découvre notre initiation au trading.",
-
-             reply_markup=keyboard
-
-)
+   
 
 
     return ConversationHandler.END
+
+async def delete_and_offer_later(context, chat_id, message_id):
+    await asyncio.sleep(300)  # 5 minutes
+
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception as e:
+        print(f"❌ Erreur suppression : {e}")
+
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🎓 Suivre la formation gratuite 📈", url="https://app.rmiclass.net/reff/538699")]
+    ])
+
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=(
+            "⏳ Ton lien a expiré\\!\n\n"
+            "⏳⏰ En attendant dimanche, profite *GRATUITEMENT* de notre initiation au trading ici 👉\n\n"
+            "Rends\\-toi sur https://app.rmiclass.net/reff/538699, crée ton compte, puis découvre notre initiation au trading\\."
+        ),
+        reply_markup=keyboard,
+        parse_mode="MarkdownV2"
+    )
