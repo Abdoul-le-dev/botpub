@@ -100,17 +100,19 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
             if "User_already_participant" in str(e):
                 print("Déjà membre, il est membre.") 
                 print(e)     
+                return
         await context.bot.send_message(
             chat_id=user_id,
             text=(
-                "👌 **C\\'est bon je t\\'ai intégré au canal ✅**\n"
-                "*C\\'est pour bientôt et prépare toi, je te dirai tout \\!*\n\n"
-                "📌 __Épingle ce canal__ pour rester à l\\'affût des **nouvelles informations**\\."
+                "👌 **C'est bon je t'ai intégré au canal ✅**\n"
+                "*C'est pour bientôt et prépare toi, je te dirai tout !*\n\n"
+                "📌 *Épingle ce canal* pour rester à l'affût des **nouvelles informations**."
             ),
-            parse_mode="MarkdownV2"
+            parse_mode="Markdown"
         )
 
         return
+        
     
     
     
@@ -120,12 +122,12 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         await context.bot.send_message(
             chat_id=user.id,
             text=(
-                "❌ *Doucement, on ne triche pas\\!* \n\n"
-                "Tu n'es **pas autorisé** à rejoindre ce canal\\.\n"
-                "🚫 Tu es maintenant *banni à vie* de ce canal\\.\n\n"
-                "🔒 Toute tentative future entraînera aussi le bannissement de la personne qui t’a transmis le lien\\."
+                "❌ *Doucement, on ne triche pas !* \n\n"
+                "Tu n'es **pas autorisé** à rejoindre ce canal.\n"
+                "🚫 Tu es maintenant *banni à vie* de ce canal.\n\n"
+                "🔒 Toute tentative future entraînera aussi le bannissement de la personne qui t’a transmis le lien."
             ),
-            parse_mode="MarkdownV2"
+            parse_mode="Markdown"
         )
 
         await context.bot.decline_chat_join_request(chat_id, user.id)

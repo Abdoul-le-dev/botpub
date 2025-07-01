@@ -52,11 +52,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
         if user_has_categorie(user_id):
             await context.bot.send_message(
                 chat_id=user_id,
-                text="👌 **Tu as terminé ton process ✅**\n"
-                "*Sois patient, l\\'ami, c\\'est pour bientôt \\!*\n\n"
-                "📌 __Épingle ce canal__ pour rester à l\\'affût des **nouvelles informations**\\.",
-                parse_mode="MarkdownV2"
-        )
+                text=(
+                    "👌 **Tu as terminé ton process ✅**\n"
+                    "*Sois patient, l'ami, c'est pour bientôt !*\n\n"
+                    "📌 *Épingle ce canal* pour rester à l'affût des **nouvelles informations**."
+                ),
+                parse_mode="Markdown"
+            )
+
 
 
 
@@ -341,10 +344,10 @@ async def delete_and_offer_later(context, chat_id, message_id):
     await context.bot.send_message(
         chat_id=chat_id,
         text=(
-            "⏳ Ton lien a expiré\\!\n\n"
+            "⏳ Ton lien a expiré !\n\n"
             "⏳⏰ En attendant dimanche, profite *GRATUITEMENT* de notre initiation au trading ici 👉\n\n"
-            "Rends\\-toi sur https://app.rmiclass.net/reff/538699, crée ton compte, puis découvre notre initiation au trading\\."
+            "Rends-toi sur https://app.rmiclass.net/reff/538699, crée ton compte, puis découvre notre initiation au trading."
         ),
         reply_markup=keyboard,
-        parse_mode="MarkdownV2"
+        parse_mode="Markdown"
     )
