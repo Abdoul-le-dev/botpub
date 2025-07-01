@@ -113,15 +113,16 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     if chat_id == CANAL_B_ID:
         # Par exemple, tu interdis l’entrée
         await context.bot.send_message(
-                chat_id=user.id,
-                text=(
-                    "❌ *Doucement, on ne triche pas\\!* \n\n"
-                    "Tu n'es **pas autorisé** à rejoindre ce canal.\n"
-                    "🚫 Tu es maintenant *banni à vie* de ce canal.\n\n"
-                    "🔒 Toute tentative future entraînera aussi le bannissement de la personne qui t’a transmis le lien\\. "
-                ),
-                parse_mode="MarkdownV2"
-            )
+            chat_id=user.id,
+            text=(
+                "❌ *Doucement, on ne triche pas\\!* \n\n"
+                "Tu n'es **pas autorisé** à rejoindre ce canal\\.\n"
+                "🚫 Tu es maintenant *banni à vie* de ce canal\\.\n\n"
+                "🔒 Toute tentative future entraînera aussi le bannissement de la personne qui t’a transmis le lien\\."
+            ),
+            parse_mode="MarkdownV2"
+        )
+
         await context.bot.decline_chat_join_request(chat_id, user.id)
         return
     else:
