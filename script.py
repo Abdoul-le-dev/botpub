@@ -109,6 +109,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     
     
     try:
+        print(chat_id)
         if chat_id != CANAL_B_ID:
         # Par exemple, tu interdis l’entrée
             await context.bot.send_message(
