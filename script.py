@@ -93,6 +93,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     print(args)
 
     if user_has_categorie(user_id):
+        print("L'utilisateur a déjà une catégorie, il est déjà membre.")
         try:
             await update.chat_join_request.approve()
         except BadRequest as e:
