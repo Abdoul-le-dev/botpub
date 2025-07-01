@@ -97,12 +97,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
                 except TimedOut: 
 
                     await context.bot.send_message(
-                chat_id=user_id,
-                text ="__**😂 Ne réponds pas au message précédent, je sais que tu es ravi, moi aussi d’ailleurs !**__\n\n"
-                            "📧 `Pour traiter tes demandes en priorité, donne-nous ton adresse mail, vu que tu fais maintenant partie de la famille.`\n\n"
-                            "➡️ `Envoie uniquement ton mail, par exemple : fiacrekpanou@gmail.com`",
-                            parse_mode='Markdown'
-                        )
+                        chat_id=user_id,
+                        text ="__**😂 Ne réponds pas au message précédent, je sais que tu es ravi, moi aussi d’ailleurs !**__\n\n"
+                                    "📧 `Pour traiter tes demandes en priorité, donne-nous ton adresse mail, vu que tu fais maintenant partie de la famille.`\n\n"
+                                    "➡️ `Envoie uniquement ton mail, par exemple : fiacrekpanou@gmail.com`",
+                                    parse_mode='Markdown'
+                                )
 
                     return EMAIL 
 

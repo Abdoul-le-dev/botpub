@@ -100,8 +100,9 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
             if "User_already_participant" in str(e):
                 print("Déjà membre, il est membre.") 
                 print(e)     
-        await update.message.reply_text(
-            f"👌 **C'est bon je t'ai intégrer au canal ✅**\n"
+        await context.bot.send_message(
+            chat_id=user_id,    
+            text =f"👌 **C'est bon je t'ai intégrer au canal ✅**\n"
             f"*C'est pour bientôt et prépare toi, je te dirai tout !*\n\n"
             f"📌 __Épingle ce canal__ pour rester à l'affût des **nouvelles informations**.",
             parse_mode="MarkdownV2"
@@ -157,7 +158,10 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
     user = update.effective_user
     msg = update.message
 
+    if not user:
+        return
     user_id = user.id
+
     if not msg:
         print("⚠️ Mise à jour sans message texte. Ignorée.")
         return
