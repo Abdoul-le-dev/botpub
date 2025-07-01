@@ -50,7 +50,7 @@ load_dotenv()
 
 ADMIN_ID = 571718066  # Remplace par ton ID Telegram
 
-CANAL_B_ID = -1002639788618
+CANAL_B_ID = 1002639788618 
 ASK_BROADCAST = 99
 
 
