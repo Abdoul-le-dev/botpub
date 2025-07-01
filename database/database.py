@@ -19,7 +19,7 @@ def init_db():
 
 
 
-def save_user(name, phone, country=None, telegram_id=None,contexte_user=None):
+def save_user(name, phone, country=None, telegram_id=None,contexte_user=None,email=None, motivation=None, level=None):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
 
@@ -39,9 +39,9 @@ def save_user(name, phone, country=None, telegram_id=None,contexte_user=None):
 
     # Insertion des données
     cursor.execute('''
-        INSERT INTO users (name, phone, country, created_at,telegram_id,contexte_user)
-        VALUES (?, ?, ?, ?,?,?)
-    ''', (name, phone, country, now,telegram_id,contexte_user))
+        INSERT INTO users (name, phone, country, created_at,telegram_id,contexte_user, email, motivation, level)
+        VALUES (?, ?, ?, ?,?,?, ?, ?, ?)
+    ''', (name, phone, country, now,telegram_id,contexte_user, email, motivation, level))
 
     conn.commit()
     conn.close()
@@ -66,3 +66,68 @@ def save_message(user_id, message_id, message_text, answer = None, message_type 
     ''', (user_id, message_id, message_text,answer, message_type, now))
     conn.commit()
     conn.close()
+
+def update_user_info(telegram_id, email=None, motivation=None, level=None):
+    conn = sqlite3.connect("preinscriptions.db")
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        UPDATE users
+        SET email = ?, motivation = ?, level = ?
+        WHERE telegram_id = ?
+    ''', (email, motivation, level, telegram_id))
+
+    conn.commit()
+    conn.close() 
+
+def add_categorie(id_user, name_categorie):
+    conn = sqlite3.connect("preinscriptions.db")
+    cursor = conn.cursor()
+
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    cursor.execute('''
+        INSERT INTO categories (id_user, name_categorie, created_at)
+        VALUES (?, ?, ?)
+    ''', (id_user, name_categorie, created_at))
+
+    conn.commit()
+    conn.close()       
+def user_has_categorie(id_user):
+    conn = sqlite3.connect("preinscriptions.db")
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT 1 FROM categories WHERE id_user = ? LIMIT 1
+    ''', (id_user,))
+    
+    exists = cursor.fetchone() is not None
+    conn.close()
+    return exists
+
+def get_user_info(telegram_id):
+    conn = sqlite3.connect("preinscriptions.db")
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        SELECT id, name, phone, country, email, motivation, level, created_at
+        FROM users
+        WHERE telegram_id = ?
+    ''', (telegram_id,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if row:
+        return {
+            "ID": row[0],
+            "Nom": row[1],
+            "Téléphone": row[2],
+            "Pays": row[3],
+            "Email": row[5],
+            "Motivation": row[6],
+            "Niveau": row[7],
+            "Inscrit le": row[4]
+        }
+    else:
+        return None

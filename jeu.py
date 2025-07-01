@@ -56,7 +56,7 @@ async def export_and_send_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # 5. Vérifier si on a au moins 18 gagnants valides, sinon compléter aléatoirement
     if len(gagnants_set) < 5:
-        remaining_needed = 13 - len(gagnants_set)
+        remaining_needed = 5 - len(gagnants_set)
         # candidats restants exclus déjà pris
         candidats_restants = list(all_user_ids - gagnants_set)
         random.shuffle(candidats_restants)

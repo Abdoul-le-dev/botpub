@@ -5,6 +5,21 @@ from database.database import init_db
 from database.database import save_user
 from database.database import user_exists
 from database.database import save_message
+from database.database import update_user_info
+from database.database import add_categorie
+from database.database import user_has_categorie
+from user_data import user_info
+
+from start import start
+from start import get_name
+from start import get_phone     
+from start import get_country
+from start import get_email
+from start import get_motivation
+from start import get_level
+from user_data import start_delete
+
+
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
 import sqlite3
@@ -22,12 +37,26 @@ from telegram.error import BadRequest
 from dotenv import load_dotenv
 from telegram.ext import filters
 
+import asyncio
+
+import time
+
+from constance import NAME, PHONE, COUNTRY, LEVEL, EMAIL, MOTIVATION, ASK_IDS
+
+import tracemalloc
+tracemalloc.start()
+type =""
 load_dotenv()
 
 ADMIN_ID = 571718066  # Remplace par ton ID Telegram
 
 
 ASK_BROADCAST = 99
+
+
+
+async def wait_5_seconds():
+    await asyncio.sleep(5)
 
 CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(3)
 
@@ -56,6 +85,21 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     user = update.chat_join_request.from_user
     user_id = user.id
     user_name = update.effective_user.first_name or " Futur trader"
+
+    args = context.args
+
+    print(args)
+
+    if user_has_categorie(user_id):
+        await update.chat_join_request.approve()
+        await update.message.reply_text(
+            f"👌 **C'est bon je t'ai intégrer au canal ✅**\n"
+            f"*C'est pour bientôt et prépare toi, je te dirai tout !*\n\n"
+            f"📌 __Épingle ce canal__ pour rester à l'affût des **nouvelles informations**.",
+            parse_mode="MarkdownV2"
+        )
+        return
+    
     
     try:
         await update.chat_join_request.approve() 
@@ -66,8 +110,8 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     # Envoie un message privé
     try:
         
-        with open("video3.mp4", "rb") as video:
-            await context.bot.send_video(chat_id=user_id, video=video)
+       # with open("video3.mp4", "rb") as video:
+           # await context.bot.send_video(chat_id=user_id, video=video)
 
         
         await context.bot.send_message(
@@ -111,89 +155,13 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
 
 token = os.getenv("token")
 
-# États du formulaire
-NAME, PHONE, COUNTRY = range(3)
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None):
-    user = update.effective_user
-    user_id = user.id
-    if user_exists(user_id):
-        await update.message.reply_text("Tu es déjà inscrit ✅")
-    else:
-        if chat_id:
-            await context.bot.send_message(
-                chat_id=chat_id,
-                text="Ta préinscription va se dérouler en 3 étapes ⏳✨ pour le jeu concours 🎉🎁.\n...Ça prendra maximum 2 minutes, alors on y va à fond !\n\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n..."
-            )
-        else:
-            await update.message.reply_text(
-                "Ta préinscription va se dérouler en 3 étapes ⏳✨ pour le jeu concours 🎉🎁.\n...Ça prendra maximum 2 minutes, alors on y va à fond !\n\nÉtape 1/3 :👤  Quel est ton nom et prénom ?\n\n..."
-            )
-        return NAME
-
-async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not update.message or not update.message.text:
-        if update.effective_chat:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text="❌ Merci d’envoyer un texte valide."
-            )
-        return NAME
-    
-    context.user_data["name"] = update.message.text
-    await update.message.reply_text("Étape 2/3 :📞 Quel est ton numéro de téléphone ?"
-                                    "\n\n Format international recommandé, ex : +22997203304")
-    return PHONE
-
-async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message or not update.message.text:
-        if update.effective_chat:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text="❌ Merci d’envoyer ton numéro."
-            )
-        return PHONE
-    
-    context.user_data["phone"] = update.message.text
-    await update.message.reply_text("Étape 3/3 :🌍 Dans quel pays vis-tu ?")
-    return COUNTRY
-
-async def get_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["country"] = update.message.text
-    if not update.message or not update.message.text:
-        if update.effective_chat:
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text="❌ Merci d’envoyer le nom de ton pays."
-            )
-        return COUNTRY
-    data = context.user_data
-    await update.message.reply_text(
-        f"✅ Bravo, votre inscription est confirmée ! 🥳✅\n\n"
-        f"Nom : {data['name']}\n"
-        f"Téléphone : {data['phone']}\n"
-        f"Pays : {data['country']}"
-    )
-    user = update.effective_user
-    user_id = user.id
-    save_user(data["name"], data["phone"], data["country"],user_id)
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎓 Suivre la formation gratuite 📈 ", url="https://app.rmiclass.net/reff/538699")]
-    ])
-
-    await update.message.reply_text(
-        "✅🎉 Inscription au jeu concours validée ! 🎊🔥!\n\n"
-        "📌👉 Épingle vite notre assistant bot pour recevoir toutes les notif’s importantes 📲🔔 \n\n"
-        "⏳⏰ En attendant dimanche, profite GRATUITEMENT de notre initiation au trading ici 👉 \n\n"
-        "Rends-toi sur https://app.rmiclass.net/reff/538699, crée ton compte, puis découvre notre initiation au trading.",
-        reply_markup=keyboard
-    )
-    return ConversationHandler.END
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("❌ Annulé.")
     return ConversationHandler.END
+
+# États du formulaire
+#NAME, PHONE, COUNTRY, LEVEL,EMAIL,MOTIVATION = range(6)
+
 
 
 async def handle_data_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -256,7 +224,7 @@ if __name__ == '__main__':
 
     init_db()
     
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
@@ -264,6 +232,10 @@ if __name__ == '__main__':
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
             COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_country)],
+            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
+            MOTIVATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_motivation)],
+            LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_level)],
+            
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
@@ -317,6 +289,11 @@ if __name__ == '__main__':
 
     app.add_handler(CommandHandler("lastMessage", last_message))
 
+    app.add_handler(CommandHandler("userInfo", user_info))
+
+    app.add_handler(CommandHandler("userDelete", start_delete))
+
+   
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, log_unhandled_message))
 
     print('running...')
