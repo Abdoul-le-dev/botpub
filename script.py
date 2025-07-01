@@ -101,12 +101,15 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
                 print("Déjà membre, il est membre.") 
                 print(e)     
         await context.bot.send_message(
-            chat_id=user_id,    
-            text =f"👌 **C'est bon je t'ai intégrer au canal ✅**\n"
-            f"*C'est pour bientôt et prépare toi, je te dirai tout !*\n\n"
-            f"📌 __Épingle ce canal__ pour rester à l'affût des **nouvelles informations**.",
+            chat_id=user_id,
+            text=(
+                "👌 **C\\'est bon je t\\'ai intégré au canal ✅**\n"
+                "*C\\'est pour bientôt et prépare toi, je te dirai tout \\!*\n\n"
+                "📌 __Épingle ce canal__ pour rester à l\\'affût des **nouvelles informations**\\."
+            ),
             parse_mode="MarkdownV2"
         )
+
         return
     
     
