@@ -41,6 +41,8 @@ import asyncio
 
 import time
 
+import json
+
 from constance import NAME, PHONE, COUNTRY, LEVEL, EMAIL, MOTIVATION, ASK_IDS
 
 import tracemalloc
@@ -63,6 +65,26 @@ CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(3)
 def generate_filename():
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
     return f"preinscriptions_{suffix}.xlsx"
+
+async def export_and_send_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Connexion et récupération des messages
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM messages")
+    rows = cursor.fetchall()
+    columns = [description[0] for description in cursor.description]
+    messages = [dict(zip(columns, row)) for row in rows]
+    conn.close()
+
+    # Export en JSON
+    with open("messages.json", "w", encoding="utf-8") as f:
+        json.dump(messages, f, ensure_ascii=False, indent=2)
+    print("✅ Fichier JSON généré.")
+
+    
+    with open("messages.json", "rb") as file:
+        await context.bot.send_document(chat_id=ADMIN_ID, document=file, caption="📄 Fichier des messages")
+
 
 async def export_and_send_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect('preinscriptions.db')
@@ -332,6 +354,8 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("userInfo", user_info))
 
     app.add_handler(CommandHandler("userDelete", start_delete))
+
+    app.add_handler(CommandHandler("exportMessages", export_and_send_messages))
 
    
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, log_unhandled_message))
