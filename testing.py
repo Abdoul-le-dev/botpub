@@ -91,7 +91,8 @@ async def get_text(update, context):
 async def broadcast_messages(bot, admin_id, context_user_data):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
+    #cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
+    cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
     rows = cursor.fetchall()
     conn.close()
 
