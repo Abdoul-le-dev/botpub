@@ -177,7 +177,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
             if file_id:
                 # Réutiliser le file_id
-                await context.bot.send_video(chat_id=chat_id, video=file_id, caption="Bienvenue ! 🎉")
+                await context.bot.send_video(chat_id=user_id , video=file_id, caption="Bienvenue ! 🎉")
                 
 
                 
@@ -187,7 +187,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
             else:
                 # Envoyer depuis fichier local, puis sauvegarder le file_id
                 video_path = "welcome.mp4"
-                msg = await context.bot.send_video(chat_id=chat_id, video=video_path, caption="Bienvenue ! 🎉")
+                msg = await context.bot.send_video(chat_id=user_id , video=video_path, caption="Bienvenue ! 🎉")
                 new_file_id = msg.video.file_id
                 save_file_id(video_name, new_file_id)
                 
