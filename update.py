@@ -9,14 +9,13 @@ def alter_users_table():
     cursor.execute("PRAGMA table_info(users)")
     columns = [col[1] for col in cursor.fetchall()]
 
-    if 'email' not in columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN email TEXT")
+    if 'why' not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN why TEXT")
 
-    if 'motivation' not in columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN motivation TEXT")
+    if 'what' not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN what TEXT")
 
-    if 'level' not in columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN level TEXT")    
+      
 
     conn.commit()
     conn.close()
@@ -59,5 +58,38 @@ def create_categories_table():
     conn.commit()
     conn.close()
 
-create_categories_table()
+def create_video_table():
+    conn = sqlite3.connect("preinscriptions.db")
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS videos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            video_name TEXT NOT NULL,
+            file_id TEXT,       
+            created_at TEXT NOT NULL
+        )
+    ''')
+
+    conn.commit()
+    conn.close()    
+def create_user_default_table():
+    conn = sqlite3.connect("preinscriptions.db")
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS usersdefault (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,  
+            created_at TEXT NOT NULL
+        )
+    ''')
+
+    conn.commit()
+    conn.close()        
+
+#create_categories_table()
 alter_users_table()
+create_user_default_table()
+
+create_video_table()

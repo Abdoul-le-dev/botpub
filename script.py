@@ -8,15 +8,19 @@ from database.database import save_message
 from database.database import update_user_info
 from database.database import add_categorie
 from database.database import user_has_categorie
+from database.database import save_user_default
 from user_data import user_info
-
+from database.database import get_file_id
+from database.database import save_file_id
 from start import start
 from start import get_name
 from start import get_phone     
 from start import get_country
-from start import get_email
-from start import get_motivation
+#from start import get_email
+#from start import get_motivation
 from start import get_level
+from start import get_why
+from start import get_what
 from user_data import start_delete
 
 
@@ -43,7 +47,7 @@ import time
 
 import json
 
-from constance import NAME, PHONE, COUNTRY, LEVEL, EMAIL, MOTIVATION, ASK_IDS
+from constance import NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS
 
 import tracemalloc
 tracemalloc.start()
@@ -110,10 +114,12 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
     chat_id = update.chat_join_request.chat.id
 
+    save_user_default(user_id)
+
     args = context.args
 
     print(args)
-
+    """
     if user_has_categorie(user_id):
         print("L'utilisateur a déjà une catégorie, il est déjà membre.")
         try:
@@ -133,12 +139,14 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
             parse_mode="Markdown"
         )
 
-        return
+        return 
+    """
         
     
     
     
     print(chat_id)
+    
     if chat_id == CANAL_B_ID:
         # Par exemple, tu interdis l’entrée
         await context.bot.send_message(
@@ -163,14 +171,32 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
         # Envoie un message privé
         try:
-            
-            with open("video3.mp4", "rb") as video:
-                await context.bot.send_video(chat_id=user_id, video=video)
+            video_name = "welcome_messagess"
+
+            file_id = get_file_id(video_name)
+
+            if file_id:
+                # Réutiliser le file_id
+                #await context.bot.send_video(chat_id=chat_id, video=file_id, caption="Bienvenue ! 🎉")
+                print("0")
+
+                
+
+
+                
+            else:
+                """# Envoyer depuis fichier local, puis sauvegarder le file_id
+                video_path = "welcome.mp4"
+                msg = await context.bot.send_video(chat_id=chat_id, video=video_path, caption="Bienvenue ! 🎉")
+                new_file_id = msg.video.file_id
+                save_file_id(video_name, new_file_id)
+                """
+                print("1")
 
             
             await context.bot.send_message(
             chat_id=user_id,
-            text="🔥🔥 Participe au jeu concours ! Clique sur /JeParticipeAuJeuConcours 🎉🎁"
+            text="🔥🔥✍️  Clique sur /JeMEnregistre Maintenant"
             )
 
             
@@ -289,14 +315,16 @@ if __name__ == '__main__':
     #app.add_handler(MessageHandler(filters.ALL, detect_channel))
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[CommandHandler("JeMEnregistre", start)],
         states={
+            WHY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_why)],
+            WHAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_what)],
+            LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_level)],
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
             COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_country)],
-            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
-            MOTIVATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_motivation)],
-            LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_level)],
+            #EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)]
+            
             
         },
         fallbacks=[CommandHandler("cancel", cancel)],

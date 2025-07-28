@@ -19,7 +19,7 @@ def init_db():
 
 
 
-def save_user(name, phone, country=None, telegram_id=None,contexte_user=None,email=None, motivation=None, level=None):
+def save_user(name, phone, country=None, telegram_id=None,contexte_user=None,email=None, motivation=None, level=None,why=None, what=None):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
 
@@ -39,9 +39,9 @@ def save_user(name, phone, country=None, telegram_id=None,contexte_user=None,ema
 
     # Insertion des données
     cursor.execute('''
-        INSERT INTO users (name, phone, country, created_at,telegram_id,contexte_user, email, motivation, level)
-        VALUES (?, ?, ?, ?,?,?, ?, ?, ?)
-    ''', (name, phone, country, now,telegram_id,contexte_user, email, motivation, level))
+        INSERT INTO users (name, phone, country, created_at,telegram_id,contexte_user, email, motivation, level, why, what)
+        VALUES (?, ?, ?, ?,?,?, ?, ?, ?, ?, ?)
+    ''', (name, phone, country, now,telegram_id,contexte_user, email, motivation, level, why, what))
 
     conn.commit()
     conn.close()
@@ -131,3 +131,28 @@ def get_user_info(telegram_id):
         }
     else:
         return None
+
+def get_file_id(video_name):
+    conn = sqlite3.connect("preinscriptions.db")
+    cur = conn.cursor()
+    cur.execute("SELECT file_id FROM videos WHERE video_name=?", (video_name,))
+    row = cur.fetchone()
+    conn.close()
+    return row[0] if row else None 
+
+def save_file_id(video_name, file_id):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = sqlite3.connect("preinscriptions.db")
+    cur = conn.cursor()
+    cur.execute("INSERT OR REPLACE INTO videos (video_name, file_id,created_at) VALUES (?, ?, ?)", (video_name, file_id,now))
+    conn.commit()
+    conn.close()   
+
+def save_user_default(user_id):
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = sqlite3.connect("preinscriptions.db")
+    cur = conn.cursor()
+    cur.execute("INSERT INTO usersdefault (user_id,created_at) VALUES (?, ?)", (user_id,now))
+    conn.commit()
+    conn.close() 
+    print("User default saved:", user_id)      
