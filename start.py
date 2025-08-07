@@ -116,7 +116,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
                 context.user_data["args"] = args[0]
 
                 await update.message.reply_text(
-                    "🎉 *Félicitations à toi, jeune trader ambitieux !*\n\n"
+                    "🎉 *Félicitations à toi!*\n\n"
                     "__Nous venons de valider ta facture : tout est parfait ✅.__\n\n"
                     
                     "*Comme c’est ta première fois avec notre assistant,*\n"
