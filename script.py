@@ -128,7 +128,8 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     save_user_default(user_id)
 
     args = context.args
-
+    print("chat_id")
+    print(chat_id)
     print(args)
     
     if user_has_categorie(user_id,"leseminaire"):
