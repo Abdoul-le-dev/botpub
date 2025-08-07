@@ -33,10 +33,10 @@ import asyncio
 
 import time
 
-from constance import NAME, PHONE, COUNTRY, LEVEL, WHAT,WHY
+from constance import NAME, PHONE, COUNTRY, LEVEL, WHAT,WHY, EMAIL, EXPECTATIONS,DISCOVERY
 
 async def wait_5_seconds():
-    await asyncio.sleep(20)
+    await asyncio.sleep(10)
 async def wait_5_minutes():
     await asyncio.sleep(300)    
 
@@ -45,17 +45,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
     user = update.effective_user
     user_id = user.id
 
-
-   
-
-  
-
     args = context.args
     print(args)
     #PromoV100
-    '''
-    if args and args[0] == "V100":
-        if user_has_categorie(user_id):
+    name = "leseminaire" 
+    if args and args[0] == name:
+        
+        #le user a fini son process
+        if user_has_categorie(user_id,name):
             await context.bot.send_message(
                 chat_id=user_id,
                 text=(
@@ -63,41 +60,39 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
                     "*Sois patient, l'ami, c'est pour bientôt !*\n\n"
                     "📌 *Épingle ce canal* pour rester à l'affût des **nouvelles informations**."
                 ),
-                parse_mode="Markdown"
+                parse_mode="Markdown"  
             )
 
-
-
-
             return ConversationHandler.END
-
+        # le user n'a pas fini son process
         else:
 
+            #le user existe dans la base
             if user_exists(user_id):
 
                 context.user_data["args"] = args[0]
-                type = "V100"
+                type = "leseminaire"
 
                 try:
-                    await update.message.reply_text("🎉 Félicitations à toi, jeune trader ambitieux !\n\n"
-                            "Je viens de valider ton paiement : tout est parfait ✅.\n\n"
-                            "Tu fais désormais partie des privilégiés qui accèderont à la formation V100 Master — un programme exclusif, direct et transformateur.\n\n"
-                            "🔥 Dans quelques jours, tu vas vivre une immersion intense où l’on te révèle tout ce que tu dois savoir sur le V100 : sans filtre, sans blabla.\n\n"
-                            "💡 Stratégie, vision, passage à l’action — on va droit au but.\n\n"
-                            "---\n"
-                            "Mais avant de t’ouvrir les portes du canal privé,\n\n"
-                            "on aimerait te connaître un peu plus…\n\n"
-                            "Pour que cette séance soit 100% adaptée à ton profil\n\n"
-                            "et que tu en ressortes boosté, concentré et prêt à passer un cap.\n\n"
-                            "🚀📈🔥"
-                        )
+                    await update.message.reply_text(
+                        "🎉 *Félicitations à toi*\n\n"
+                        "__Ton paiement vient d’être validé avec succès ✅__\n"
+                        
+                        "🔥 *Bienvenue dans* __LE SÉMINAIRE DU TRADER GAGNANT__ — un format intensif de __2 semaines__ conçu pour t’apporter __plus de clarté, plus de résultats, et surtout plus de maîtrise__ sur les marchés.\n\n"
+                        "Mais avant de t’ouvrir les portes du canal privé 🔐,\n"
+                        "on aimerait en savoir un peu plus sur toi…\n\n"
+                        "💬 Cela nous permettra d’*adapter au mieux l’expérience à ton profil*\n"
+                        "et faire en sorte que tu ressortes __boosté, structuré et prêt à passer au niveau supérieur__.\n\n"
+                        "🚀📈🔥"
+                    , parse_mode='Markdown')
+
                     
 
                     await wait_5_seconds()
 
 
                     await update.message.reply_text("__**😂 Ne réponds pas au message précédent, je sais que tu es ravi, moi aussi d’ailleurs !**__\n\n"
-                            "📧 `Pour traiter tes demandes en priorité, donne-nous ton adresse mail, vu que tu fais maintenant partie de la famille.`\n\n"
+                            "📧 `Pour traiter tes demandes en priorité à l'avenir, donne-nous ton adresse mail, vu que tu fais maintenant partie de la famille.`\n\n"
                             "➡️ `Envoie uniquement ton mail, par exemple : fiacrekpanou@gmail.com`",
                             parse_mode='Markdown'
                         )
@@ -120,29 +115,38 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
                 context.user_data["args"] = args[0]
 
-                await update.message.reply_text("🎉 Félicitations à toi, jeune trader ambitieux !\n\n"
-                        "Nous venons de valider ta facture : tout est parfait ✅.\n\n"
-                        "Tu viens de franchir une étape clé en rejoignant la formation V100 Master — un programme exclusif, clair et puissant.\n\n"
-                        "🔥 Très bientôt, tu vas plonger dans une immersion totale où chaque détail du V100 te sera révélé, sans détour ni perte de temps.\n\n"
-                        "💡 Stratégie, vision, passage à l’action — ici, on va droit au but.\n\n"
-                        "---\n"
-                        "Comme c’est ta première fois avec notre assistant,\n"
-                        "🚀 on va t’enregistrer rapidement pour pouvoir t’ajouter au canal privé.\n\n"
-                        "✅ Suis les étapes suivantes pour t’enregistrer et démarre cette aventure avec nous !"
-                    )
-                
-
-                
-
-                await update.message.reply_text("Étape 1 sur 5...\n\n"
-                        "👤 Envoie uniquement ton nom et prénom, par exemple : Fiacre Kpanou\n\n"
-                        "Juste ton nom et prénom, rien d’autre."
-                    )
+                await update.message.reply_text(
+                    "🎉 *Félicitations à toi, jeune trader ambitieux !*\n\n"
+                    "__Nous venons de valider ta facture : tout est parfait ✅.__\n\n"
                     
-                
-                return NAME
+                    "*Comme c’est ta première fois avec notre assistant,*\n"
+                    "🚀 nous allons d’abord t’enregistrer pour pouvoir t’ajouter au canal privé Telegram.\n\n"
+                    "__✅ Suis simplement les prochaines étapes pour finaliser ton inscription et commence cette aventure avec nous !__\n\n"
+                    "🔒 *Tu es à un pas de passer au niveau supérieur.*\n\n"
+                    "🚀📈🔥"
+                , parse_mode='Markdown')
 
-    '''
+                
+
+                await wait_5_seconds()
+
+                await update.message.reply_text(
+               
+                        "🔥 Dis-moi pourquoi t'intèresse tu au trading ? :\n\n"
+                        "1️⃣ POUR EN FAIRE UNE SOURCE DE REVENU PRINCIPALE\n\n"
+                        "2️⃣ POUR EN FAIRE UNE SOURCE DE REVENU SECONDAIRE\n\n"
+                        "3️⃣ POUR ATTEINDRE UNE LIBERTE FINANCIERE COMPLETE\n\n"
+                        "🚨 ATTENTION 🚨\n"
+                        "✍️ Réponds maintenant par **1**, **2** ou **3**.\n"
+                        
+                        ,parse_mode='Markdown'
+                        
+                    )
+                            
+                
+                return WHY
+
+    
             
     chat_id = update.effective_chat.id if chat_id is None else chat_id
     if user_exists(user_id):
@@ -227,7 +231,10 @@ async def get_why(update: Update, context: ContextTypes.DEFAULT_TYPE):
     "2️⃣ DES OPPORTUNITÉS DE TRADE CONCRÈTES ET RÉGULIÈRES\n\n"
     "3️⃣ UN ACCOMPAGNEMENT PLUS POUSSÉ, AVEC DU COACHING\n\n"
 
-    "Je suis impatient 🔥🔥🔥"
+    "✍️ Réponds maintenant par **1**, **2** ou **3**.\n\n"
+
+    "Je suis impatient 🔥🔥🔥",
+    parse_mode='Markdown'
 )
 
     return WHAT
@@ -284,12 +291,13 @@ async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["level"] = niveau_map[response]
 
     await update.message.reply_text(
-    "👋 J’aimerais savoir comment t’appeler.\n\n"
-    "✍️ Envoie-moi ton prénom et ton nom.\n"
-    "📌 Exemple : Fiacre Kpanou\n\n"
-    "✅ On va sûrement échanger, alors autant se connaître 😉",
+    "👋 Alors, dis-moi comment on t’appelle ?\n\n"
+    "Moi, je suis *l’assistant de Fiacre Kpanou*.\n"
+    "✅ On va sûrement échanger, alors autant se connaître 😉\n\n"
+    "✍️ Envoie-moi simplement ton *prénom et ton nom*.\n"
+    "📌 Exemple : `Fiacre Kpanou`",
     parse_mode="Markdown"
-)
+    )
 
 
     return NAME
@@ -340,98 +348,173 @@ async def get_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return COUNTRY
     # Enregistre les informations de l'utilisateur dans la base de données
-    save_user(
-            context.user_data["name"],
-            context.user_data["phone"],
-            context.user_data["country"],
-            user_id,
-            email=context.user_data.get("email"),
-            motivation=context.user_data.get("motivation"),
-            level=context.user_data.get("level"),
-            why= context.user_data.get("why"),
-            what= context.user_data.get("what")
+    data = context.user_data
+    if  "args" in data and data["args"] == "leseminaire":
 
-        )  
+      
 
-    await update.message.reply_text(
-    "🎯 Tu es allé au bout de cet échange.\n\n"
-    "Dans une époque où l’attention s’effondre, tu choisis de t’investir dans ce qui compte vraiment.\n\n"
-    "📌 Épingle mon assistant bot — car très bientôt, il aura de belles surprises pour toi… et pour toute notre communauté. 🔥"
-    "🚀 Ce n’est que le début. Garde les yeux ouverts 👀 je suis Fiacre KPANOU"
-)
-
-    
-    
-    if context.user_data.get("level") =="Débutant":
-        await wait_5_seconds()
         await update.message.reply_text(
-            "🎓 Tu m’as indiqué être débutant ? Parfait !\n\n"
-            "J’ai justement préparé une initiation 100% gratuite pour t’aider à poser de bonnes bases dans le trading.\n\n"
-            "👇 Clique ici pour créer ton compte et suivre le cours :\n"
-            "🔗 https://app.rmiclass.net/course/Initiation-au-Trading \n\n"
-            "📬 Tu veux m’écrire ou me laisser un message ? C’est ici : @Fiacrekpanou",
+            "📩 *Entre ton adresse e-mail pour poursuivre.*\n\n"
+            "✉️ Exemple : `fiacreKpanou@gmail`",
             parse_mode="Markdown"
         )
-    
+
+
+
+        return EMAIL
+    else:
+        save_user(
+                context.user_data["name"],
+                context.user_data["phone"],
+                context.user_data["country"],
+                user_id,
+                email=context.user_data.get("email"),
+                motivation=context.user_data.get("motivation"),
+                level=context.user_data.get("level"),
+                why= context.user_data.get("why"),
+                what= context.user_data.get("what")
+
+            )  
+
+        await update.message.reply_text(
+        "🎯 Tu viens de boucler cette première étape, et ce n’est pas rien.\n\n"
+        "Dans un monde qui s’éparpille, tu choisis l’action. Mieux encore : tu choisis de suivre les bonnes personnes.\n\n"
+        "📌 Épingle ce bot — il sera ton guide pendant toute l’immersion.\n"
+        "🔥 Ressources, rappels, messages clés… tout passe par ici.\n\n"
+        "🚀 Le vrai travail commence maintenant.\n"
+        "— *Fiacre Kpanou*",
+        parse_mode="Markdown"
+        )
+
+
+
+        
+        
+        if context.user_data.get("level") =="Débutant":
+            await wait_5_seconds()
+            await update.message.reply_text(
+            "🎓 *Tu m'as indiqué être débutant ! Parfait.*\n\n"
+            "J’ai créé une *initiation 100% gratuite* pour t’aider à poser les bonnes bases et éviter les erreurs classiques.\n\n"
+            "🚀 Commence dès maintenant :\n"
+            "🔗 [Accède à la formation](https://app.rmiclass.net/course/Initiation-au-Trading)\n\n"
+            "📬 Une question ? Envie de me parler ? Écris-moi ici 👉 @Fiacrekpanou",
+            parse_mode="Markdown"
+        )
+
+        
 
 
     
     return ConversationHandler.END
     
-    data = context.user_data
-    '''
-    if "args" in data and data["args"] == "V100":
-
-        print(f"Argument trouvé : {data['args']}")
-
-        await update.message.reply_text(
-            "📩 Entre uniquement ton adresse e-mail (exemple : fiacreKpanou@gmail.com)"
-        )
-
-
-        return EMAIL
-    else:
-
-        data = context.user_data
-        await update.message.reply_text(
-            f"✅ Bravo, votre inscription est confirmée ! 🥳✅\n\n"
-            f"Nom : {data['name']}\n"
-            f"Téléphone : {data['phone']}\n"
-            f"Pays : {data['country']}"
-        )
-        user = update.effective_user
-        user_id = user.id
-        save_user(data["name"], data["phone"], data["country"],user_id)
-
     
-        keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🎓 Suivre la formation gratuite 📈 ", url="https://app.rmiclass.net/reff/538699")]
-            ])
-
-        await update.message.reply_text(
-            "✅🎉 Inscription au prochain jeu concours validée ! 🎊🔥!\n\n"
-            "📌👉 Épingle vite notre assistant bot pour recevoir toutes les notif’s importantes 📲🔔 \n\n"
-            "⏳⏰ En attendant dimanche, profite GRATUITEMENT de notre initiation au trading ici 👉 \n\n"
-            "Rends-toi sur https://app.rmiclass.net/reff/538699, crée ton compte, puis découvre notre initiation au trading.",
-            reply_markup=keyboard
-        )
-        return ConversationHandler.END
-
-    '''    
-
     
-'''
+
 async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not update.message or not update.message.text or "@" not in update.message.text:
+        await update.message.reply_text("❌ Merci d’envoyer une adresse email valide.")
+        return EMAIL
     # Enregistre l'email de l'utilisateur
     context.user_data["email"] = update.message.text
 
     # Demande la motivation pour rejoindre la formation
     await update.message.reply_text(
-        "🤔 Pourquoi as-tu rejoint cette formation ?\n\n"
-        "Donne-nous ta motivation en quelques mots."
+        "🎯 *Qu’attends-tu de cette masterclass ?*\n\n"
+        "✅ Partage en une ou deux phrases ce que tu aimerais apprendre, corriger ou débloquer grâce à ce programme.",
+        parse_mode="Markdown"
     )
-    return MOTIVATION
+    return EXPECTATIONS
 
+
+async def get_expectations(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        await update.message.reply_text("❌ N’hésite pas à nous dire ce que tu espères retirer de cette masterclass.")
+        return EXPECTATIONS
+
+    context.user_data["expectations"] = update.message.text
+    await update.message.reply_text(
+        "📢 *Comment as-tu connu cette masterclass ?*\n\n"
+        "Par exemple : Instagram, WhatsApp,Tiktok, recommandation, publicité, etc.",
+        parse_mode="Markdown"
+    )
+    return DISCOVERY
+
+
+async def get_discovery(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        await update.message.reply_text("❌ Merci de préciser comment tu nous as découvert.")
+        return DISCOVERY
+
+    context.user_data["discovery"] = update.message.text
+
+    # Confirmation
+    
+
+    message = await update.message.reply_text(
+        "✅ *Merci pour toutes ces infos précieuses !*\n\n"    
+        "✅ *Tu viens de finaliser avec succès ton inscription !*\n\n"
+        "🚀 *Ton accès exclusif est prêt !*\n\n"
+        "🔥 Clique vite sur ton lien unique pour rejoindre le canal privé :\n"
+        "👉 *https://t.me/+yj_n_7oH43ZlOGNk*\n\n"
+        "💥 C’est ici que commence ta transformation, entouré(e) de traders qui veulent réussir.\n"
+        "⚡️ Ne perds pas une seconde, on t’attend pour passer à l’action !\n\n"
+        "🚫 *Lien personnel.*",
+        parse_mode="Markdown"
+    )
+    
+
+
+
+    # Enregistrement (personnalise avec ta fonction save_user)
+
+    data = context.user_data
+    user = update.effective_user
+    if "name" in data and data["name"] is not None:
+        user = update.effective_user
+        save_user(
+            name=context.user_data.get("name"),
+            phone=context.user_data.get("phone"),
+            country=context.user_data.get("country"),
+            telegram_id=user.id,
+            contexte_user=context.user_data.get("args"),
+            email=context.user_data.get("email"),
+            motivation=context.user_data.get("motivation"),
+            level=context.user_data.get("level"),
+            why= context.user_data.get("why"),
+            what= context.user_data.get("what"),           
+            expectations=context.user_data.get("expectations"),
+            discovery = context.user_data.get("discovery")
+        )
+        add_categorie(user.id, context.user_data.get("args"))
+        print("yes")
+
+    else:
+
+        try:
+            update_user_info(
+                telegram_id=user.id,
+                email=context.user_data.get("email"),
+                expectations=context.user_data.get("expectations"),
+               
+                discovery = context.user_data.get("discovery"))
+        except BadRequest as e:
+            print(f"❌ Erreur lors de la mise à jour des informations utilisateur : {e}")
+            await update.message.reply_text(
+                "❌ Une erreur est survenue lors de la mise à jour de tes informations. Merci de réessayer plus tard."
+            )
+          
+        add_categorie(user.id, context.user_data.get("args"))
+        print("ok")
+
+
+    await asyncio.sleep(300)
+
+    await message.delete()
+    return ConversationHandler.END
+
+
+'''
 async def get_motivation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Enregistre la motivation de l’utilisateur
     context.user_data["motivation"] = update.message.text

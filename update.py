@@ -9,11 +9,13 @@ def alter_users_table():
     cursor.execute("PRAGMA table_info(users)")
     columns = [col[1] for col in cursor.fetchall()]
 
-    if 'why' not in columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN why TEXT")
+    if 'expectations' not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN expectations TEXT")   
 
-    if 'what' not in columns:
-        cursor.execute("ALTER TABLE users ADD COLUMN what TEXT")
+    if 'discover' not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN discover TEXT")       
+
+
 
       
 

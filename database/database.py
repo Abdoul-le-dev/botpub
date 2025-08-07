@@ -19,7 +19,7 @@ def init_db():
 
 
 
-def save_user(name, phone, country=None, telegram_id=None,contexte_user=None,email=None, motivation=None, level=None,why=None, what=None):
+def save_user(name, phone, country=None, telegram_id=None,contexte_user=None,email=None, motivation=None, level=None,why=None, what=None, expectations=None, discovery=None):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
 
@@ -30,6 +30,15 @@ def save_user(name, phone, country=None, telegram_id=None,contexte_user=None,ema
             name TEXT NOT NULL,
             phone TEXT NOT NULL,
             country TEXT,
+            telegram_id INTEGER,
+            contexte_user TEXT, 
+            email TEXT,
+            motivation TEXT,
+            level TEXT,
+            why TEXT,   
+            what TEXT,
+            expectations TEXT,
+            discovery TEXT,                  
             created_at TEXT NOT NULL
         )
     ''')
@@ -39,9 +48,9 @@ def save_user(name, phone, country=None, telegram_id=None,contexte_user=None,ema
 
     # Insertion des données
     cursor.execute('''
-        INSERT INTO users (name, phone, country, created_at,telegram_id,contexte_user, email, motivation, level, why, what)
-        VALUES (?, ?, ?, ?,?,?, ?, ?, ?, ?, ?)
-    ''', (name, phone, country, now,telegram_id,contexte_user, email, motivation, level, why, what))
+        INSERT INTO users (name, phone, country, created_at,telegram_id,contexte_user, email, motivation, level, why, what, expectations,  discover)
+        VALUES (?, ?, ?, ?,?,?, ?, ?, ?, ?, ?,?,?)
+    ''', (name, phone, country, now,telegram_id,contexte_user, email, motivation, level, why, what, expectations, discovery))
 
     conn.commit()
     conn.close()
@@ -67,15 +76,15 @@ def save_message(user_id, message_id, message_text, answer = None, message_type 
     conn.commit()
     conn.close()
 
-def update_user_info(telegram_id, email=None, motivation=None, level=None):
+def update_user_info(telegram_id, email=None,  expectations=None, discovery=None):
     conn = sqlite3.connect("preinscriptions.db")
     cursor = conn.cursor()
 
     cursor.execute('''
         UPDATE users
-        SET email = ?, motivation = ?, level = ?
+        SET email = ?, expectations = ?, discover= ?
         WHERE telegram_id = ?
-    ''', (email, motivation, level, telegram_id))
+    ''', (email,  expectations,  discovery, telegram_id))
 
     conn.commit()
     conn.close() 
@@ -93,13 +102,15 @@ def add_categorie(id_user, name_categorie):
 
     conn.commit()
     conn.close()       
-def user_has_categorie(id_user):
+def user_has_categorie(id_user, name): 
     conn = sqlite3.connect("preinscriptions.db")
     cursor = conn.cursor()
 
     cursor.execute('''
-        SELECT 1 FROM categories WHERE id_user = ? LIMIT 1
-    ''', (id_user,))
+        SELECT 1 FROM categories 
+        WHERE id_user = ? AND  name_categorie = ? 
+        LIMIT 1
+    ''', (id_user, name))
     
     exists = cursor.fetchone() is not None
     conn.close()

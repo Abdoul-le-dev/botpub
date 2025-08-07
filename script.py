@@ -19,10 +19,21 @@ from start import get_country
 #from start import get_email
 #from start import get_motivation
 from start import get_level
-from start import get_why
-from start import get_what
+from start import get_why, get_email
+from start import get_what, get_expectations,get_discovery
 from user_data import start_delete
-
+from qcmprocess import start_qcm_creation
+from qcmprocess import set_categorie
+from qcmprocess import set_nb_questions
+from qcmprocess import set_question     
+from qcmprocess import set_nb_choix
+from qcmprocess import add_choix
+from qcmprocess import validate_choix
+from qcmprocess import set_categorie
+from qcmprocess import set_question
+from qcmprocess import set_nb_choix
+from qcmprocess import continue_choices
+from qcmprocess import validate_bad_reason   
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
@@ -47,10 +58,10 @@ import time
 
 import json
 
-from constance import NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS
+from constance import NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS,EMAIL, EXPECTATIONS,DISCOVERY
 
-import tracemalloc
-tracemalloc.start()
+from constance import CATEGORIE, NOMBRE_QUESTIONS, QUESTION, NB_CHOIX, CHOIX, REPONSE_SUIVANTE
+
 type =""
 load_dotenv()
 
@@ -119,8 +130,8 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     args = context.args
 
     print(args)
-    """
-    if user_has_categorie(user_id):
+    
+    if user_has_categorie(user_id,"leseminaire"):
         print("L'utilisateur a déjà une catégorie, il est déjà membre.")
         try:
             await update.chat_join_request.approve()
@@ -140,7 +151,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         )
 
         return 
-    """
+    
         
     
     
@@ -323,12 +334,46 @@ if __name__ == '__main__':
             NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
             COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_country)],
-            #EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)]
+            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
+          
+            EXPECTATIONS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_expectations)],
+            
+            DISCOVERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_discovery)]
             
             
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
+    conv_handlerstart = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            WHY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_why)],
+            WHAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_what)],
+            LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_level)],
+            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
+            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
+            COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_country)],
+            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
+            EXPECTATIONS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_expectations)],
+            DISCOVERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_discovery)]
+            
+            
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
+    qcm_handler = ConversationHandler(
+    entry_points=[CommandHandler("creer_qcm", start_qcm_creation)],
+    states={
+        CATEGORIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_categorie)],
+        NOMBRE_QUESTIONS: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_nb_questions)],
+        QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_question)],
+        NB_CHOIX: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_nb_choix)],
+        CHOIX: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_choix)],
+        REPONSE_SUIVANTE: [MessageHandler(filters.TEXT & ~filters.COMMAND, validate_choix)],
+        validate_bad_reason: [MessageHandler(filters.TEXT & ~filters.COMMAND, validate_bad_reason)]
+    },
+    fallbacks=[CommandHandler("cancel", cancel)])
 
     conv_handler_jeu = ConversationHandler(
         entry_points=[CommandHandler("JeParticipeAuJeuConcours", start)],
@@ -374,7 +419,7 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(handle_callback))
 
     app.add_handler(conv_handler)
-
+    app.add_handler(conv_handlerstart)
     app.add_handler(CommandHandler("LesGagnants", export_and_send_pdf))
 
     app.add_handler(CommandHandler("lastMessage", last_message))
@@ -389,5 +434,11 @@ if __name__ == '__main__':
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, log_unhandled_message))
 
     print('running...')
+
+   
+
+    app.add_handler(qcm_handler)
+    
+
     
     app.run_polling(poll_interval=1)
