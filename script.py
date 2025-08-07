@@ -67,7 +67,7 @@ load_dotenv()
 
 ADMIN_ID = 571718066  # Remplace par ton ID Telegram
 
-CANAL_B_ID = -1002039134942
+CANAL_B_ID = 1002039134942
 ASK_BROADCAST = 99
 
 
@@ -188,7 +188,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
             if file_id:
                 # Réutiliser le file_id
-                await context.bot.send_video(chat_id=user_id , video=file_id, caption="Bienvenue ! 🎉")
+                await context.bot.send_video(chat_id=user_id , video=file_id, caption="")
                 
 
                 
