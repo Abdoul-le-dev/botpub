@@ -105,6 +105,10 @@ async def broadcast_messages(bot, admin_id, context_user_data):
     user_ids = liste_unique
     
     total = len(liste_unique)
+
+    await bot.send_message(admin_id,
+              f"📤 Envoi du message à {total} ")
+    return
     user_ids = liste_unique
     sent = 0
 
