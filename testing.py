@@ -99,6 +99,9 @@ async def broadcast_messages(bot, admin_id, context_user_data):
     conn.close()
     user_idss = [row[0] for row in only]
     user_ids = [row[0] for row in rows]
+
+    liste_1 = len(user_ids)
+    liste_2 = len(user_idss)
    
     liste_unique = list(set(user_ids) | set(user_idss))
 
@@ -107,7 +110,7 @@ async def broadcast_messages(bot, admin_id, context_user_data):
     total = len(liste_unique)
 
     await bot.send_message(admin_id,
-              f"📤 Envoi du message à {total} ")
+              f"📤 Envoi du message à {total} , liste a = {liste_1} et liste b = {liste_2} utilisateurs en cours... check avant le lancement")
     return
     user_ids = liste_unique
     sent = 0
