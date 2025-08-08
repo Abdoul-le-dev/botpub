@@ -91,13 +91,21 @@ async def get_text(update, context):
 async def broadcast_messages(bot, admin_id, context_user_data):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
-    #cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
-    cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
+    cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
+    only = cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
     rows = cursor.fetchall()
+    only = only.fetchall()
+    
     conn.close()
-
+    user_idss = [row[0] for row in only]
     user_ids = [row[0] for row in rows]
-    total = len(user_ids)
+   
+    liste_unique = list(set(user_ids) | set(user_idss))
+
+    user_ids = liste_unique
+    
+    total = len(liste_unique)
+    user_ids = liste_unique
     sent = 0
 
     est = round(total * 0.1 / 60, 2)
