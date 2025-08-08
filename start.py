@@ -449,7 +449,7 @@ async def get_discovery(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["discovery"] = update.message.text
 
     # Confirmation
-    
+    chat_id=update.effective_chat.id
 
     message = await update.message.reply_text(
         "✅ *Merci pour toutes ces infos précieuses !*\n\n"    
@@ -508,9 +508,7 @@ async def get_discovery(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("ok")
 
 
-    await asyncio.sleep(300)
-
-    await message.delete()
+    asyncio.create_task(delete_and_offer_later(context, chat_id, message.message_id))    
     return ConversationHandler.END
 
 
@@ -607,6 +605,8 @@ async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 '''
 
+
+
 async def delete_and_offer_later(context, chat_id, message_id):
     await asyncio.sleep(300)  # 5 minutes
 
@@ -615,17 +615,3 @@ async def delete_and_offer_later(context, chat_id, message_id):
     except Exception as e:
         print(f"❌ Erreur suppression : {e}")
 
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🎓 Suivre la formation gratuite 📈", url="https://app.rmiclass.net/reff/538699")]
-    ])
-
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=(
-            "⏳ Ton lien a expiré !\n\n"
-            "⏳⏰ En attendant dimanche, profite *GRATUITEMENT* de notre initiation au trading ici 👉\n\n"
-            "Rends-toi sur https://app.rmiclass.net/reff/538699, crée ton compte, puis découvre notre initiation au trading."
-        ),
-        reply_markup=keyboard,
-        parse_mode="Markdown"
-    )
