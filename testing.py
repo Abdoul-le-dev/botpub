@@ -142,6 +142,7 @@ async def broadcast_messages(bot, admin_id, context_user_data):
                 await bot.send_message(chat_id=user_id, text=texte)
 
             sent += 1
+            print(f"sent: {sent} messages")
 
         except Exception:
             pass
