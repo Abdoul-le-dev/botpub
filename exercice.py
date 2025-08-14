@@ -147,18 +147,18 @@ def build_result_message(answers, total_time,user_id, categorie_name):
     if correct_count < 5:
         msg += "\n\n🔄 `Ta note est inférieure à 5/10, tu peux retenter l'exercice clique juste sur \n` /jeRecommence"
         return msg, correct_count,promo
-    if correct_count >= 6 and user_has_categorie(user_id,'leseminaire') == None:  
-        promo =  (
-    "🎉 *Bravo !* 🎉\n"
-    "Tu fais partie de ceux qui ont décroché *6/10 ou plus* à notre test 📝💪\n"
-    "C’est déjà un bon pas, mais le meilleur reste à venir… 🚀\n\n"
-    "🔥 Tu as fait tes preuves, et tu *mérites d’être avec nous* 💪🔥\n"
-    "Pour toi : *une offre exclusive de -50%*, valable *uniquement ce soir* ⏳✨\n\n"
-    "🚀 Ne laisse pas passer ta chance…\n"
-    "👉 Lien de paiement : https://me.fedapay.com/pJUafYc0\n\n"
-    "*Paiement crypto USDT TRC20*\n"
-    "Adresse : `TUxRmHjGo9uJDiYGTEKCG6GxXsYcfcpCgu`"
-)
+    if correct_count >= 6 and not user_has_categorie(user_id,'leseminaire'):
+        promo = (
+        "🎉 *Bravo !* 🎉\n"
+        "Tu fais partie de ceux qui ont décroché *6/10 ou plus* à notre test 📝💪\n"
+        "C’est déjà un bon pas, mais le meilleur reste à venir… 🚀\n\n"
+        "🔥 Tu as fait tes preuves, et tu *mérites d’être avec nous* 💪🔥\n"
+        "Pour toi : *une offre exclusive de -50%*, valable *uniquement ce soir* ⏳✨\n\n"
+        "🚀 Ne laisse pas passer ta chance…\n"
+        "👉 Lien de paiement : https://me.fedapay.com/pJUafYc0\n\n"
+        "*Paiement crypto USDT TRC20*\n"
+        "Adresse : `TUxRmHjGo9uJDiYGTEKCG6GxXsYcfcpCgu`"
+    )
         
 
     update_arg(user_id,categorie_name)
@@ -315,7 +315,7 @@ async  def receive_answers(update: Update, Context: ContextTypes.DEFAULT_TYPE):
         del sessions[user_id]
         await query.message.reply_text(msg, parse_mode="Markdown")
         print(promo)
-        if promo != "":
+        if promo:
             await query.message.reply_text(promo, parse_mode="Markdown")
         
 
