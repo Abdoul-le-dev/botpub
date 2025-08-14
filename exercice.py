@@ -146,7 +146,7 @@ def build_result_message(answers, total_time,user_id, categorie_name):
     # Invitation à recommencer si note < 5
     if correct_count < 5:
         msg += "\n\n🔄 `Ta note est inférieure à 5/10, tu peux retenter l'exercice clique juste sur \n` /jeRecommence"
-        return msg, correct_count
+        return msg, correct_count,promo
     if correct_count >= 6 and user_has_categorie(user_id,'leseminaire') == None:  
         promo =  (
     "🎉 *Bravo !* 🎉\n"
