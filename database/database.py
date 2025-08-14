@@ -497,3 +497,16 @@ def delete_user_data_from_db(user_id):
 
     conn.commit()
     conn.close()
+
+def delete_all_exercices():
+    
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("DELETE FROM exercice")
+        conn.commit()
+        print("Toutes les données de la table 'exercice' ont été supprimées.")
+    except sqlite3.Error as e:
+        print(f"Erreur lors de la suppression : {e}")
+    finally:
+        conn.close()    

@@ -8,7 +8,7 @@ from database.database import save_message
 from database.database import update_user_info
 from database.database import add_categorie,verify_categorie
 from database.database import user_has_categorie
-from database.database import save_user_default
+from database.database import save_user_default,delete_all_exercices
 from user_data import user_info
 from database.database import get_file_id
 from database.database import save_file_id
@@ -446,6 +446,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("LesGagnants", export_and_send_pdf))
 
     app.add_handler(CommandHandler("lastMessage", last_message))
+    app.add_handler(CommandHandler("delete_all_exercices", delete_all_exercices))
 
     app.add_handler(CommandHandler("userInfo", user_info))
 
