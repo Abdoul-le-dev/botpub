@@ -4,11 +4,11 @@ from jeu import export_and_send_pdf
 from database.database import init_db
 from database.database import save_user
 from database.database import user_exists
-from database.database import save_message
+from database.database import save_message,verify_categorie
 from database.database import update_user_info
 from database.database import add_categorie
 from database.database import get_file_id
-from database.database import save_file_id
+from database.database import save_file_id, create_args
 from database.database import user_has_categorie
 from telegram.error import TimedOut
 
@@ -41,19 +41,91 @@ async def wait_5_minutes():
     await asyncio.sleep(300)    
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None):
+async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None):
     user = update.effective_user
     user_id = user.id
 
-    args = context.args
+    args = Context.args
     print(args)
     #PromoV100
     name = "leseminaire" 
+    if args and args[0] != name:
+        if verify_categorie(args[0]) != None:
+            #and user_has_categorie(user_id,name):
+
+            if verify_categorie(args[0]) == 'non_verify':   
+                await Context.bot.send_message(
+                    chat_id=user_id,
+                    text = (
+                        "L'exercice du jour n'est pas encore valider merci de patienté.\n"
+                        
+                    ),
+                    parse_mode="Markdown"  
+                )
+                return ConversationHandler.END
+
+            print(create_args(user_id,args[0], 0))
+
+            if create_args(user_id,args[0], 0) == 'already':
+                await update.message.reply_text(
+                    "Tu as déja traiter tes exercices"
+                )
+                return ConversationHandler.END
+
+            await Context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "__**🔥 Le challenge du séminaire démarre maintenant !**__\n\n"
+                    "💪 Clique sur :\n"
+                    "/commencerMesExerciesDuSeminaire pour relever le défi.\n\n"
+                    "🎯 10 jours, 100 points… 🚀"
+                ),
+                parse_mode="Markdown"
+            )
+            return ConversationHandler.END
+        else:
+            if user_has_categorie(user_id,name) == None:
+                await Context.bot.send_message(
+                    chat_id=user_id,    
+                    text = (
+                        "⚠️⚠️⚠️ Tu n'as pas encore accès au séminaire.\n"
+                        "Tu dois d'abord t'inscrire et payer pour y participer.\n\n"
+                        "💰 Pour plus d'informations, contacte @Fiacrekpanou."
+                    ),
+                    parse_mode="Markdown" )
+                return ConversationHandler.END
+                
+
+            if verify_categorie(args[0]) == 'non_verify':
+                await Context.bot.send_message(
+                    chat_id=user_id,
+                    text = (
+                        "L'exercice du jour n'est pas encore valider merci de patienté.\n"
+                        
+                    ),
+                    parse_mode="Markdown"  
+                )
+                return ConversationHandler.END
+            if verify_categorie(args[0]) == None:
+                await Context.bot.send_message(
+                    chat_id=user_id,
+                    text = (
+                        "Ce lien n'exite pas dans mon système.\n"
+                        
+                    ),
+                    parse_mode="Markdown"  
+                )
+                return ConversationHandler.END
+        
+        
+   
+            
+
     if args and args[0] == name:
         
         #le user a fini son process
         if user_has_categorie(user_id,name):
-            await context.bot.send_message(
+            await Context.bot.send_message(
                 chat_id=user_id,
                 text=(
                     "👌 **Tu as terminé ton process ✅**\n"
@@ -70,7 +142,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
             #le user existe dans la base
             if user_exists(user_id):
 
-                context.user_data["args"] = args[0]
+                Context.user_data["args"] = args[0]
                 type = "leseminaire"
 
                 try:
@@ -100,7 +172,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
                     return EMAIL   
                 except TimedOut: 
 
-                    await context.bot.send_message(
+                    await Context.bot.send_message(
                         chat_id=user_id,
                         text ="__**😂 Ne réponds pas au message précédent, je sais que tu es ravi, moi aussi d’ailleurs !**__\n\n"
                                     "📧 `Pour traiter tes demandes en priorité, donne-nous ton adresse mail, vu que tu fais maintenant partie de la famille.`\n\n"
@@ -113,7 +185,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
             else:
 
-                context.user_data["args"] = args[0]
+                Context.user_data["args"] = args[0]
 
                 await update.message.reply_text(
                     "🎉 *Félicitations à toi!*\n\n"
@@ -162,7 +234,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
             if file_id:
                 # Réutiliser le file_id
-                #await context.bot.send_video(chat_id=chat_id, video=file_id, caption="Bienvenue ! 🎉")
+                #await Context.bot.send_video(chat_id=chat_id, video=file_id, caption="Bienvenue ! 🎉")
 
                 await update.message.reply_text(
                
@@ -182,7 +254,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
             else:
                 # Envoyer depuis fichier local, puis sauvegarder le file_id
                 video_path = "welcome.mp4"
-               # msg = await context.bot.send_video(chat_id=chat_id, video=video_path, caption="Bienvenue ! 🎉")
+               # msg = await Context.bot.send_video(chat_id=chat_id, video=video_path, caption="Bienvenue ! 🎉")
                # new_file_id = msg.video.file_id
                 #save_file_id(video_name, new_file_id)
                 print("1")
@@ -204,7 +276,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE, chat_id=None
         
         return WHY
 
-async def get_why(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_why(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     response = update.message.text.strip()
 
     why_map = {
@@ -222,7 +294,7 @@ async def get_why(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return WHY
 
-    context.user_data["why"] = why_map[response]
+    Context.user_data["why"] = why_map[response]
 
     await update.message.reply_text(
     "🎯Parfait, chacun rejoint ce canal avec une attente différente… \n\n"
@@ -239,7 +311,7 @@ async def get_why(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return WHAT
 
-async def get_what(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_what(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     response = update.message.text.strip()
 
     expectation_map = {
@@ -257,7 +329,7 @@ async def get_what(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return WHAT
 
-    context.user_data["what"] = expectation_map[response]
+    Context.user_data["what"] = expectation_map[response]
 
     # Ensuite tu peux rediriger vers la prochaine étape, par exemple vers `get_level`
     await update.message.reply_text(
@@ -274,7 +346,7 @@ async def get_what(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return LEVEL
 
-async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_level(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     response = update.message.text.strip()
 
     niveau_map = {
@@ -288,7 +360,7 @@ async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Réponse invalide. Merci de répondre uniquement avec : 1, 2 ou 3."
         )
         return LEVEL
-    context.user_data["level"] = niveau_map[response]
+    Context.user_data["level"] = niveau_map[response]
 
     await update.message.reply_text(
     "👋 Alors, dis-moi comment on t’appelle ?\n\n"
@@ -303,17 +375,17 @@ async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return NAME
 
 
-async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_name(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
     if not update.message or not update.message.text:
         if update.effective_chat:
-            await context.bot.send_message(
+            await Context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text="❌ Merci d’envoyer un texte valide."
             )
         return NAME
     
-    context.user_data["name"] = update.message.text
+    Context.user_data["name"] = update.message.text
     await update.message.reply_text(
     "📞 Quel est ton numéro de téléphone ?\n\n"
     "🌍 Voici le mien : +22997203304 \n"
@@ -322,33 +394,33 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return PHONE
 
-async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_phone(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         if update.effective_chat:
-            await context.bot.send_message(
+            await Context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text="❌ Merci d’envoyer ton numéro."
             )
         return PHONE
     
-    context.user_data["phone"] = update.message.text
+    Context.user_data["phone"] = update.message.text
     await update.message.reply_text("🌍 Dans quel pays vis-tu ?")
     return COUNTRY
 
-async def get_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_country(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
     user = update.effective_user
     user_id = user.id
-    context.user_data["country"] = update.message.text
+    Context.user_data["country"] = update.message.text
     if not update.message or not update.message.text:
         if update.effective_chat:
-            await context.bot.send_message(
+            await Context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text="❌ Merci d’envoyer le nom de ton pays."
             )
         return COUNTRY
     # Enregistre les informations de l'utilisateur dans la base de données
-    data = context.user_data
+    data = Context.user_data
     if  "args" in data and data["args"] == "leseminaire":
 
       
@@ -364,15 +436,15 @@ async def get_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return EMAIL
     else:
         save_user(
-                context.user_data["name"],
-                context.user_data["phone"],
-                context.user_data["country"],
+                Context.user_data["name"],
+                Context.user_data["phone"],
+                Context.user_data["country"],
                 user_id,
-                email=context.user_data.get("email"),
-                motivation=context.user_data.get("motivation"),
-                level=context.user_data.get("level"),
-                why= context.user_data.get("why"),
-                what= context.user_data.get("what")
+                email=Context.user_data.get("email"),
+                motivation=Context.user_data.get("motivation"),
+                level=Context.user_data.get("level"),
+                why= Context.user_data.get("why"),
+                what= Context.user_data.get("what")
 
             )  
 
@@ -390,7 +462,7 @@ async def get_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         
         
-        if context.user_data.get("level") =="Débutant":
+        if Context.user_data.get("level") =="Débutant":
             await wait_5_seconds()
             await update.message.reply_text(
             "🎓 *Tu m'as indiqué être débutant ! Parfait.*\n\n"
@@ -410,13 +482,13 @@ async def get_country(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     
 
-async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_email(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
     if not update.message or not update.message.text or "@" not in update.message.text:
         await update.message.reply_text("❌ Merci d’envoyer une adresse email valide.")
         return EMAIL
     # Enregistre l'email de l'utilisateur
-    context.user_data["email"] = update.message.text
+    Context.user_data["email"] = update.message.text
 
     # Demande la motivation pour rejoindre la formation
     await update.message.reply_text(
@@ -427,12 +499,12 @@ async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return EXPECTATIONS
 
 
-async def get_expectations(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_expectations(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         await update.message.reply_text("❌ N’hésite pas à nous dire ce que tu espères retirer de cette masterclass.")
         return EXPECTATIONS
 
-    context.user_data["expectations"] = update.message.text
+    Context.user_data["expectations"] = update.message.text
     await update.message.reply_text(
         "📢 *Comment as-tu connu cette masterclass ?*\n\n"
         "Par exemple : Instagram, WhatsApp,Tiktok, recommandation, publicité, etc.",
@@ -441,12 +513,12 @@ async def get_expectations(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return DISCOVERY
 
 
-async def get_discovery(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_discovery(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         await update.message.reply_text("❌ Merci de préciser comment tu nous as découvert.")
         return DISCOVERY
 
-    context.user_data["discovery"] = update.message.text
+    Context.user_data["discovery"] = update.message.text
 
     # Confirmation
     chat_id=update.effective_chat.id
@@ -468,25 +540,25 @@ async def get_discovery(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Enregistrement (personnalise avec ta fonction save_user)
 
-    data = context.user_data
+    data = Context.user_data
     user = update.effective_user
     if "name" in data and data["name"] is not None:
         user = update.effective_user
         save_user(
-            name=context.user_data.get("name"),
-            phone=context.user_data.get("phone"),
-            country=context.user_data.get("country"),
+            name=Context.user_data.get("name"),
+            phone=Context.user_data.get("phone"),
+            country=Context.user_data.get("country"),
             telegram_id=user.id,
-            contexte_user=context.user_data.get("args"),
-            email=context.user_data.get("email"),
-            motivation=context.user_data.get("motivation"),
-            level=context.user_data.get("level"),
-            why= context.user_data.get("why"),
-            what= context.user_data.get("what"),           
-            expectations=context.user_data.get("expectations"),
-            discovery = context.user_data.get("discovery")
+            Contexte_user=Context.user_data.get("args"),
+            email=Context.user_data.get("email"),
+            motivation=Context.user_data.get("motivation"),
+            level=Context.user_data.get("level"),
+            why= Context.user_data.get("why"),
+            what= Context.user_data.get("what"),           
+            expectations=Context.user_data.get("expectations"),
+            discovery = Context.user_data.get("discovery")
         )
-        add_categorie(user.id, context.user_data.get("args"))
+        add_categorie(user.id, Context.user_data.get("args"))
         print("yes")
 
     else:
@@ -494,28 +566,28 @@ async def get_discovery(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             update_user_info(
                 telegram_id=user.id,
-                email=context.user_data.get("email"),
-                expectations=context.user_data.get("expectations"),
+                email=Context.user_data.get("email"),
+                expectations=Context.user_data.get("expectations"),
                
-                discovery = context.user_data.get("discovery"))
+                discovery = Context.user_data.get("discovery"))
         except BadRequest as e:
             print(f"❌ Erreur lors de la mise à jour des informations utilisateur : {e}")
             await update.message.reply_text(
                 "❌ Une erreur est survenue lors de la mise à jour de tes informations. Merci de réessayer plus tard."
             )
           
-        add_categorie(user.id, context.user_data.get("args"))
+        add_categorie(user.id, Context.user_data.get("args"))
         print("ok")
 
 
-    asyncio.create_task(delete_and_offer_later(context, chat_id, message.message_id))    
+    asyncio.create_task(delete_and_offer_later(Context, chat_id, message.message_id))    
     return ConversationHandler.END
 
 
 '''
-async def get_motivation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_motivation(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     # Enregistre la motivation de l’utilisateur
-    context.user_data["motivation"] = update.message.text
+    Context.user_data["motivation"] = update.message.text
 
     # Demande maintenant le niveau en trading
     await update.message.reply_text(
@@ -530,7 +602,7 @@ async def get_motivation(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_level(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     response = update.message.text.strip()
 
     niveau_map = {
@@ -545,7 +617,7 @@ async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return LEVEL
 
-    context.user_data["level"] = niveau_map[response]
+    Context.user_data["level"] = niveau_map[response]
 
     user = update.effective_user
     user_id = user.id
@@ -553,32 +625,32 @@ async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_exists(user_id):
 
-        update_user_info(user_id,context.user_data.get("email"),context.user_data.get("motivation"),context.user_data.get("level"))
+        update_user_info(user_id,Context.user_data.get("email"),Context.user_data.get("motivation"),Context.user_data.get("level"))
 
         print( 
             user_id,
-            context.user_data.get("email"),
-            context.user_data.get("motivation"),
-            context.user_data.get("level"))  
+            Context.user_data.get("email"),
+            Context.user_data.get("motivation"),
+            Context.user_data.get("level"))  
         
     else :
         save_user(
-            context.user_data["name"],
-            context.user_data["phone"],
-            context.user_data["country"],
+            Context.user_data["name"],
+            Context.user_data["phone"],
+            Context.user_data["country"],
             user_id,
-            email=context.user_data.get("email"),
-            motivation=context.user_data.get("motivation"),
-            level=context.user_data.get("level")
+            email=Context.user_data.get("email"),
+            motivation=Context.user_data.get("motivation"),
+            level=Context.user_data.get("level")
         )  
 
-        print( context.user_data["name"],
-            context.user_data["phone"],
-            context.user_data["country"],
+        print( Context.user_data["name"],
+            Context.user_data["phone"],
+            Context.user_data["country"],
             user_id,
-            context.user_data.get("email"),
-            context.user_data.get("motivation"),
-            context.user_data.get("level"))
+            Context.user_data.get("email"),
+            Context.user_data.get("motivation"),
+            Context.user_data.get("level"))
 
     #Ajoute la catégorie "V100" à l'utilisateur    
 
@@ -596,7 +668,7 @@ async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     parse_mode="Markdown"
 )
 
-    asyncio.create_task(delete_and_offer_later(context, chat_id, message.message_id))
+    asyncio.create_task(delete_and_offer_later(Context, chat_id, message.message_id))
 
    
 
@@ -607,11 +679,11 @@ async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-async def delete_and_offer_later(context, chat_id, message_id):
+async def delete_and_offer_later(Context, chat_id, message_id):
     await asyncio.sleep(300)  # 5 minutes
 
     try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        await Context.bot.delete_message(chat_id=chat_id, message_id=message_id)
     except Exception as e:
         print(f"❌ Erreur suppression : {e}")
 

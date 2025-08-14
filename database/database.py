@@ -18,6 +18,10 @@ def init_db():
 
 
 
+import sqlite3
+
+def get_conn():
+    return sqlite3.connect('preinscriptions.db')
 
 def save_user(name, phone, country=None, telegram_id=None,contexte_user=None,email=None, motivation=None, level=None,why=None, what=None, expectations=None, discovery=None):
     conn = sqlite3.connect('preinscriptions.db')
@@ -166,4 +170,330 @@ def save_user_default(user_id):
     cur.execute("INSERT INTO usersdefault (user_id,created_at) VALUES (?, ?)", (user_id,now))
     conn.commit()
     conn.close() 
-    print("User default saved:", user_id)      
+    print("User default saved:", user_id)  
+
+
+
+def add_exercice(question, answer, explanation, categorie_id):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        INSERT INTO exercice (question, answer, explanation, categorie_id)
+        VALUES (?, ?, ?, ?)
+    ''', (question, answer, explanation, categorie_id))
+
+    conn.commit()
+    conn.close()
+    print("✅ Nouvel exercice ajouté avec succès.")
+
+import sqlite3
+
+def add_categorie_exercice(nom, admin_verify=False):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    cursor.execute('''
+        INSERT INTO categorie_exercice (nom, admin_verify)
+        VALUES (?, ?)
+    ''', (nom, int(admin_verify)))
+
+    conn.commit()
+    categorie_id = cursor.lastrowid  # Récupérer l'ID de la nouvelle catégorie
+    conn.close()
+
+    return categorie_id
+def add_exercice_with_limit(question, answer, explanation, categorie_id):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    # Vérifier combien de questions existent déjà dans cette catégorie
+    cursor.execute('SELECT COUNT(*) FROM exercice WHERE categorie_id = ?', (categorie_id,))
+    nb_questions = cursor.fetchone()[0]
+
+    if nb_questions >= 10:
+        conn.close()
+        return False, "❌ Cette catégorie a déjà 10 questions maximum."
+
+    # Insérer la nouvelle question
+    cursor.execute('''
+        INSERT INTO exercice (question, answer, explanation, categorie_id)
+        VALUES (?, ?, ?, ?)
+    ''', (question, answer, explanation, categorie_id))
+
+    conn.commit()
+    conn.close()
+    return True, "✅ Exercice ajouté avec succès."
+
+def verifier_et_valider_categorie(categorie_id):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    # Vérifier que la catégorie existe
+    cursor.execute('SELECT nom, admin_verify FROM categorie_exercice WHERE id = ?', (categorie_id,))
+    result = cursor.fetchone()
+    if not result:
+        conn.close()
+        return False, "❌ Catégorie introuvable."
+
+    nom, admin_verify = result
+    if admin_verify:
+        conn.close()
+        return False, f"⚠️ La catégorie '{nom}' est déjà validée."
+
+    # Mettre à jour admin_verify à 1
+    cursor.execute('UPDATE categorie_exercice SET admin_verify = 1 WHERE id = ?', (categorie_id,))
+    conn.commit()
+    conn.close()
+    return True, f"✅ Catégorie '{nom}' validée avec succès."
+
+def get_questions(categorie_id):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT id, question, answer, explanation 
+        FROM exercice WHERE categorie_id = ? LIMIT 10
+    ''', (categorie_id,))
+    questions = cursor.fetchall()
+    conn.close()
+    return questions  # liste de tuples (id, question, answer, explanation)
+
+def save_user_answer(user_id, categorie_id, question_id, user_answer, start_time, end_time, second_time=False):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO resultat_student_question
+        (id_user, categorie_id, question_id, answer, time_start, time_end, second_time)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (user_id, categorie_id, question_id, user_answer, start_time, end_time, second_time))
+    conn.commit()
+    conn.close()
+def save_daily_result(user_id, categorie_id, time_start, time_end, note, second_time=False):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO resultat_student_day
+        (id_user, categorie_id, time_start, time_end, note, second_time)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (user_id, categorie_id, time_start, time_end, note, second_time))
+    conn.commit()
+    conn.close()
+
+import sqlite3
+
+def verify_categorie(name):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    
+    cursor.execute(
+        'SELECT admin_verify FROM categorie_exercice WHERE nom = ?',
+        (name,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    
+    if row is None:
+        # La catégorie n'existe pas
+        return None
+    elif row[0] == 1:
+        # La catégorie existe et est vérifiée
+        return True
+    else:
+        # La catégorie existe mais n'est pas vérifiée
+        return "non_verify"
+
+
+
+
+def create_args(id_user: int, args_value: str, use_it: bool):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    
+    # Vérifier si le user avec cet args existe déjà
+    cursor.execute(
+        "SELECT 1 FROM args WHERE id_user = ? AND args = ? AND use_it = ?",
+        (id_user, args_value,1)
+    )
+    exists = cursor.fetchone()
+    
+    if exists:
+        print("⚠ Déjà existant : id_user et args correspondent")
+        conn.close()
+        return "already"
+    
+    # Insérer seulement si non existant
+    cursor.execute(
+        "SELECT 1 FROM args WHERE id_user = ? AND args = ? AND use_it = ?",
+        (id_user, args_value,0)
+    )
+    exist = cursor.fetchone()
+    if exist:
+        print("⚠ Déjà existant : id_user et args correspondent")
+        conn.close()
+        return ""
+    cursor.execute(
+        "INSERT INTO args (id_user, args, use_it) VALUES (?, ?, ?)",
+        (id_user, args_value, int(use_it))
+    )
+    conn.commit()
+    conn.close()
+    print(f"✔ Arg créé : id_user={id_user}, args='{args_value}', use_it={use_it}")
+    return "created"
+
+
+
+# Fonction pour supprimer un enregistrement par ID
+def delete_args(id_user: int):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM args WHERE id_user = ?", (id_user,))
+    conn.commit()
+    print(f"🗑 Arg avec id={id_user} supprimé.")
+
+def check_if_user(id_user: int):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM args WHERE id_user = ?", (id_user,))
+    rows = cursor.fetchall()
+    if rows:
+        print(f"✅ L'utilisateur {id_user} existe dans args :")
+        for row in rows:
+            print(row)
+        return True
+    else:
+        print(f"❌ Aucun enregistrement trouvé pour id_user={id_user}")
+        return False
+
+def get_user_args(id_user: int):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT args FROM args WHERE id_user = ? AND use_it = 0 ", (id_user,))
+    rows = cursor.fetchone()
+    # Formatage simple des résultats en liste de dictionnaires
+    result = rows[0] if rows else None
+    return result
+
+def get_categories(args):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM categorie_exercice WHERE nom = ?", (args,))
+    rows = cursor.fetchone()
+    result = rows[0] if rows else None
+    return result
+   
+def update_arg(id_user: int, args_value: str):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    
+    cursor.execute(
+        "UPDATE args SET use_it = 1 WHERE id_user = ? AND args = ?",
+        (id_user, args_value)
+    )
+    conn.commit()
+    updated_rows = cursor.rowcount
+    conn.close()
+
+    if updated_rows > 0:
+        print(f"✔ Arg mis à jour : id_user={id_user}, args='{args_value}', use_it=1")
+        return True
+    else:
+        print(f"⚠ Aucun enregistrement trouvé pour id_user={id_user} et args='{args_value}'")
+        return False   
+
+def get_final_score(user_id):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    # Récupérer toutes les catégories où l'étudiant a participé
+    cursor.execute("""
+        SELECT DISTINCT categorie_id
+        FROM resultat_student_day
+        WHERE id_user = ?
+    """, (user_id,))
+    categories = cursor.fetchall()
+
+    total_score = 0.0
+
+    for (categorie_id,) in categories:
+        # Chercher en priorité second_time = 1
+        cursor.execute("""
+            SELECT note
+            FROM resultat_student_day
+            WHERE id_user = ? AND categorie_id = ? AND second_time = 1
+            ORDER BY id DESC
+            LIMIT 1
+        """, (user_id, categorie_id))
+        row = cursor.fetchone()
+
+        if row is None:
+            # Sinon, prendre la première ligne trouvée
+            cursor.execute("""
+                SELECT note
+                FROM resultat_student_day
+                WHERE id_user = ? AND categorie_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+            """, (user_id, categorie_id))
+            row = cursor.fetchone()
+
+        if row and row[0] is not None:
+            try:
+                total_score += float(row[0])  # conversion sécurisée
+            except ValueError:
+                pass  # si note est invalide, on ignore
+
+    conn.close()
+    return total_score
+
+conn = sqlite3.connect('preinscriptions.db')
+def get_category_questions_report(categorie_id):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT 
+            rsq.question_id,
+            e.question,
+            COUNT(*) AS total_reponses,
+            SUM(
+                CASE 
+                    WHEN LOWER(TRIM(rsq.answer)) = LOWER(TRIM(e.answer)) 
+                    THEN 1 ELSE 0 
+                END
+            ) AS bonnes_reponses,
+            ROUND(
+                (SUM(
+                    CASE 
+                        WHEN LOWER(TRIM(rsq.answer)) = LOWER(TRIM(e.answer)) 
+                        THEN 1 ELSE 0 
+                    END
+                ) * 100.0) / COUNT(*), 
+                2
+            ) AS pourcentage
+        FROM resultat_student_question rsq
+        JOIN exercice e 
+            ON rsq.question_id = e.id
+        WHERE rsq.categorie_id = ? 
+          AND rsq.second_time = 0
+        GROUP BY rsq.question_id, e.question
+        ORDER BY pourcentage DESC
+    """, (categorie_id,))
+    
+    results = cursor.fetchall()
+    if not results:
+        return f"Aucune donnée pour la catégorie {categorie_id}."
+
+    rapport = f"📊 Rapport Catégorie {categorie_id} (première tentative, Vrai/Faux) :\n"
+    for q_id, question, total, bonnes, pct in results:
+        rapport += f"Q{q_id} : {pct}% ({bonnes}/{total} bonnes réponses)\n"
+    return rapport
+
+def delete_user_data_from_db(user_id):
+  
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM resultat_student_day WHERE id_user = ?", (user_id,))
+    cursor.execute("DELETE FROM resultat_student_question WHERE id_user = ?", (user_id,))
+    cursor.execute("DELETE FROM args WHERE id_user = ?", (user_id,))
+
+    conn.commit()
+    conn.close()

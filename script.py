@@ -3,10 +3,10 @@ from telegram import Update
 from jeu import export_and_send_pdf
 from database.database import init_db
 from database.database import save_user
-from database.database import user_exists
+from database.database import user_exists,delete_user_data_from_db
 from database.database import save_message
 from database.database import update_user_info
-from database.database import add_categorie
+from database.database import add_categorie,verify_categorie
 from database.database import user_has_categorie
 from database.database import save_user_default
 from user_data import user_info
@@ -45,7 +45,7 @@ import string
 from message_de_masse import broadcast_message
 from stats import last_message
 from telegram import Update
-from telegram.ext import ContextTypes
+
 
 from telegram.error import BadRequest
 
@@ -58,9 +58,13 @@ import time
 
 import json
 
-from constance import NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS,EMAIL, EXPECTATIONS,DISCOVERY
+from constance import CHOISIR_CATEGORIE,NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS,EMAIL, EXPECTATIONS,DISCOVERY,WAITING_ANSWER
 
-from constance import CATEGORIE, NOMBRE_QUESTIONS, QUESTION, NB_CHOIX, CHOIX, REPONSE_SUIVANTE
+from constance import ASK_USER_ID,CATEGORIE, NOMBRE_QUESTIONS, QUESTION, NB_CHOIX, CHOIX, REPONSE_SUIVANTE
+
+from constance import QUESTION, ANSWER, EXPLANATION, CATEGORIE,  NOM_CATEGORIE
+
+from exercice import recevoir_categorie,start_rapport,start_add_exercice, get_question, get_answer, get_explanation, get_categorie, cmd_verify_categorie,start_exercice,receive_answer,start_add_categorie, get_nom_categorie
 
 type =""
 load_dotenv()
@@ -81,7 +85,7 @@ def generate_filename():
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
     return f"preinscriptions_{suffix}.xlsx"
 
-async def export_and_send_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def export_and_send_messages(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     # Connexion et récupération des messages
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
@@ -98,10 +102,10 @@ async def export_and_send_messages(update: Update, context: ContextTypes.DEFAULT
 
     
     with open("messages.json", "rb") as file:
-        await context.bot.send_document(chat_id=ADMIN_ID, document=file, caption="📄 Fichier des messages")
+        await Context.bot.send_document(chat_id=ADMIN_ID, document=file, caption="📄 Fichier des messages")
 
 
-async def export_and_send_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def export_and_send_excel(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
 
@@ -114,11 +118,11 @@ async def export_and_send_excel(update: Update, context: ContextTypes.DEFAULT_TY
     df.to_excel(filename, index=False)
 
     # Envoi à l’administrateur
-    await context.bot.send_document(chat_id=update.effective_user.id , document=open(filename, "rb"))
+    await Context.bot.send_document(chat_id=update.effective_user.id , document=open(filename, "rb"))
 
     await update.message.reply_text("📤 Exportation réussie. Fichier envoyé à l’administrateur.")
 
-async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     user = update.chat_join_request.from_user
     user_id = user.id
     user_name = update.effective_user.first_name or " Futur trader"
@@ -127,7 +131,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
     save_user_default(user_id)
 
-    args = context.args
+    args = Context.args
     print("chat_id")
     print(chat_id)
     print(args)
@@ -141,9 +145,9 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
                 print("Déjà membre, il est membre.") 
                 print(e)     
                 return
-        await context.bot.send_message(
+        await Context.bot.send_message(
             chat_id=user_id,
-            text=(
+            TEXT=(
                 "👌 **C'est bon je t'ai intégré au canal ✅**\n"
                 "*C'est pour bientôt et prépare toi, je te dirai tout !*\n\n"
                 "📌 *Épingle ce canal* pour rester à l'affût des **nouvelles informations**."
@@ -161,9 +165,9 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     
     if chat_id == CANAL_B_ID:
         # Par exemple, tu interdis l’entrée
-        await context.bot.send_message(
+        await Context.bot.send_message(
             chat_id=user.id,
-            text=(
+            TEXT=(
                 "❌ *Doucement, on ne triche pas !* \n\n"
                 "Tu n'es **pas autorisé** à rejoindre ce canal.\n"
                 "🚫 Tu es maintenant *banni à vie* de ce canal.\n\n"
@@ -172,7 +176,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
             parse_mode="Markdown"
         )
 
-        await context.bot.decline_chat_join_request(chat_id, user.id)
+        await Context.bot.decline_chat_join_request(chat_id, user.id)
         return
     else:
         try:
@@ -189,7 +193,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
             if file_id:
                 # Réutiliser le file_id
-                await context.bot.send_video(chat_id=user_id , video=file_id, caption="")
+                await Context.bot.send_video(chat_id=user_id , video=file_id, caption="")
                 
 
                 
@@ -199,16 +203,16 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
             else:
                 # Envoyer depuis fichier local, puis sauvegarder le file_id
                 video_path = "welcome.mp4"
-                msg = await context.bot.send_video(chat_id=user_id , video=video_path, caption="Bienvenue ! 🎉")
+                msg = await Context.bot.send_video(chat_id=user_id , video=video_path, caption="Bienvenue ! 🎉")
                 new_file_id = msg.video.file_id
                 save_file_id(video_name, new_file_id)
                 
                 
 
             
-            await context.bot.send_message(
+            await Context.bot.send_message(
             chat_id=user_id,
-            text="🔥🔥✍️  Clique sur /JeMEnregistre Maintenant"
+            TEXT="🔥🔥✍️  Clique sur /JeMEnregistre Maintenant"
             )
 
             
@@ -216,10 +220,10 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
             print(f"Impossible d’envoyer un message à {user_id} : {e}")
      
 
-async def user_imformation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def user_imformation(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
 
-async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def log_unhandled_message(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     msg = update.message
 
@@ -228,12 +232,12 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
     user_id = user.id
 
     if not msg:
-        print("⚠️ Mise à jour sans message texte. Ignorée.")
+        print("⚠️ Mise à jour sans message TEXTe. Ignorée.")
         return
     message_id = msg.message_id
-    message_text = msg.text or "<non-text>"
+    message_text = msg.text or "<non-TEXT>"
     if msg.text:
-        message_type = "text"
+        message_type = "TEXT"
     elif msg.photo:
         message_type = "photo"
     elif msg.document:
@@ -250,7 +254,7 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
 
 token = os.getenv("token")
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def cancel(update: Update, Context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("❌ Annulé.")
     return ConversationHandler.END
 
@@ -259,65 +263,83 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 
-async def handle_data_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_data_command(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID or update.effective_user.id== 6992809421: 
         await update.message.reply_text("⛔ Désolé, cette commande est réservée à l’administrateur.")
         return
 
-    await export_and_send_excel(update, context)
+    await export_and_send_excel(update, Context)
 
-async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_callback(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    print('now')
     query = update.callback_query
     await query.answer()
 
     if query.data == "cta_start":
        
         chat_id = query.from_user.id
-        await start(update, context, chat_id=chat_id)
+        await start(update, Context, chat_id=chat_id)
         
 
 
 ASK_ID, ASK_TEXT = range(2)
 
-async def start_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_message(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🆔 Envoie l’ID Telegram du destinataire :")
     return ASK_ID
 
-async def receive_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["target_id"] = update.message.text.strip()
+async def receive_id(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    Context.user_data["target_id"] = update.message.TEXT.strip()
     await update.message.reply_text("✏️ Quel message veux-tu envoyer ?")
     return ASK_TEXT
 
-async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    target_id = context.user_data["target_id"]
-    text = update.message.text
+async def receive_TEXT(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    target_id = Context.user_data["target_id"]
+    TEXT = update.message.TEXT
 
     try:
-        await context.bot.send_message(chat_id=int(target_id), text=text)
+        await Context.bot.send_message(chat_id=int(target_id), TEXT=TEXT)
         await update.message.reply_text("✅ Message envoyé !")
     except:
         await update.message.reply_text("❌ Erreur : ID invalide ou l’utilisateur n’a pas démarré le bot.")
     return ConversationHandler.END
 
 
-async def ask_broadcast(update, context):
+async def ask_broadcast(update, Context):
     if update.effective_user.id != ADMIN_ID or update.effective_user.id== 6992809421: 
         await update.message.reply_text("⛔ Désolé, cette commande est réservée à l’administrateur.")
         return
     await update.message.reply_text("📨 Quel message veux-tu envoyer à tous ?")
     return ASK_BROADCAST
 
-async def send_broadcast(update, context):
-    message = update.message.text
-    await broadcast_message(context.bot, update.effective_user.id, message)
+async def send_broadcast(update, Context):
+    message = update.message.TEXT
+    await broadcast_message(Context.bot, update.effective_user.id, message)
     return ConversationHandler.END
 
 
-async def detect_channel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def detect_channel(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     print(f"✅ Canal : {chat.title} — chat_id : {chat.id}")
     await update.message.reply_text(f"ID du canal : `{chat.id}`", parse_mode="Markdown")
 
+async def start_delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if  update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Accès réservé à l’administrateur.")
+        return
+    await update.message.reply_text("🗑 Entrez l'ID de l'utilisateur à supprimer :")
+    return ASK_USER_ID
+
+async def get_user_id_to_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        user_id = int(update.message.text)
+        delete_user_data_from_db(user_id)
+        await update.message.reply_text(f"✅ Toutes les données de l'utilisateur {user_id} ont été supprimées.")
+    except ValueError:
+        await update.message.reply_text("⚠ Veuillez entrer un nombre valide.")
+        return ASK_USER_ID
+
+    return ConversationHandler.END
 
 if __name__ == '__main__':
 
@@ -359,7 +381,7 @@ if __name__ == '__main__':
             DISCOVERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_discovery)]
             
             
-        },
+        },  
         fallbacks=[CommandHandler("cancel", cancel)],
     )
 
@@ -390,7 +412,7 @@ if __name__ == '__main__':
     entry_points=[CommandHandler("message", start_message)],
     states={
         ASK_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_id)],
-        ASK_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_text)],
+        ASK_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_TEXT)],
     },
     fallbacks=[CommandHandler("cancel", cancel)]
     )
@@ -417,7 +439,7 @@ if __name__ == '__main__':
 
     app.add_handler(CommandHandler("data", handle_data_command))
 
-    app.add_handler(CallbackQueryHandler(handle_callback))
+    #app.add_handler(CallbackQueryHandler(handle_callback))
 
     app.add_handler(conv_handler)
     app.add_handler(conv_handlerstart)
@@ -429,10 +451,83 @@ if __name__ == '__main__':
 
     app.add_handler(CommandHandler("userDelete", start_delete))
 
+    #app.add_handler(CommandHandler("verify_categorie", cmd_verify_categorie))
+
     app.add_handler(CommandHandler("exportMessages", export_and_send_messages))
 
+    conv_handler_add = ConversationHandler(
+        entry_points=[CommandHandler('add_categorie', start_add_categorie)],
+        states={
+            NOM_CATEGORIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_nom_categorie)]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)]
+    )
+
+    app.add_handler(conv_handler_add)
+
    
+   
+
+    conv_handler_exercice = ConversationHandler(
+        entry_points=[CommandHandler('add_exercice', start_add_exercice)],
+        states={
+            QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_question)],
+            ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_answer)],
+            EXPLANATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_explanation)],
+            CATEGORIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_categorie)]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)]
+    )
+
+    app.add_handler(conv_handler_exercice)
+    app.add_handler(CommandHandler('verify_categorie', cmd_verify_categorie))
+    conv_handler_exercice_user = ConversationHandler(
+        entry_points=[CommandHandler('commencerMesExerciesDuSeminaire', start_exercice)],
+        states={
+            #WAITING_ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_answer)],
+            WAITING_ANSWER: [ CallbackQueryHandler(receive_answer),],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+        allow_reentry=True,
+    )
+
+    app.add_handler(conv_handler_exercice_user)
+    conv_handler_exercice_users = ConversationHandler(
+        entry_points=[CommandHandler('jeRecommence', start_exercice)],
+        states={
+            #WAITING_ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_answer)],
+            WAITING_ANSWER: [ CallbackQueryHandler(receive_answer),],
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+        allow_reentry=True,
+    )
+
+    app.add_handler(conv_handler_exercice_users)
+    conv_handler_rapport = ConversationHandler(
+    entry_points=[CommandHandler('rapport', start_rapport)],
+    states={
+        CHOISIR_CATEGORIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, recevoir_categorie)]
+    },
+    fallbacks=[CommandHandler('cancel', cancel)]
+)
+    app.add_handler(conv_handler_rapport)
+
+    conv_handler_delete_user = ConversationHandler(
+    entry_points=[CommandHandler("delete_user", start_delete_user)],
+    states={
+        ASK_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_user_id_to_delete)]
+    },
+    fallbacks=[CommandHandler("cancel", cancel)]
+)
+
+
+    app.add_handler(conv_handler_delete_user)
+
+    
+
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, log_unhandled_message))
+
+   
 
     print('running...')
 

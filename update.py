@@ -90,6 +90,7 @@ def create_user_default_table():
     conn.commit()
     conn.close()        
 
+
 #create_categories_table()
 alter_users_table()
 create_user_default_table()
