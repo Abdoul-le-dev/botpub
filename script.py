@@ -167,7 +167,7 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
         # Par exemple, tu interdis l’entrée
         await Context.bot.send_message(
             chat_id=user.id,
-            TEXT=(
+            text=(
                 "❌ *Doucement, on ne triche pas !* \n\n"
                 "Tu n'es **pas autorisé** à rejoindre ce canal.\n"
                 "🚫 Tu es maintenant *banni à vie* de ce canal.\n\n"
