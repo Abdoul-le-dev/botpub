@@ -314,6 +314,7 @@ async  def receive_answers(update: Update, Context: ContextTypes.DEFAULT_TYPE):
         
         del sessions[user_id]
         await query.message.reply_text(msg, parse_mode="Markdown")
+        print(promo)
         if promo != "":
             await query.message.reply_text(promo, parse_mode="Markdown")
         
