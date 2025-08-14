@@ -290,7 +290,7 @@ async  def receive_answers(update: Update, Context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     session = sessions[user_id]
-    if session['index'] < len(session['questions'])
+    
     q = session['questions'][session['index']]
     q_id, q_text, q_answer, q_explanation = q
 
