@@ -5,6 +5,7 @@ from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Applicatio
 
 import time
 ADMIN_ID =571718066 
+import asyncio
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 def build_answer_keyboard():
@@ -219,7 +220,70 @@ async def start_exercice(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("⚠️ Tu n'as pas d'exercice en cours. Veuillez d'abord vous inscrire.")
         return ConversationHandler.END   
+    
 async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("Réponse reçue ! ⏳")  # Réponse immédiate à Telegram
+
+    user_id = query.from_user.id
+    user_answer = query.data.lower()
+
+    # Si pas de session, on stoppe
+    if user_id not in sessions:
+        await query.message.reply_text("⚠️ Tu n'as pas d'exercice en cours.")
+        return ConversationHandler.END
+
+    # Lancer le traitement en arrière-plan
+    asyncio.create_task(process_answer(user_id, user_answer, query))
+    return WAITING_ANSWER
+
+
+async def process_answer(user_id, user_answer, query):
+    session = sessions[user_id]
+
+    # Si toutes les questions sont déjà traitées
+    if session['index'] >= len(session['questions']):
+        await query.message.reply_text("✅ Exercice déjà terminé.")
+        return
+
+    # Récupérer la question actuelle
+    q_id, q_text, q_answer, q_explanation = session['questions'][session['index']]
+
+    # Temps de réponse
+    q_start = session.get('question_start_time', time.time())
+    q_end = time.time()
+
+    # Sauvegarde réponse
+    save_user_answer(user_id, session['categorie_id'], q_id, user_answer, q_start, q_end)
+    session['answers'].append((q_id, user_answer, q_answer, q_explanation))
+
+    # Passer à la suivante
+    session['index'] += 1
+
+    # Si plus de questions => fin
+    if session['index'] >= len(session['questions']):
+        end_time = time.time()
+        total_time = end_time - session['start_time']
+        msg, note, promo = build_result_message(session['answers'], total_time, user_id, session['categorie_nom'])
+        save_daily_result(user_id, session['categorie_id'], session['start_time'], end_time, note)
+        del sessions[user_id]
+
+        await query.message.reply_text(msg, parse_mode="Markdown")
+        if promo:
+            await query.message.reply_text(promo, parse_mode="Markdown")
+        return
+
+    # Sinon envoyer la prochaine question
+    next_q = session['questions'][session['index']]
+    await query.message.reply_text(
+        f"__**❓ Question {session['index'] + 1} sur {len(session['questions'])} 📚**__\n\n"
+        f"`{next_q[1]}`\n\n",
+        parse_mode="Markdown",
+        reply_markup=build_answer_keyboard()
+    )
+
+    session['question_start_time'] = time.time()
+async def receive_answerss(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
