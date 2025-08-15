@@ -512,19 +512,64 @@ async def get_expectations(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     )
     return DISCOVERY
 
-
-async def get_discovery(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+async def get_discovery(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Enregistrement de  comment l'utilisateur nous a découvert et finalise l'inscription."""
+    
+    # Vérification sécurisée du texte
     if not update.message or not update.message.text:
-        await update.message.reply_text("❌ Merci de préciser comment tu nous as découvert.")
+        await update.effective_chat.send_message("❌ Merci de préciser comment tu nous as découvert.")
         return DISCOVERY
 
-    Context.user_data["discovery"] = update.message.text
+    # Sauvegarde de la réponse
+    context.user_data["discovery"] = update.message.text.strip()
+    user = update.effective_user
+    chat_id = update.effective_chat.id
 
-    # Confirmation
-    chat_id=update.effective_chat.id
+    async def safe_task(coro):
+        """Exécute une tâche async sans bloquer et log les erreurs."""
+        try:
+            await coro
+        except Exception as e:
+            print(f"[ERREUR TÂCHE] {e}")
 
-    message = await update.message.reply_text(
-        "✅ *Merci pour toutes ces infos précieuses !*\n\n"    
+    # Cas 1 : nouvel utilisateur
+    if context.user_data.get("name"):
+        asyncio.create_task(safe_task(save_user(
+            name=context.user_data.get("name"),
+            phone=context.user_data.get("phone"),
+            country=context.user_data.get("country"),
+            telegram_id=user.id,
+            Contexte_user=context.user_data.get("args"),
+            email=context.user_data.get("email"),
+            motivation=context.user_data.get("motivation"),
+            level=context.user_data.get("level"),
+            why=context.user_data.get("why"),
+            what=context.user_data.get("what"),
+            expectations=context.user_data.get("expectations"),
+            discovery=context.user_data.get("discovery")
+        )))
+        asyncio.create_task(safe_task(add_categorie(user.id, context.user_data.get("args"))))
+
+    # Cas 2 : utilisateur existant → mise à jour
+    else:
+        try:
+            asyncio.create_task(safe_task(update_user_info(
+                telegram_id=user.id,
+                email=context.user_data.get("email"),
+                expectations=context.user_data.get("expectations"),
+                discovery=context.user_data.get("discovery")
+            )))
+            asyncio.create_task(safe_task(add_categorie(user.id, context.user_data.get("args"))))
+        except Exception as e:
+            print(f"❌ Erreur lors de la mise à jour des informations utilisateur : {e}")
+            await update.effective_chat.send_message(
+                "❌ Une erreur est survenue lors de la mise à jour de tes informations. Merci de réessayer plus tard."
+            )
+            return ConversationHandler.END
+
+    # Message final unique (pas de duplication)
+    message = await update.effective_chat.send_message(
+        "✅ *Merci pour toutes ces infos précieuses !*\n\n"
         "✅ *Tu viens de finaliser avec succès ton inscription !*\n\n"
         "🚀 *Ton accès exclusif est prêt !*\n\n"
         "🔥 Clique vite sur ton lien unique pour rejoindre le canal privé :\n"
@@ -534,6 +579,21 @@ async def get_discovery(update: Update, Context: ContextTypes.DEFAULT_TYPE):
         "🚫 *Lien personnel.*",
         parse_mode="Markdown"
     )
+
+    # Suppression programmée
+    asyncio.create_task(safe_task(delete_and_offer_later(context, chat_id, message.message_id)))
+
+    return ConversationHandler.END
+
+async def get_discoverys(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.text:
+        await update.message.reply_text("❌ Merci de préciser comment tu nous as découvert.")
+        return DISCOVERY
+
+    Context.user_data["discovery"] = update.message.text
+
+    # Confirmation
+    
     
 
 
@@ -544,7 +604,7 @@ async def get_discovery(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     if "name" in data and data["name"] is not None:
         user = update.effective_user
-        save_user(
+        asyncio.create_task(save_user(
             name=Context.user_data.get("name"),
             phone=Context.user_data.get("phone"),
             country=Context.user_data.get("country"),
@@ -557,125 +617,60 @@ async def get_discovery(update: Update, Context: ContextTypes.DEFAULT_TYPE):
             what= Context.user_data.get("what"),           
             expectations=Context.user_data.get("expectations"),
             discovery = Context.user_data.get("discovery")
+        ))
+        asyncio.create_task(add_categorie(user.id, Context.user_data.get("args")))
+        chat_id=update.effective_chat.id
+
+        message = await update.message.reply_text(
+            "✅ *Merci pour toutes ces infos précieuses !*\n\n"    
+            "✅ *Tu viens de finaliser avec succès ton inscription !*\n\n"
+            "🚀 *Ton accès exclusif est prêt !*\n\n"
+            "🔥 Clique vite sur ton lien unique pour rejoindre le canal privé :\n"
+            "👉 *https://t.me/+yj_n_7oH43ZlOGNk*\n\n"
+            "💥 C’est ici que commence ta transformation, entouré(e) de traders qui veulent réussir.\n"
+            "⚡️ Ne perds pas une seconde, on t’attend pour passer à l’action !\n\n"
+            "🚫 *Lien personnel.*",
+            parse_mode="Markdown"
         )
-        add_categorie(user.id, Context.user_data.get("args"))
-        print("yes")
 
     else:
 
         try:
-            update_user_info(
+            asyncio.create_task(update_user_info(
                 telegram_id=user.id,
                 email=Context.user_data.get("email"),
                 expectations=Context.user_data.get("expectations"),
                
-                discovery = Context.user_data.get("discovery"))
+                discovery = Context.user_data.get("discovery")))
+            
+            chat_id=update.effective_chat.id
+
+            message = await update.message.reply_text(
+                "✅ *Merci pour toutes ces infos précieuses !*\n\n"    
+                "✅ *Tu viens de finaliser avec succès ton inscription !*\n\n"
+                "🚀 *Ton accès exclusif est prêt !*\n\n"
+                "🔥 Clique vite sur ton lien unique pour rejoindre le canal privé :\n"
+                "👉 *https://t.me/+yj_n_7oH43ZlOGNk*\n\n"
+                "💥 C’est ici que commence ta transformation, entouré(e) de traders qui veulent réussir.\n"
+                "⚡️ Ne perds pas une seconde, on t’attend pour passer à l’action !\n\n"
+                "🚫 *Lien personnel.*",
+                parse_mode="Markdown"
+            )
         except BadRequest as e:
             print(f"❌ Erreur lors de la mise à jour des informations utilisateur : {e}")
             await update.message.reply_text(
                 "❌ Une erreur est survenue lors de la mise à jour de tes informations. Merci de réessayer plus tard."
             )
-          
+
+            message = await update.message.reply_text('erreur lors de la mise a jour de vos informations ', parse_mode="Markdown")
+
+            return ConversationHandler.END
         add_categorie(user.id, Context.user_data.get("args"))
         print("ok")
 
 
     asyncio.create_task(delete_and_offer_later(Context, chat_id, message.message_id))    
     return ConversationHandler.END
-
-
-'''
-async def get_motivation(update: Update, Context: ContextTypes.DEFAULT_TYPE):
-    # Enregistre la motivation de l’utilisateur
-    Context.user_data["motivation"] = update.message.text
-
-    # Demande maintenant le niveau en trading
-    await update.message.reply_text(
-        "📊 Pour mieux t’accompagner, dis-nous où tu te situes en trading :\n\n"
-        "1️⃣ Débutant (tu découvres à peine l’univers du trading)\n"
-        "2️⃣ Intermédiaire (tu trades, mais t’es pas encore rentable)\n"
-        "3️⃣ Rentable (tu gagnes déjà régulièrement)\n\n"
-        "✍️ Réponds simplement avec : 1, 2 ou 3"
-    )
-    return LEVEL
-
-
-
-
-async def get_level(update: Update, Context: ContextTypes.DEFAULT_TYPE):
-    response = update.message.text.strip()
-
-    niveau_map = {
-        "1": "Débutant",
-        "2": "Intermédiaire (non rentable)",
-        "3": "Rentable"
-    }
-
-    if response not in niveau_map:
-        await update.message.reply_text(
-            "❌ Réponse invalide. Merci de répondre uniquement avec : 1, 2 ou 3."
-        )
-        return LEVEL
-
-    Context.user_data["level"] = niveau_map[response]
-
-    user = update.effective_user
-    user_id = user.id
-    # Enregistre les informations de l'utilisateur dans la base de données
-
-    if user_exists(user_id):
-
-        update_user_info(user_id,Context.user_data.get("email"),Context.user_data.get("motivation"),Context.user_data.get("level"))
-
-        print( 
-            user_id,
-            Context.user_data.get("email"),
-            Context.user_data.get("motivation"),
-            Context.user_data.get("level"))  
-        
-    else :
-        save_user(
-            Context.user_data["name"],
-            Context.user_data["phone"],
-            Context.user_data["country"],
-            user_id,
-            email=Context.user_data.get("email"),
-            motivation=Context.user_data.get("motivation"),
-            level=Context.user_data.get("level")
-        )  
-
-        print( Context.user_data["name"],
-            Context.user_data["phone"],
-            Context.user_data["country"],
-            user_id,
-            Context.user_data.get("email"),
-            Context.user_data.get("motivation"),
-            Context.user_data.get("level"))
-
-    #Ajoute la catégorie "V100" à l'utilisateur    
-
-    if not user_has_categorie(user_id):
-        add_categorie(user_id, "V100")
-    # Envoie un message de confirmation     
-
-    chat_id=update.effective_chat.id
-
-    message = await update.message.reply_text(
-    "🔗 *Voici ton lien unique d’accès au canal :*\n"
-    "[👉 Rejoins le canal maintenant](https://t.me/+Wwu28BoDMOUzMTQ0)\n\n"
-    "⏳ La formation démarre bientôt, sois prêt !\n\n"
-    "⚠️ Ce lien est personnel. Si quelqu’un d’autre l’utilise, tu seras automatiquement banni.",
-    parse_mode="Markdown"
-)
-
-    asyncio.create_task(delete_and_offer_later(Context, chat_id, message.message_id))
-
-   
-
-
-    return ConversationHandler.END
-
-'''
 
 
 

@@ -147,7 +147,7 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
                 return
         await Context.bot.send_message(
             chat_id=user_id,
-            TEXT=(
+            text=(
                 "👌 **C'est bon je t'ai intégré au canal ✅**\n"
                 "*C'est pour bientôt et prépare toi, je te dirai tout !*\n\n"
                 "📌 *Épingle ce canal* pour rester à l'affût des **nouvelles informations**."
@@ -212,7 +212,7 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
             
             await Context.bot.send_message(
             chat_id=user_id,
-            TEXT="🔥🔥✍️  Clique sur /JeMEnregistre Maintenant"
+            text="🔥🔥✍️  Clique sur /JeMEnregistre Maintenant"
             )
 
             
@@ -298,7 +298,7 @@ async def receive_TEXT(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     TEXT = update.message.TEXT
 
     try:
-        await Context.bot.send_message(chat_id=int(target_id), TEXT=TEXT)
+        await Context.bot.send_message(chat_id=int(target_id), text=TEXT)
         await update.message.reply_text("✅ Message envoyé !")
     except:
         await update.message.reply_text("❌ Erreur : ID invalide ou l’utilisateur n’a pas démarré le bot.")
@@ -313,7 +313,7 @@ async def ask_broadcast(update, Context):
     return ASK_BROADCAST
 
 async def send_broadcast(update, Context):
-    message = update.message.TEXT
+    message = update.message.text
     await broadcast_message(Context.bot, update.effective_user.id, message)
     return ConversationHandler.END
 
