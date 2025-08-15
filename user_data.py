@@ -101,7 +101,7 @@ async def start_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute("DELETE FROM categories WHERE id_user = ?", (user_id_to_delete,))
     cursor.execute("DELETE FROM messages WHERE user_id = ?", (user_id_to_delete,))
     cursor.execute("DELETE FROM users WHERE telegram_id = ?", (user_id_to_delete,))
-    cursor.execute("DELETE FROM categories WHERE telegram_id = ?", (user_id_to_delete,))
+    cursor.execute("DELETE FROM categories WHERE id_user = ?", (user_id_to_delete,))
     conn.commit()
     conn.close()
 
