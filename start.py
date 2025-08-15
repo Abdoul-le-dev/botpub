@@ -512,7 +512,7 @@ async def get_expectations(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     )
     return DISCOVERY
 
-async def get_discovery(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def get_discoverys(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Enregistrement de  comment l'utilisateur nous a découvert et finalise l'inscription."""
     
     # Vérification sécurisée du texte
@@ -539,7 +539,7 @@ async def get_discovery(update: Update, context: ContextTypes.DEFAULT_TYPE):
             phone=context.user_data.get("phone"),
             country=context.user_data.get("country"),
             telegram_id=user.id,
-            Contexte_user=context.user_data.get("args"),
+            Contexte_user=context.user_data.get("args"), 
             email=context.user_data.get("email"),
             motivation=context.user_data.get("motivation"),
             level=context.user_data.get("level"),
@@ -585,7 +585,7 @@ async def get_discovery(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return ConversationHandler.END
 
-async def get_discoverys(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+async def get_discovery(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         await update.message.reply_text("❌ Merci de préciser comment tu nous as découvert.")
         return DISCOVERY
