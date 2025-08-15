@@ -609,7 +609,7 @@ async def get_discovery(update: Update, Context: ContextTypes.DEFAULT_TYPE):
             phone=Context.user_data.get("phone"),
             country=Context.user_data.get("country"),
             telegram_id=user.id,
-            Contexte_user=Context.user_data.get("args"),
+            contexte_user=Context.user_data.get("args"),
             email=Context.user_data.get("email"),
             motivation=Context.user_data.get("motivation"),
             level=Context.user_data.get("level"),

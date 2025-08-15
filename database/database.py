@@ -19,7 +19,7 @@ def init_db():
 
 
 
-import sqlite3
+
 
 def get_conn():
     return sqlite3.connect('preinscriptions.db')
@@ -86,7 +86,7 @@ async def save_message(user_id, message_id, message_text, answer=None, message_t
         
         conn.commit()
         conn.close()
-        
+
 def save_messages(user_id, message_id, message_text, answer = None, message_type ="text"):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
