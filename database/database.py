@@ -1,5 +1,6 @@
 import sqlite3
 from datetime import datetime
+import asyncio
 
 def init_db():
     conn = sqlite3.connect('preinscriptions.db')
@@ -69,7 +70,24 @@ def user_exists(telegram_id):
     conn.close()
     return result is not None
 
-def save_message(user_id, message_id, message_text, answer = None, message_type ="text"):
+db_lock = asyncio.Lock()
+
+async def save_message(user_id, message_id, message_text, answer=None, message_type="text"):
+    async with db_lock:  # empêche l'accès concurrent
+        conn = sqlite3.connect('preinscriptions.db', timeout=30)  # attend jusqu'à 30s si verrouillé
+        conn.execute("PRAGMA journal_mode=WAL;")  # Active Write-Ahead Logging
+        cursor = conn.cursor()
+        
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute('''
+            INSERT INTO messages (user_id, message_id, message_text, answer, message_type, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (user_id, message_id, message_text, answer, message_type, now))
+        
+        conn.commit()
+        conn.close()
+        
+def save_messages(user_id, message_id, message_text, answer = None, message_type ="text"):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
