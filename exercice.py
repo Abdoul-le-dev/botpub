@@ -130,7 +130,7 @@ def build_result_message(answers, total_time,user_id, categorie_name):
     msg += (
         f"__**📊 Résultat**__\n"
         f"📝 Note sur cet exercice : `{correct_count} / {len(answers)}`\n"
-        #f"🏆 Note totale (sur 100) : `📝🕵️‍♂️/100`\n\n"
+        f"🏆 Passe le cap (sur 100) ? : `✅ Oui, valider`\n\n"
         
     )
     promo=""
