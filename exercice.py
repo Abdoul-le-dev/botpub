@@ -18,7 +18,7 @@ def build_answer_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 sessions = {}
-# États de la conversation
+# États de la conversation 
 from constance import QUESTION, ANSWER, EXPLANATION, CATEGORIE, NOM_CATEGORIE, WAITING_ANSWER,CHOISIR_CATEGORIE 
 from telegram import ReplyKeyboardRemove
 from database.database import add_exercice,get_user_args,get_questions, save_user_answer, save_daily_result, delete_args
@@ -130,7 +130,7 @@ def build_result_message(answers, total_time,user_id, categorie_name):
     msg += (
         f"__**📊 Résultat**__\n"
         f"📝 Note sur cet exercice : `{correct_count} / {len(answers)}`\n"
-        f"🏆 Note totale (sur 100) : `📝🕵️‍♂️/100`\n\n"
+        #f"🏆 Note totale (sur 100) : `📝🕵️‍♂️/100`\n\n"
         
     )
     promo=""
@@ -148,19 +148,23 @@ def build_result_message(answers, total_time,user_id, categorie_name):
     if correct_count < 5:
         msg += "\n\n🔄 `Ta note est inférieure à 5/10, tu peux retenter l'exercice clique juste sur \n` /jeRecommence"
         return msg, correct_count,promo
-    if correct_count >= 6 and not user_has_categorie(user_id,'leseminaire'):
+
+    if  user_has_categorie(user_id,'leseminaire'):
         promo = (
-        "🎉 *Bravo !* 🎉\n"
-        "Tu fais partie de ceux qui ont décroché *6/10 ou plus* à notre test 📝💪\n"
-        "C’est déjà un bon pas, mais le meilleur reste à venir… 🚀\n\n"
-        "🔥 Tu as fait tes preuves, et tu *mérites d’être avec nous* 💪🔥\n"
-        "Pour toi : *une offre exclusive de -50%*, valable *uniquement ce soir* ⏳✨\n\n"
-        "🚀 Ne laisse pas passer ta chance…\n"
-        "👉 Lien de paiement : https://me.fedapay.com/pJUafYc0\n\n"
-        "*Paiement crypto USDT TRC20*\n"
-        "Adresse : `TUxRmHjGo9uJDiYGTEKCG6GxXsYcfcpCgu`"
-    )
-        
+    "🎊🎈 *Félicitations !* 🎊🎈\n"
+    "Ton engagement et ta détermination ont payé. *Bravo* 🎉\n\n"
+    "🔥 Tu fais partie des *63 personnes* qui ont eu le mérite de poursuivre "
+    "l’aventure avec nous à la *RMI CLASS* 🚀\n\n"
+    "Pour récompenser tes efforts pendant ces 10 jours et continuer à t’encourager, "
+    "tu bénéficies d’une *offre spéciale incroyable de -81%* 🎁✨\n\n"
+    "⚠️ Attention : ce lien est *unique à toi* et ne doit faire l’objet d’aucune diffusion. "
+    "L’offre est limitée ⏳\n\n"
+    "👉 Lien de paiement mobile : https://me.fedapay.com/promoseminaire\n\n"
+    "*Paiement crypto USDT TRC20*\n"
+    "Adresse : `TUxRmHjGo9uJDiYGTEKCG6GxXsYcfcpCgu`"
+)
+
+       
 
     update_arg(user_id,categorie_name)
     return msg, correct_count, promo
