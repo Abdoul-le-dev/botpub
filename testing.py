@@ -122,7 +122,7 @@ async def broadcast_messages(bot, admin_id, context_user_data):
     await bot.send_message(admin_id,
         f"📤 Envoi du message à {total} utilisateurs en cours...\n⏳ Estimé : {est} min")
 
-    return
+    
     for idx, user_id in enumerate(user_ids, start=1):
         try:
             if format_choisi == "1":  # Texte seul
