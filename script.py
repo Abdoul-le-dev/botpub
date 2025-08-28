@@ -250,7 +250,7 @@ async def log_unhandled_message(update: Update, Context: ContextTypes.DEFAULT_TY
         message_type = "other"
     
 
-    save_message(user_id, message_id, message_text, None, message_type)
+    await save_message(user_id, message_id, message_text, None, message_type)
 
 token = os.getenv("token")
 

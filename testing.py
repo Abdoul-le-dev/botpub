@@ -146,7 +146,8 @@ async def broadcast_messages(bot, admin_id, context_user_data):
             sent += 1
             print(f"sent: {sent} messages")
 
-        except Exception:
+        except Exception as e:
+            print(f"Erreur en envoyant à {user_id}: {e}")
             pass
 
         # Suivi en 1/3, 2/3, fin
