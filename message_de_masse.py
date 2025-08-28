@@ -6,7 +6,7 @@ import time
 async def broadcast_message(bot, admin_id, text):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
+    cursor.execute("SELECT id_user FROM categories WHERE name_categorie ='leseminaire'")
     rows = cursor.fetchall()
     conn.close()
 
@@ -22,6 +22,8 @@ async def broadcast_message(bot, admin_id, text):
         return
 
     await bot.send_message(admin_id, f"📤 Envoi du message à {total} utilisateurs en cours...\n⏳ Estimé : {est} min")
+
+    return
 
     for idx, user_id in enumerate(user_ids, start=1):
         try:
