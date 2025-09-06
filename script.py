@@ -383,7 +383,7 @@ if __name__ == '__main__':
             EXPECTATIONS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_expectations)],
             DISCOVERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_discovery)],
             WAITING_ANSWER_1: [CallbackQueryHandler(button_callback_waiting_1, pattern='^Poursuivre$')],
-            WAITING_ANSWER_2: [CallbackQueryHandler(button_callback_waiting_2, pattern='^Accepte$')]
+            WAITING_ANSWER_2: [CallbackQueryHandler(button_callback_waiting_2, pattern='^(Accepte|Refus)$')]
             
             
         },  

@@ -50,7 +50,7 @@ def build_continue_button():
 
 def build_continue_button_1():
     keyboard = [
-        [InlineKeyboardButton("✅ 💹 J’accepte les clauses et je prends le risque ", callback_data='Accepte')],
+        [InlineKeyboardButton("✅ 💹 J’accepte et je prends le risque ", callback_data='Accepte')],
         [InlineKeyboardButton("❌ 💳 Je souhaite un remboursement ", callback_data='Refus')]
     ]
     return InlineKeyboardMarkup(keyboard)
@@ -856,6 +856,25 @@ async def button_callback_waiting_2(update: Update, context: ContextTypes.DEFAUL
 
     user_id = query.from_user.id
 
+    print(query.data)
+    
+
+    if query.data == "Refus" : 
+        
+        await query.message.reply_text(
+            "`💰 Demande de remboursement`\n\n"
+            "`Parfait 👍`\n"
+            "`Veuillez laisser un message à l’adresse suivante :` challenge10000usd@iastreamnow.com\n\n"
+            "`📄 Important :`\n"
+            "`- Envoyez votre reçu`\n"
+            "`- Ajoutez une demande de remboursement claire`\n\n"
+            "`🙏 Merci à vous pour votre compréhension et votre confiance.`\n\n"
+            "`Assistant bot – Fiacre Kpanou`",
+            parse_mode='Markdown'
+        )
+
+        return ConversationHandler.END
+
     
 
     to_email, username =get_mail_and_name(user_id)
@@ -909,19 +928,7 @@ async def button_callback_waiting_2(update: Update, context: ContextTypes.DEFAUL
             return ConversationHandler.END
 
 
-    if query.data == "Refus" : 
-        
-        await query.message.reply_text(
-            "`💰 Demande de remboursement`\n\n"
-            "`Parfait 👍`\n"
-            "`Veuillez laisser un message à l’adresse suivante : challenge10000usd@iastreamnow.com`\n\n"
-            "`📄 Important :`\n"
-            "`- Envoyez votre reçu`\n"
-            "`- Ajoutez une demande de remboursement claire`\n\n"
-            "`🙏 Merci à vous pour votre compréhension et votre confiance.`\n\n"
-            "`Assistant bot – Fiacre Kpanou`",
-            parse_mode='Markdown'
-        )
+   
 
         
 
