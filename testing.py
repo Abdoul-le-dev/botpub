@@ -8,6 +8,14 @@ import asyncio
 CHOOSE_TYPE, CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(4)
 CHOOSE_TYPES =range(1)
 ADMIN_ID = 571718066
+
+def limit_text(text, max_length=4096):
+    """
+    Coupe le texte à max_length caractères si nécessaire et ajoute "…".
+    """
+    if len(text) > max_length:
+        return text[:max_length-1] + "…"
+    return text
 async def choose_categorie(update, context):
 
     if update.effective_user.id != ADMIN_ID or update.effective_user.id != 6992809421: 
@@ -198,6 +206,7 @@ async def user_list_in_categorie(update, context):
         indice +=1
         msg  += str(indice) + "-"+list[1] + "\n"
     
+    msg = limit_text(msg, 4000)  # Limite le message à 4000 caractères pour éviter les erreurs Telegram
     await update.message.reply_text(msg
         
     )
