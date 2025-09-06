@@ -550,3 +550,14 @@ def get_mail_and_name(user_id):
 
 
 
+def liste_categories():
+
+    conn = get_conn()
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT id, name_categorie FROM categories")
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return rows

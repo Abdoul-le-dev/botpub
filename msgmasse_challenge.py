@@ -6,7 +6,7 @@ import sqlite3
 import asyncio
 
 CHOOSE_TYPE, CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(4)
-CHOOSE_TYPES =range(1)
+
 ADMIN_ID = 571718066
 async def choose_categorie(update, context):
 
@@ -20,16 +20,12 @@ async def choose_categorie(update, context):
     for list in lists:
         
         indice +=1
-        msg  += str(indice) + "-"+list[1] + "\n"
+        msg  += "-"+list[1] + "\n"
     
     await update.message.reply_text(msg
         
     )
-
-    await update.message.reply_text('Le numero de la categorie ? :\n\n')
-        
-
-    return CHOOSE_TYPE
+    return CHOOSE_FORMAT
 async def choose_format(update, context):
 
     categorie = update.message.text[0]
@@ -48,7 +44,7 @@ async def choose_format(update, context):
         "NB: Veuillez a ce que le texte ne sois pas trop long (max 4096 caractères)",
         
     )
-    return CHOOSE_FORMAT
+    return CHOOSE_TYPE
 
 async def handle_format_choice(update, context):
     choix = update.message.text[0]
@@ -186,40 +182,3 @@ async def broadcast_messages(bot, admin_id, context_user_data):
             await bot.send_message(admin_id, f"✅ Message terminé — envoyé à {sent} utilisateurs")
 
         await asyncio.sleep(0.1)
-
-
-async def user_list_in_categorie(update, context):
-    
-    lists = liste_categories()
-    indice =0
-    msg  = ""
-    for list in lists:
-        
-        indice +=1
-        msg  += str(indice) + "-"+list[1] + "\n"
-    
-    await update.message.reply_text(msg
-        
-    )
-
-    await update.message.reply_text('Revois le choix de la catégorie (en envoyant simplement le **chiffre correspondant** ) :\n\n'
-        
-    )
-    return CHOOSE_TYPES
-
-async def user_list_in_categories(update, context):
-
-    conn = sqlite3.connect('preinscriptions.db')
-    cursor = conn.cursor()
-    categorie = update.message.text[0]
-    #cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
-    #cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
-    cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", (categorie,))
-    rows = cursor.fetchall()
-    conn.close()
-
-    user_ids = [row[0] for row in rows]
-    total = len(user_ids)
-
-    await update.message.reply_text(f"📤 total: {total} dans la catégorie {categorie}")
-    return ConversationHandler.END

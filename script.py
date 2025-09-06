@@ -40,7 +40,7 @@ from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Applicatio
 import sqlite3
 import pandas as pd
 import random
-from testing import  choose_format,handle_format_choice, get_media, get_text
+from testing import  user_list_in_categories, choose_format,handle_format_choice, get_media, get_text, choose_categorie,user_list_in_categorie
 import string
 from message_de_masse import broadcast_message
 from stats import last_message
@@ -77,12 +77,12 @@ CANAL_B_ID = -1002705005402
 ASK_BROADCAST = 99
 
 
-
+CHOOSE_TYPES =range(1)
 
 async def wait_5_seconds():
     await asyncio.sleep(5)
 
-CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(3)
+CHOOSE_TYPE, CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(4)
 
 def generate_filename():
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
@@ -428,14 +428,23 @@ if __name__ == '__main__':
     ))
 
     conv_handlerMsg = ConversationHandler(
-    entry_points=[CommandHandler('msgMasse', choose_format)],
+    entry_points=[CommandHandler('msgMasse', choose_categorie)],
     states={
+        CHOOSE_TYPE: [MessageHandler(filters.Regex('^[1-9]$'),  choose_format)],
         CHOOSE_FORMAT: [MessageHandler(filters.Regex('^[1-5]$'), handle_format_choice)],
         GET_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, get_media)],
         GET_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_text)],
     },
     fallbacks=[CommandHandler('cancel', cancel)],
-)
+    )
+    conv_handler_user_liste_categorie = ConversationHandler(
+    entry_points=[CommandHandler('peopleCategorie', user_list_in_categorie)],
+    states={
+        CHOOSE_TYPES: [MessageHandler(filters.Regex('^[1-9]$'),  user_list_in_categories)],
+    },
+    fallbacks=[CommandHandler('cancel', cancel)],
+    )
+    app.add_handler(conv_handler_user_liste_categorie)
     app.add_handler(conv_handlerMsg)
     app.add_handler(convs_handler)
 
