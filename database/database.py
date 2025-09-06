@@ -24,6 +24,8 @@ def init_db():
 def get_conn():
     return sqlite3.connect('preinscriptions.db')
 
+conn = get_conn()
+
 def save_user(name, phone, country=None, telegram_id=None,contexte_user=None,email=None, motivation=None, level=None,why=None, what=None, expectations=None, discovery=None):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
@@ -205,7 +207,7 @@ def add_exercice(question, answer, explanation, categorie_id):
     conn.close()
     print("✅ Nouvel exercice ajouté avec succès.")
 
-import sqlite3
+
 
 def add_categorie_exercice(nom, admin_verify=False):
     conn = sqlite3.connect('preinscriptions.db')
@@ -297,7 +299,7 @@ def save_daily_result(user_id, categorie_id, time_start, time_end, note, second_
     conn.commit()
     conn.close()
 
-import sqlite3
+
 
 def verify_categorie(name):
     conn = sqlite3.connect('preinscriptions.db')
@@ -319,8 +321,6 @@ def verify_categorie(name):
     else:
         # La catégorie existe mais n'est pas vérifiée
         return "non_verify"
-
-
 
 
 def create_args(id_user: int, args_value: str, use_it: bool):
@@ -357,7 +357,6 @@ def create_args(id_user: int, args_value: str, use_it: bool):
     conn.close()
     print(f"✔ Arg créé : id_user={id_user}, args='{args_value}', use_it={use_it}")
     return "created"
-
 
 
 # Fonction pour supprimer un enregistrement par ID
@@ -463,7 +462,7 @@ def get_final_score(user_id):
     conn.close()
     return total_score
 
-conn = sqlite3.connect('preinscriptions.db')
+
 def get_category_questions_report(categorie_id):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
@@ -527,4 +526,27 @@ def delete_all_exercices():
     except sqlite3.Error as e:
         print(f"Erreur lors de la suppression : {e}")
     finally:
-        conn.close()    
+        conn.close()  
+
+def verify_name_phone_mail(user_id):
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    cursor.execute(''' SELECT 1 FROM users WHERE telegram_id = ? AND email IS NOT NULL AND phone IS NOT NULL''', (user_id,))
+
+    result =cursor.fetchone() is not None
+    conn.close()
+    return result 
+
+def get_mail_and_name(user_id):
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    cursor.execute(''' SELECT email, name FROM users WHERE telegram_id = ? ''', (user_id,))
+
+    result =cursor.fetchone()
+    conn.close()
+    return result
+
+
+

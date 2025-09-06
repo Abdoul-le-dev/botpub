@@ -58,11 +58,13 @@ import time
 
 import json
 
+from start import button_callback_waiting_1, button_callback_waiting_2
+
 from constance import CHOISIR_CATEGORIE,NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS,EMAIL, EXPECTATIONS,DISCOVERY,WAITING_ANSWER
 
 from constance import ASK_USER_ID,CATEGORIE, NOMBRE_QUESTIONS, QUESTION, NB_CHOIX, CHOIX, REPONSE_SUIVANTE
 
-from constance import QUESTION, ANSWER, EXPLANATION, CATEGORIE,  NOM_CATEGORIE
+from constance import QUESTION, ANSWER, EXPLANATION, CATEGORIE,  NOM_CATEGORIE, WAITING_ANSWER_1, WAITING_ANSWER_2
 
 from exercice import recevoir_categorie,start_rapport,start_add_exercice, get_question, get_answer, get_explanation, get_categorie, cmd_verify_categorie,start_exercice,receive_answer,start_add_categorie, get_nom_categorie
 
@@ -378,7 +380,9 @@ if __name__ == '__main__':
             COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_country)],
             EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
             EXPECTATIONS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_expectations)],
-            DISCOVERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_discovery)]
+            DISCOVERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_discovery)],
+            WAITING_ANSWER_1: [CallbackQueryHandler(button_callback_waiting_1, pattern='^Poursuivre$')],
+            WAITING_ANSWER_2: [CallbackQueryHandler(button_callback_waiting_2, pattern='^Accepte$')]
             
             
         },  

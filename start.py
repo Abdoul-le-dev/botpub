@@ -1,9 +1,10 @@
 import os
 from telegram import Update, InputFile
 from jeu import export_and_send_pdf
+from challenge1000usd import send_consent_email
 from database.database import init_db
 from database.database import save_user
-from database.database import user_exists
+from database.database import user_exists, verify_name_phone_mail
 from database.database import save_message,verify_categorie
 from database.database import update_user_info
 from database.database import add_categorie
@@ -11,6 +12,7 @@ from database.database import get_file_id
 from database.database import save_file_id, create_args
 from database.database import user_has_categorie
 from telegram.error import TimedOut
+from database.database import get_mail_and_name
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
@@ -33,12 +35,26 @@ import asyncio
 
 import time
 
-from constance import NAME, PHONE, COUNTRY, LEVEL, WHAT,WHY, EMAIL, EXPECTATIONS,DISCOVERY
+from constance import NAME, PHONE, COUNTRY, LEVEL, WHAT,WHY, EMAIL, EXPECTATIONS,DISCOVERY, WAITING_ANSWER_1, WAITING_ANSWER_2
 
 async def wait_5_seconds():
     await asyncio.sleep(10)
 async def wait_5_minutes():
     await asyncio.sleep(300)    
+
+def build_continue_button():
+    keyboard = [
+        [InlineKeyboardButton("📊 Poursuivre ", callback_data='Poursuivre')]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def build_continue_button_1():
+    keyboard = [
+        [InlineKeyboardButton("✅ 💹 J’accepte les clauses et je prends le risque ", callback_data='Accepte')],
+        [InlineKeyboardButton("❌ 💳 Je souhaite un remboursement ", callback_data='Refus')]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 
 
 async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None):
@@ -49,6 +65,65 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
     print(args)
     #PromoV100
     name = "leseminaire" 
+    if args and args[0] == "challenge10000usd":
+
+        #verifier si le user ses déja inscrit 
+
+        if user_has_categorie(user_id,args[0]):
+            await update.message.reply_text(
+                "Vous vous êtes déjà inscrit au challenge 10 000 USD ✅,soyez patient."
+            )
+            return ConversationHandler.END
+        else:
+
+            Context.user_data["args"] = args[0] #enregistrement de la catgorie 
+            if user_exists(user_id) and verify_name_phone_mail(user_id):
+
+                
+
+                await update.message.reply_text(
+                    "__**✅ Finalisation de votre inscription**__\n\n"
+                   # "🚀 __*Objectif*__ : Transformer 200 USD en 1000 USD grâce à un plan de trading structuré.\n\n"
+                    "📄 __*Elle se déroulera en 2 étapes simples*__ :\n\n"
+                    "1️⃣ `Lecture des clauses :`\n"
+                    "   `Prenez connaissance des conditions du challenge.`\n"
+                    "   `Vous pourrez les accepter ou demander un remboursement si elles ne vous conviennent pas.`\n\n"
+                    "2️⃣ `Confirmation par e-mail :`\n"
+                    "   `Une fois accepté, un e-mail vous confirmera votre inscription,`\n"
+                    "   `avec toutes les instructions nécessaires pour démarrer immédiatement.`\n\n"
+                    "💡 `Aucune précipitation : prenez le temps de lire, comprendre et décider en toute tranquillité.`\n\n"
+                    "👉 `Cliquez sur “Poursuivre” pour accéder aux clauses et finaliser votre inscription.`",
+                    parse_mode='Markdown',
+                    reply_markup=build_continue_button()
+                )
+
+                return WAITING_ANSWER_1
+
+            else:
+
+                await update.message.reply_text(
+                    "`💹 Bienvenue dans le Challenge 200 → 10.000 USD !`\n\n"
+                    "`🙋‍♂️ C’est votre première participation avec notre assistant.`\n"
+                    "`Pour finaliser votre inscription, nous allons vous poser quelques questions importantes.`\n\n"
+                    "`⚠️ Ces informations sont essentielles pour compléter votre inscription et participer pleinement au challenge.`\n\n"
+                    "`🙏 Merci pour votre attention et suivez bien les instructions pour ne rien manquer !`",
+                    parse_mode='Markdown'
+                )
+
+
+                await update.message.reply_text(
+                    "`👋 Alors, dis-moi comment on t’appelle ?`\n\n"
+                    "`Moi, je suis l’assistant de Fiacre Kpanou.`\n"
+                    "`✅ On va sûrement échanger, alors autant se connaître 😉`\n\n"
+                    "`✍️ Envoie-moi simplement ton prénom et ton nom.`\n"
+                    "`📌 Exemple : Fiacre Kpanou`",
+                    parse_mode="Markdown"
+                )
+
+
+                return NAME
+                    
+
     if args and args[0] != name:
         if verify_categorie(args[0]) != None:
             #and user_has_categorie(user_id,name):
@@ -219,6 +294,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
                 return WHY
 
     
+   
             
     chat_id = update.effective_chat.id if chat_id is None else chat_id
     if user_exists(user_id):
@@ -387,10 +463,10 @@ async def get_name(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     
     Context.user_data["name"] = update.message.text
     await update.message.reply_text(
-    "📞 Quel est ton numéro de téléphone ?\n\n"
-    "🌍 Voici le mien : +22997203304 \n"
-    
-)
+    "`📞 Quel est ton numéro de téléphone ?`\n\n"
+    "`🌍 Voici le mien : +22997203304`",
+    parse_mode="Markdown")
+
 
     return PHONE
 
@@ -404,7 +480,7 @@ async def get_phone(update: Update, Context: ContextTypes.DEFAULT_TYPE):
         return PHONE
     
     Context.user_data["phone"] = update.message.text
-    await update.message.reply_text("🌍 Dans quel pays vis-tu ?")
+    await update.message.reply_text("`🌍 Dans quel pays vis-tu ?`", parse_mode = "Markdown")
     return COUNTRY
 
 async def get_country(update: Update, Context: ContextTypes.DEFAULT_TYPE):
@@ -421,13 +497,13 @@ async def get_country(update: Update, Context: ContextTypes.DEFAULT_TYPE):
         return COUNTRY
     # Enregistre les informations de l'utilisateur dans la base de données
     data = Context.user_data
-    if  "args" in data and data["args"] == "leseminaire":
+    if  "args" in data and data["args"] in ("leseminaire", "challenge10000usd"):  
 
       
 
         await update.message.reply_text(
-            "📩 *Entre ton adresse e-mail pour poursuivre.*\n\n"
-            "✉️ Exemple : `fiacreKpanou@gmail`",
+            "`📩 *Entre ton adresse e-mail pour poursuivre.*`\n\n"
+            "`✉️ Exemple : fiacreKpanou@gmail`",
             parse_mode="Markdown"
         )
 
@@ -482,13 +558,65 @@ async def get_country(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     
     
 
-async def get_email(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not update.message or not update.message.text or "@" not in update.message.text:
         await update.message.reply_text("❌ Merci d’envoyer une adresse email valide.")
         return EMAIL
     # Enregistre l'email de l'utilisateur
-    Context.user_data["email"] = update.message.text
+    context.user_data["email"] = update.message.text
+
+    user = update.effective_user
+    chat_id = update.effective_chat.id
+
+    data = context.user_data
+
+    if "args" in data and data["args"] == "challenge10000usd" :
+
+        async def safe_task(coro):
+            """Exécute une tâche async sans bloquer et log les erreurs."""
+            try:
+                await coro
+            except Exception as e:
+                print(f"[ERREUR TÂCHE] {e}")
+
+        # Cas 1 : nouvel utilisateur
+        if context.user_data.get("name"):
+            asyncio.create_task(safe_task(save_user(
+                name=context.user_data.get("name"),
+                phone=context.user_data.get("phone"),
+                country=context.user_data.get("country"),
+                telegram_id=user.id,
+                contexte_user=context.user_data.get("args"), 
+                email=context.user_data.get("email")
+                #motivation=context.user_data.get("motivation"),
+                #level=context.user_data.get("level"),
+                #why=context.user_data.get("why"),
+                #what=context.user_data.get("what"),
+                #expectations=context.user_data.get("expectations"),
+                #discovery=context.user_data.get("discovery")
+            )))
+            #asyncio.create_task(safe_task(add_categorie(user.id, context.user_data.get("args"))))
+
+        await update.message.reply_text(
+            "✅ **Parfait, vos différentes informations ont été enregistrées.**\n\n"
+            "__**💹Finalisation de votre inscription au Challenge Trading 200 → 1000 USD**__\n\n"
+            "📄 __*Elle se déroulera en 2 étapes simples*__ :\n\n"
+            "1️⃣ `Lecture des clauses :`\n"
+            "   `Prenez connaissance des conditions du challenge.`\n"
+            "   `Vous pourrez les accepter ou demander un remboursement si elles ne vous conviennent pas.`\n\n"
+            "2️⃣ `Confirmation par e-mail :`\n"
+            "   `Une fois accepté, un e-mail vous confirmera votre inscription,`\n"
+            "   `avec toutes les instructions nécessaires pour démarrer immédiatement.`\n\n"
+            "💡 `Aucune précipitation : prenez le temps de lire, comprendre et décider en toute tranquillité.`\n\n"
+            "👉 `Cliquez sur “Poursuivre” pour accéder aux clauses et finaliser votre inscription.`",
+                    parse_mode='Markdown',
+            reply_markup=build_continue_button()
+        )
+
+
+        return WAITING_ANSWER_1
+
 
     # Demande la motivation pour rejoindre la formation
     await update.message.reply_text(
@@ -681,4 +809,111 @@ async def delete_and_offer_later(Context, chat_id, message_id):
         await Context.bot.delete_message(chat_id=chat_id, message_id=message_id)
     except Exception as e:
         print(f"❌ Erreur suppression : {e}")
+
+
+async def button_callback_waiting_1(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+
+    if query.data == "Poursuivre":
+
+        await query.message.reply_text(
+            "*📄 Acte d’Engagement et de Consentement – Programme 200 → 10.000 USD*\n\n"
+            "En validant mon inscription, je déclare avoir compris et accepté ce qui suit :\n\n"
+            "🔹 *Respect des règles* : `Je m’engage à suivre scrupuleusement toutes les instructions de prise de position et de gestion de trade transmises.`\n"
+            "`Ces informations sont strictement personnelles et confidentielles. Toute diffusion entraînera mon exclusion immédiate et sans appel.`\n\n"
+            "🔹 *Compétences requises* : `Je reconnais disposer des bases nécessaires en trading (prise de position, break-even, clôture de trade)`\n"
+            "`pour être en mesure de suivre toutes les instructions partagées.`\n\n"
+            "🔹 *Risque de perte* : `Je comprends que le trading est une activité à haut risque pouvant entraîner la perte partielle ou totale de mon capital,`\n"
+            "`y compris les 200 USD engagés dans ce challenge.`\n\n"
+            "🔹 *Aucune garantie* : `Ce programme est un challenge et non une promesse de rendement absolu.`\n"
+            "`Les signaux et informations reçus sont fournis à titre informatif et n’ont pas valeur de conseil financier.`\n\n"
+            "🔹 *Responsabilité* : `J’accepte de dégager M. Fiacre KPANOU et son académie RMI CLASS de toute responsabilité`\n"
+            "`liée à l’utilisation des signaux, aux pertes, réclamations ou frais pouvant en résulter.`\n\n"
+            "🔹 *Transparence* : `J’accepte de partager mes résultats en toute transparence à la fin du programme.`\n\n"
+            "_En participant, je confirme avoir lu et compris ces avertissements et je m’engage en toute connaissance de cause, à mes propres risques._",
+            parse_mode='Markdown',
+            reply_markup=build_continue_button_1())
+
+        # Mettre à jour l'état de l'utilisateur
+        return WAITING_ANSWER_2
+    
+async def button_callback_waiting_2(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+
+    
+
+    to_email, username =get_mail_and_name(user_id)
+
+    if query.data == "Accepte":
+
+        async def safe_task(coro):
+            """Exécute une tâche async sans bloquer et log les erreurs."""
+            try:
+                await coro
+            except Exception as e:
+                print(f"[ERREUR TÂCHE] {e}")
+            asyncio.create_task(safe_task(add_categorie(user_id, "challenge10000usd")))
+
+        if send_consent_email(to_email, username) : 
+            await query.message.reply_text(
+                "✅ **Clauses acceptées !**\n\n"
+                "`Merci pour votre engagement. Un e-mail vous a été envoyé confirmant votre participation et votre consentement.`\n\n"
+                "`Vous faites désormais officiellement partie du Challenge Trading 200 → 10.000 USD.`\n\n"
+                "📌 **Informations importantes** :\n"
+                "- `Toutes les prises de position et informations détaillées seront partagées ici, directement via mon assistant bot, en privé.`\n"
+                "- `Je vous enverrai personnellement un message via mon assistant sur le challenge.`\n"
+                "- `Si vous le souhaitez, vous pouvez néanmoins me laisser un message ici @fiacrekpanou.`\n\n"
+                "_Restez attentif et suivez les instructions pour tirer le meilleur parti du challenge !_",
+                parse_mode='Markdown'
+            )
+
+
+
+            # Mettre à jour l'état de l'utilisateur
+            return ConversationHandler.END
+
+        else : 
+
+            await query.message.reply_text(
+                "⚠️ **Attention : Envoi d’e-mail échoué**\n\n"
+                "`L’adresse e-mail fournie semble erronée, l’envoi du message de confirmation n’a pas pu être effectué.`\n\n"
+                "✅ **Pas d’inquiétude !**\n"
+                "`Voici directement votre confirmation et les instructions pour le challenge, ici dans ce chat.`\n\n"
+                "📄 **Confirmation de participation** :\n"
+                "`Vous êtes désormais officiellement inscrit(e) au Challenge Trading 200 → 10.000 USD.`\n\n"
+                "📌 **Informations importantes** :\n"
+                "- `Toutes les prises de position et informations détaillées seront partagées ici, via mon assistant bot, en privé.`\n"
+                "- `Je vous enverrai personnellement un message via mon assistant concernant le challenge.`\n"
+                "- `Si vous le souhaitez, vous pouvez aussi me laisser un message ici @fiacrekpanou.`\n\n"
+                "_Restez attentif(ve) et suivez les instructions pour tirer le meilleur parti du challenge !_",
+                parse_mode='Markdown'
+            )
+
+            return ConversationHandler.END
+
+
+    else : 
+        
+        await update.message.reply_text(
+            "`💰 Demande de remboursement`\n\n"
+            "`Parfait 👍`\n"
+            "`Veuillez laisser un message à l’adresse suivante : challenge10000usd@iastreamnow.com`\n\n"
+            "`📄 Important :`\n"
+            "`- Envoyez votre reçu`\n"
+            "`- Ajoutez une demande de remboursement claire`\n\n"
+            "`🙏 Merci à vous pour votre compréhension et votre confiance.`\n\n"
+            "`Assistant bot – Fiacre Kpanou`",
+            parse_mode='Markdown'
+        )
+
+        
+
+
 
