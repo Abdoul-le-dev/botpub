@@ -437,14 +437,9 @@ if __name__ == '__main__':
     },
     fallbacks=[CommandHandler('cancel', cancel)],
     )
-    conv_handler_user_liste_categorie = ConversationHandler(
-    entry_points=[CommandHandler('peopleCategorie', user_list_in_categorie)],
-    states={
-        CHOOSE_TYPES: [MessageHandler(filters.Regex('^[1-9]$'),  user_list_in_categories)],
-    },
-    fallbacks=[CommandHandler('cancel', cancel)],
-    )
-    app.add_handler(conv_handler_user_liste_categorie)
+
+    app.add_handler(CommandHandler("peopleCategorie", user_list_in_categories))
+    
     app.add_handler(conv_handlerMsg)
     app.add_handler(convs_handler)
 

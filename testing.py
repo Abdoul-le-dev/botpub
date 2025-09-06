@@ -220,7 +220,7 @@ async def user_list_in_categories(update, context):
 
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
-    categorie = update.message.text[0]
+    categorie = 'challenge1000usd'  # Valeur par défaut
     #cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
     #cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
     cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", (categorie,))
