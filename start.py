@@ -55,7 +55,15 @@ def build_continue_button_1():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+async def safe_task_main(coro):
+            """Exécute une tâche async sans bloquer et log les erreurs."""
+            try:
+                await coro
+            except Exception as e:
+                print(f"[ERREUR TÂCHE] {e}")
 
+
+                
 
 async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None):
     user = update.effective_user
@@ -68,6 +76,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
     if args and args[0] == "challenge10000usd":
 
         #verifier si le user ses déja inscrit 
+        
 
         if user_has_categorie(user_id,args[0]):
             await update.message.reply_text(
@@ -859,7 +868,8 @@ async def button_callback_waiting_2(update: Update, context: ContextTypes.DEFAUL
                 await coro
             except Exception as e:
                 print(f"[ERREUR TÂCHE] {e}")
-            asyncio.create_task(safe_task(add_categorie(user_id, "challenge10000usd")))
+
+        asyncio.create_task(safe_task(add_categorie(user_id, "challenge10000usd")))
 
         if send_consent_email(to_email, username) : 
             await query.message.reply_text(
@@ -868,8 +878,8 @@ async def button_callback_waiting_2(update: Update, context: ContextTypes.DEFAUL
                 "`Vous faites désormais officiellement partie du Challenge Trading 200 → 10.000 USD.`\n\n"
                 "📌 **Informations importantes** :\n"
                 "- `Toutes les prises de position et informations détaillées seront partagées ici, directement via mon assistant bot, en privé.`\n"
-                "- `Je vous enverrai personnellement un message via mon assistant sur le challenge.`\n"
-                "- `Si vous le souhaitez, vous pouvez néanmoins me laisser un message ici @fiacrekpanou.`\n\n"
+                #"- `Je vous enverrai personnellement un message via mon assistant sur le challenge.`\n"
+                "Mon contact: @fiacrekpanou.\n\n"
                 "_Restez attentif et suivez les instructions pour tirer le meilleur parti du challenge !_",
                 parse_mode='Markdown'
             )
@@ -890,8 +900,8 @@ async def button_callback_waiting_2(update: Update, context: ContextTypes.DEFAUL
                 "`Vous êtes désormais officiellement inscrit(e) au Challenge Trading 200 → 10.000 USD.`\n\n"
                 "📌 **Informations importantes** :\n"
                 "- `Toutes les prises de position et informations détaillées seront partagées ici, via mon assistant bot, en privé.`\n"
-                "- `Je vous enverrai personnellement un message via mon assistant concernant le challenge.`\n"
-                "- `Si vous le souhaitez, vous pouvez aussi me laisser un message ici @fiacrekpanou.`\n\n"
+                #"- `Je vous enverrai personnellement un message via mon assistant concernant le challenge.`\n"
+                "Mon contact: @fiacrekpanou.\n\n"
                 "_Restez attentif(ve) et suivez les instructions pour tirer le meilleur parti du challenge !_",
                 parse_mode='Markdown'
             )
@@ -899,9 +909,9 @@ async def button_callback_waiting_2(update: Update, context: ContextTypes.DEFAUL
             return ConversationHandler.END
 
 
-    else : 
+    if query.data == "Refus" : 
         
-        await update.message.reply_text(
+        await query.message.reply_text(
             "`💰 Demande de remboursement`\n\n"
             "`Parfait 👍`\n"
             "`Veuillez laisser un message à l’adresse suivante : challenge10000usd@iastreamnow.com`\n\n"
