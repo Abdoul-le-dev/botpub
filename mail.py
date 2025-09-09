@@ -20,7 +20,7 @@ SMTP_PORT = 465
 SMTP_USER = "challenge10000usd@iastreamnow.com"
 SMTP_PASSWORD = "Testing@1#test"
 
-n = 0 
+
 
 async def send_email_background():
     n = 0 
@@ -54,7 +54,7 @@ Félicitations 🎉 Nous avons bien reçu votre paiement et vous êtes désormai
 
 Voici votre lien d’accès unique pour rejoindre le challenge :
 
-🔗 https://t.me/botmanvsbot_bot?start={token}
+🔗 https://t.me/FIACRE_D_KPANOU_ASSISTANCE_bot?start={token}
 
 ⚠️ Ce lien est strictement personnel. Ne le partagez sous aucun prétexte : tout partage entraînera votre retrait immédiat de la liste des participants.
 
