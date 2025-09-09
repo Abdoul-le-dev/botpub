@@ -10,7 +10,7 @@ from database.database import update_user_info
 from database.database import add_categorie
 from database.database import get_file_id
 from database.database import save_file_id, create_args
-from database.database import user_has_categorie
+from database.database import user_has_categorie,get_token_exists
 from telegram.error import TimedOut
 from database.database import get_mail_and_name
 
@@ -73,7 +73,9 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
     print(args)
     #PromoV100
     name = "leseminaire" 
-    if args and args[0] == "challenge10000usd":
+    if args and (args[0] == "challenge10000usd" or get_token_exists(args[0])):
+    # code à exécuter si condition vraie
+
 
         #verifier si le user ses déja inscrit 
         
@@ -131,7 +133,14 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
 
                 return NAME
-                    
+
+    else :
+
+        await update.message.reply_text(
+            "⚠️⚠️⚠️ Ce lien n'est pas valide.\n"
+            "Tu dois d'abord t'inscrire et payer pour y participer.\n\n"
+            "💰 Pour plus d'informations, contacte @Fiacrekpanou."
+        )                
 
     if args and args[0] != name:
         if verify_categorie(args[0]) != None:

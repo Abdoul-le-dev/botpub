@@ -92,7 +92,27 @@ def create_user_default_table():
 
 
 #create_categories_table()
-alter_users_table()
-create_user_default_table()
+#alter_users_table()
+#create_user_default_table()
 
-create_video_table()
+#create_video_table()
+def mail():
+    # === 1. Connexion à la base SQLite (ou création si elle n'existe pas) ===
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    # === 2. Création de la table si elle n'existe pas déjà ===
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS participants (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nom TEXT NOT NULL,
+        email TEXT NOT NULL,
+        token TEXT UNIQUE NOT NULL,
+        mail_envoyer BOOLEAN DEFAULT 0,
+        token_utilise BOOLEAN DEFAULT 0
+    )
+    """)
+
+    conn.commit()
+
+mail()

@@ -561,3 +561,68 @@ def liste_categories():
     conn.close()
 
     return rows
+
+def mail_user(nom, email, token):
+
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    # 🔹 Insertion dans la base de données
+    cursor.execute("""
+    INSERT OR IGNORE INTO participants (nom, email, token,mail_envoyer, token_utilise )
+    VALUES (?, ?, ?, 0,0)
+    """, (nom, email, token))
+
+    conn.commit()
+
+def update_mail_status(email):
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    UPDATE participants
+    SET mail_envoyer = 1
+    WHERE email = ?
+    """, (email,))
+
+    conn.commit()
+    conn.close()
+
+def get_unsent_emails():
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    SELECT nom, email, token FROM participants
+    WHERE mail_envoyer = 0
+    """)
+
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+def update_token_used(token):
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    UPDATE participants
+    SET token_utilise = 1
+    WHERE token = ?
+    """, (token,))
+
+    conn.commit()
+    conn.close()
+
+def get_token_exists(token):
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    SELECT 1 FROM participants
+    WHERE token = ? AND token_utilise = 0
+    """, (token,))
+
+    exists = cursor.fetchone() is not None
+    conn.close()
+    return exists
