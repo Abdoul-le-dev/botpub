@@ -12,7 +12,7 @@ from database.database import save_user_default,delete_all_exercices
 from user_data import user_info
 from database.database import get_file_id
 from database.database import save_file_id
-from mail import send_email
+from mail import send_email,send_none_email
 from start import start
 from start import get_name
 from start import get_phone     
@@ -460,6 +460,7 @@ if __name__ == '__main__':
 
     app.add_handler(CommandHandler("userInfo", user_info))
     app.add_handler(CommandHandler("mail_all_participant", send_email))
+    app.add_handler(CommandHandler("mail_none_participant", send_none_email))
 
     app.add_handler(CommandHandler("userDelete", start_delete))
 

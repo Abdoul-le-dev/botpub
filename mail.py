@@ -3,7 +3,7 @@ import secrets
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from database.database import update_mail_status, mail_user
+from database.database import update_mail_status, mail_user, get_unsent_emails
 
 import os
 from telegram import Update
@@ -17,7 +17,7 @@ EXCEL_FILE = "liste.xlsx"
 SHEET_NAME = "Feuil1"
 SMTP_SERVER = "smtp.hostinger.com"
 SMTP_PORT = 465
-SMTP_USER = "challenge10000usd@iastreamnow.com"
+SMTP_USER = "challenge1000@iastreamnow.com"
 SMTP_PASSWORD = "Testing@1#test"
 
 
@@ -105,4 +105,11 @@ async def send_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"📨 Nombre total de mails envoyés : {mails_envoyes} envoyées")
 
-    
+async def send_none_email(update: Update, context: ContextTypes.DEFAULT_TYPE):  
+
+    row =  get_unsent_emails()  
+
+    for r in row:
+
+            await update.message.reply_text(f"📨 mail non envoyer a: {r[2]}")
+
