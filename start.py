@@ -133,14 +133,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
 
                 return NAME
-
-    else :
-
-        await update.message.reply_text(
-            "⚠️⚠️⚠️ Ce lien n'est pas valide.\n"
-            "Tu dois d'abord t'inscrire et payer pour y participer.\n\n"
-            "💰 Pour plus d'informations, contacte @Fiacrekpanou."
-        )                
+                    
 
     if args and args[0] != name:
         if verify_categorie(args[0]) != None:
