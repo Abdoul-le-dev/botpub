@@ -21,7 +21,7 @@ SMTP_USER = "challenge10000usd@iastreamnow.com"
 SMTP_PASSWORD = "Testing@1#test"
 
 
-
+a = 0 
 async def send_email_background():
     n = 0 
     """Envoi des emails en arrière-plan"""
@@ -83,9 +83,14 @@ Assistant Bot IA du Coach Fiacre KPANOU
         # petite pause pour éviter de surcharger le serveur SMTP
         await asyncio.sleep(1)
 
+        a = n
+
     server.quit()
+   
     contacts.to_excel("contacts_avec_tokens.xlsx", index=False)
     print("✅ Tous les mails ont été envoyés.")
+
+    return  n 
 
 
 async def send_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -94,6 +99,8 @@ async def send_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("📨 L’envoi des mails a été lancé en arrière-plan...")
     # Lancer la tâche sans bloquer le bot
-    asyncio.create_task(send_email_background())
+    n =  asyncio.create_task(send_email_background())
 
     await update.message.reply_text(f"📨 {n} envoyées")
+
+    

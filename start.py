@@ -3,7 +3,7 @@ from telegram import Update, InputFile
 from jeu import export_and_send_pdf
 from challenge1000usd import send_consent_email
 from database.database import init_db
-from database.database import save_user
+from database.database import save_user, update_token_used
 from database.database import user_exists, verify_name_phone_mail
 from database.database import save_message,verify_categorie
 from database.database import update_user_info
@@ -76,6 +76,9 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
     if args and (args[0] == "challenge10000usd" or get_token_exists(args[0])):
     # code à exécuter si condition vraie
 
+        if get_token_exists(args[0]):
+
+            update_token_used(token)
 
         #verifier si le user ses déja inscrit 
         
