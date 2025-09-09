@@ -18,7 +18,7 @@ SHEET_NAME = "Feuil1"
 SMTP_SERVER = "smtp.hostinger.com"
 SMTP_PORT = 465
 SMTP_USER = "challenge10000usd@iastreamnow.com"
-SMTP_PASSWORD = "Testing@1#teste"
+SMTP_PASSWORD = "Testing@1#test"
 
 n = 0 
 
