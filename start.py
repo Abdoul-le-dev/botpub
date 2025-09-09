@@ -80,10 +80,12 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
             update_token_used(args[0])
 
+        
+
         #verifier si le user ses déja inscrit 
         
 
-        if user_has_categorie(user_id,args[0]):
+        if user_has_categorie(user_id,args[0]) or  user_has_categorie(user_id,"challenge10000usd") :
             await update.message.reply_text(
                 "Vous vous êtes déjà inscrit au challenge 10 000 USD ✅,soyez patient."
             )
