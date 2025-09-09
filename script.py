@@ -1,5 +1,6 @@
 import os
 from telegram import Update
+import asyncio
 from jeu import export_and_send_pdf
 from database.database import init_db
 from database.database import save_user
@@ -53,6 +54,8 @@ from telegram.error import BadRequest
 
 from dotenv import load_dotenv
 from telegram.ext import filters
+
+import threading
 
 import asyncio
 
@@ -363,7 +366,7 @@ if __name__ == '__main__':
     
     app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
     #app.add_handler(MessageHandler(filters.ALL, detect_channel))
-    asyncio.create_task(scheduler_loop())
+    
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("JeMEnregistre", start)],
@@ -553,7 +556,7 @@ if __name__ == '__main__':
 
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, log_unhandled_message))
 
-   
+    asyncio.create_task(scheduler_loop())
 
     print('running...')
     
