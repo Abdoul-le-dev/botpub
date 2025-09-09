@@ -497,13 +497,15 @@ if __name__ == '__main__':
 
     app.add_handler(conv_handler_add)
 
-    conv_handlerMsg = ConversationHandler(
-    entry_points=[CommandHandler('send_mail', send_short_link)],
+    conv_handler_mail = ConversationHandler(
+    entry_points=[CommandHandler('send_mail_user', send_short_link)],
     states={
         GET_MAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_mail_admin)],
     },
     fallbacks=[CommandHandler('cancel', cancel)],
     )
+
+    app.add_handler(conv_handler_mail)
 
    
    
