@@ -23,6 +23,7 @@ SMTP_PASSWORD = "Testing@1#test"
 n = 0 
 
 async def send_email_background():
+    n = 0 
     """Envoi des emails en arrière-plan"""
     df = pd.read_excel(EXCEL_FILE)
     contacts = df[['CUSTOMERS_FIRSTNAME', 'CUSTOMER_EMAIL']]
