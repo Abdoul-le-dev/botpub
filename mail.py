@@ -17,7 +17,7 @@ EXCEL_FILE = "liste.xlsx"
 SHEET_NAME = "Feuil1"
 SMTP_SERVER = "smtp.hostinger.com"
 SMTP_PORT = 465
-SMTP_USER = "challenge1000@iastreamnow.com"
+SMTP_USER = "challenge10000usd@iastreamnow.com"
 SMTP_PASSWORD = "Testing@1#test"
 
 
@@ -81,7 +81,7 @@ Assistant Bot IA du Coach Fiacre KPANOU
             print(f"❌ Erreur pour {email} : {e}")
 
         # petite pause pour éviter de surcharger le serveur SMTP
-        await asyncio.sleep(1)
+        await asyncio.sleep(5)
 
         a = n
 
@@ -112,4 +112,4 @@ async def send_none_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for r in row:
 
             await update.message.reply_text(f"📨 mail non envoyer a: {r[2]}")
-
+            
