@@ -626,3 +626,18 @@ def get_token_exists(token):
     exists = cursor.fetchone() is not None
     conn.close()
     return exists
+
+def mail_token_utilise(email: str) -> bool:
+    
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT token_utilise FROM participants WHERE email = ?", (email,))
+    row = cursor.fetchone()
+
+    conn.close()
+
+    if row and row[0]:   # row existe et la colonne token_utilise vaut 1 (True)
+        return True
+    else:
+        return False    

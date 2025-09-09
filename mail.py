@@ -3,8 +3,10 @@ import secrets
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from database.database import update_mail_status, mail_user, get_unsent_emails
+from database.database import update_mail_status, mail_user, get_unsent_emails,mail_token_utilise
 
+import json
+from pathlib import Path
 import os
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -42,8 +44,7 @@ async def send_email_background():
         email = row['CUSTOMER_EMAIL']
         token = row['Token']
 
-        # Sauvegarde dans la base
-        mail_user(nom, email, token)
+       
 
         subject = "✅ Paiement confirmé – Accès à votre Challenge"
 
@@ -66,24 +67,30 @@ Cordialement,
 Assistant Bot IA du Coach Fiacre KPANOU
 """
 
-        msg = MIMEMultipart()
-        msg['From'] = SMTP_USER
-        msg['To'] = email
-        msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
+        if mail_token_utilise(email):
+            
+            msg = MIMEMultipart()
+            msg['From'] = SMTP_USER
+            msg['To'] = email
+            msg['Subject'] = subject
+            msg.attach(MIMEText(body, 'plain'))
 
-        try:
-            server.sendmail(SMTP_USER, email, msg.as_string())
-            update_mail_status(email)
-            n +=1
-            print(f"✅ Mail envoyé à {email}")
-        except Exception as e:
-            print(f"❌ Erreur pour {email} : {e}")
+            try:
+                server.sendmail(SMTP_USER, email, msg.as_string())
+                # Sauvegarde dans la base
+                mail_user(nom, email, token)
+                update_mail_status(email)
+                n +=1
+                print(f"✅ Mail envoyé à {email}")
+            except Exception as e:
+                print(f"❌ Erreur pour {email} : {e}")
+                enregistrer_mail_non_envoye(email)
+                
 
-        # petite pause pour éviter de surcharger le serveur SMTP
-        await asyncio.sleep(5)
+            # petite pause pour éviter de surcharger le serveur SMTP
+            await asyncio.sleep(5)
 
-        a = n
+            a = n
 
     server.quit()
    
@@ -113,3 +120,30 @@ async def send_none_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             await update.message.reply_text(f"📨 mail non envoyer a: {r[2]}")
             
+
+import json
+from pathlib import Path
+
+FAILED_MAILS_FILE = "mails.json"
+
+def enregistrer_mail_non_envoye(email: str):
+    """Enregistre un mail non envoyé dans un fichier JSON (liste simple)"""
+    data = []
+
+    # Si le fichier existe déjà, on lit le contenu existant
+    if Path(FAILED_MAILS_FILE).exists():
+        with open(FAILED_MAILS_FILE, "r", encoding="utf-8") as f:
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError:
+                data = []
+
+    # Ajoute le nouvel email si pas déjà dans la liste
+    if email not in data:
+        data.append(email)
+
+    # Sauvegarde la liste mise à jour
+    with open(FAILED_MAILS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+    print(f"📄 Mail non envoyé enregistré dans {FAILED_MAILS_FILE} : {email}")
