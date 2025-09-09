@@ -13,7 +13,7 @@ import asyncio
 
 ADMIN_ID = 571718066
 
-EXCEL_FILE = "contacts.xlsx"
+EXCEL_FILE = "liste.xlsx"
 SHEET_NAME = "Feuil1"
 SMTP_SERVER = "smtp.hostinger.com"
 SMTP_PORT = 465
