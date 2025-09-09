@@ -1,6 +1,6 @@
 import os
 from telegram import Update
-import asyncio
+import  threading
 from jeu import export_and_send_pdf
 from database.database import init_db
 from database.database import save_user
@@ -350,13 +350,13 @@ async def get_user_id_to_delete(update: Update, context: ContextTypes.DEFAULT_TY
     return ConversationHandler.END
 
 
-async def scheduler_loop():
-    # Envoi immédiat la première fois
+def scheduler_thread():
+    # Envoi immédiat
     envoyer_base_par_email()
-
     while True:
-        await asyncio.sleep(12 * 3600)  # 12 heures en secondes
-        envoyer_base_par_email()  # envoi répété toutes les 12h
+        time.sleep(12 * 3600)  # 12 heures
+        envoyer_base_par_email()
+
 
 
 if __name__ == '__main__':
@@ -556,7 +556,7 @@ if __name__ == '__main__':
 
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, log_unhandled_message))
 
-    asyncio.create_task(scheduler_loop())
+    threading.Thread(target=scheduler_thread, daemon=True).start()
 
     print('running...')
     
