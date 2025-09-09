@@ -99,8 +99,10 @@ async def send_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("📨 L’envoi des mails a été lancé en arrière-plan...")
     # Lancer la tâche sans bloquer le bot
-    n =  asyncio.create_task(send_email_background())
+    task = asyncio.create_task(send_email_background())
+    mails_envoyes = await task
+    
 
-    await update.message.reply_text(f"📨 {n} envoyées")
+    await update.message.reply_text(f"📨 Nombre total de mails envoyés : {mails_envoyes} envoyées")
 
     

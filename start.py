@@ -78,7 +78,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
         if get_token_exists(args[0]):
 
-            update_token_used(token)
+            update_token_used(args[0])
 
         #verifier si le user ses déja inscrit 
         
