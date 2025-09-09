@@ -176,11 +176,3 @@ def envoyer_base_par_email():
         print(f"❌ Erreur lors de l’envoi : {e}")
 
 
-def gnerate_link_short():
-    
-
-    long_url = "https://t.me/FIACRE_D_KPANOU_ASSISTANCE_bot?start=challenge10000usd"
-    shortener = pyshorteners.Shortener()
-    short_url = shortener.tinyurl.short(long_url)
-    print("Shortened URL:", short_url)
-    return short_url
