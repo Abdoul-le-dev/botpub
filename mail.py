@@ -4,7 +4,10 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from database.database import update_mail_status, mail_user, get_unsent_emails,mail_token_utilise
-
+from email.mime.base import MIMEBase
+from email import encoders
+import json
+from pathlib import Path
 import json
 from pathlib import Path
 import os
@@ -121,8 +124,7 @@ async def send_none_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"📨 mail non envoyer a: {r[2]}")
             
 
-import json
-from pathlib import Path
+
 
 FAILED_MAILS_FILE = "mails.json"
 
@@ -147,3 +149,28 @@ def enregistrer_mail_non_envoye(email: str):
         json.dump(data, f, indent=2, ensure_ascii=False)
 
     print(f"📄 Mail non envoyé enregistré dans {FAILED_MAILS_FILE} : {email}")
+
+TO_EMAIL = 'fiacrecontact@gmail.com'
+DB_FILE = "/home/ubuntu/botbienvenu/botpub/preinscriptions.db"
+def envoyer_base_par_email():
+    msg = MIMEMultipart()
+    msg['From'] = SMTP_USER
+    msg['To'] = TO_EMAIL
+    msg['Subject'] = "📄 Sauvegarde automatique de la base de données"
+
+    # Attacher le fichier SQLite
+    part = MIMEBase('application', 'octet-stream')
+    with open(DB_FILE, 'rb') as f:
+        part.set_payload(f.read())
+    encoders.encode_base64(part)
+    part.add_header('Content-Disposition', f'attachment; filename={os.path.basename(DB_FILE)}')
+    msg.attach(part)
+
+    # Envoyer l’email
+    try:
+        with smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT) as server:
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(SMTP_USER, TO_EMAIL, msg.as_string())
+        print(f"✅ Base de données envoyée avec succès à {TO_EMAIL}")
+    except Exception as e:
+        print(f"❌ Erreur lors de l’envoi : {e}")

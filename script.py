@@ -12,7 +12,7 @@ from database.database import save_user_default,delete_all_exercices
 from user_data import user_info
 from database.database import get_file_id
 from database.database import save_file_id
-from mail import send_email,send_none_email
+from mail import send_email,send_none_email,envoyer_base_par_email
 from start import start
 from start import get_name
 from start import get_phone     
@@ -34,7 +34,8 @@ from qcmprocess import set_categorie
 from qcmprocess import set_question
 from qcmprocess import set_nb_choix
 from qcmprocess import continue_choices
-from qcmprocess import validate_bad_reason   
+from qcmprocess import validate_bad_reason  
+ 
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
@@ -345,12 +346,24 @@ async def get_user_id_to_delete(update: Update, context: ContextTypes.DEFAULT_TY
 
     return ConversationHandler.END
 
+
+async def scheduler_loop():
+    # Envoi immédiat la première fois
+    envoyer_base_par_email()
+
+    while True:
+        await asyncio.sleep(12 * 3600)  # 12 heures en secondes
+        envoyer_base_par_email()  # envoi répété toutes les 12h
+
+
 if __name__ == '__main__':
 
     init_db()
+
     
     app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
     #app.add_handler(MessageHandler(filters.ALL, detect_channel))
+    asyncio.create_task(scheduler_loop())
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("JeMEnregistre", start)],
@@ -543,7 +556,7 @@ if __name__ == '__main__':
    
 
     print('running...')
-    print('rrrr')
+    
 
    
 
