@@ -3,7 +3,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from telegram import Update, InputFile
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
-
+import asyncio
 import secrets
 from constance import GET_MAIL
 from database.database import get_mail_and_name, mail_user, update_mail_status
@@ -102,24 +102,24 @@ Assistant Bot IA du Coach Fiacre KPANOU
 
     # --- Envoi de l'e-mail ---
     try:
-        #with smtplib.SMTP('smtp.gmail.com', 587) as server:
-       with smtplib.SMTP_SSL("smtp.hostinger.com", 465) as server:
-            server.login(from_email, from_password)
-            server.send_message(msg)
-            #print(f"E-mail de consentement envoyé à {to_email}")
-            mail_user('manuel', to_email, token)
-            update_mail_status(to_email)
-            await update.message.reply_text(f"✅ Succès de l'envoi de l'e-mail à {to_email}.")
+        # Fonction sync
+        def send_email_sync():
+            with smtplib.SMTP_SSL("smtp.hostinger.com", 465) as server:
+                server.login(from_email, from_password)
+                server.send_message(msg)
+                mail_user('manuel', to_email, token)
+                update_mail_status(to_email)
 
-            return
-           
+        # Exécuter la fonction sync sans bloquer le bot
+        await asyncio.get_running_loop().run_in_executor(None, send_email_sync)
+
+        await update.message.reply_text(f"✅ Succès de l'envoi de l'e-mail à {to_email}.")
+
     except Exception as e:
-        print(f"Erreur lors de l'envoi de l'e-mail à {to_email} : {e}")
-        #fichier log pour les erreurs d'envoi
+        print(f"Erreur pour {to_email} : {e}")
         with open("email_errors.log", "a") as log_file:
             log_file.write(f"Erreur pour {to_email} : {e}\n")
         await update.message.reply_text(f"❌ Échec de l'envoi de l'e-mail à {to_email} : {e}")
-        return 
 
 
 async def send_mail_admin(update: Update, Context: ContextTypes.DEFAULT_TYPE):
