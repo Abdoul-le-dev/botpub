@@ -28,9 +28,13 @@ async def send_email_background():
     contacts = df[['CUSTOMERS_FIRSTNAME', 'CUSTOMER_EMAIL']]
     contacts['Token'] = [secrets.token_urlsafe(16) for _ in range(len(contacts))]
 
-    server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-    server.starttls()
-    server.login(SMTP_USER, SMTP_PASSWORD)
+    try:
+        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
+        server.login(SMTP_USER, SMTP_PASSWORD)
+    except Exception as e:
+        print(f"❌ Impossible de se connecter au serveur SMTP : {e}")
+        return
+    
 
     for index, row in contacts.iterrows():
         nom = row['CUSTOMERS_FIRSTNAME']
