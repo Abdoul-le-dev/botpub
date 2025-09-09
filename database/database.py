@@ -113,7 +113,7 @@ def update_user_info(telegram_id, email=None,  expectations=None, discovery=None
     conn.commit()
     conn.close() 
 
-def add_categorie(id_user, name_categorie):
+async def add_categorie(id_user, name_categorie):
     conn = sqlite3.connect("preinscriptions.db")
     cursor = conn.cursor()
 
