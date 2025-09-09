@@ -115,4 +115,20 @@ def mail():
 
     conn.commit()
 
-mail()
+def args_link():
+    # === 1. Connexion à la base SQLite (ou création si elle n'existe pas) ===
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    # === 2. Création de la table si elle n'existe pas déjà ===
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS args_link (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token TEXT UNIQUE NOT NULL,
+        token_utilise BOOLEAN DEFAULT 0
+    )
+    """)
+
+    conn.commit()
+
+args_link()

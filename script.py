@@ -36,6 +36,7 @@ from qcmprocess import set_question
 from qcmprocess import set_nb_choix
 from qcmprocess import continue_choices
 from qcmprocess import validate_bad_reason  
+from challenge1000usd import send_short_link,send_mail_admin
  
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
@@ -67,7 +68,7 @@ from start import button_callback_waiting_1, button_callback_waiting_2
 
 from constance import CHOISIR_CATEGORIE,NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS,EMAIL, EXPECTATIONS,DISCOVERY,WAITING_ANSWER
 
-from constance import ASK_USER_ID,CATEGORIE, NOMBRE_QUESTIONS, QUESTION, NB_CHOIX, CHOIX, REPONSE_SUIVANTE
+from constance import ASK_USER_ID, GET_MAIL ,CATEGORIE, NOMBRE_QUESTIONS, QUESTION, NB_CHOIX, CHOIX, REPONSE_SUIVANTE
 
 from constance import QUESTION, ANSWER, EXPLANATION, CATEGORIE,  NOM_CATEGORIE, WAITING_ANSWER_1, WAITING_ANSWER_2
 
@@ -479,6 +480,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("mail_none_participant", send_none_email))
 
     app.add_handler(CommandHandler("userDelete", start_delete))
+    app.add_handler(CommandHandler("generate_link_short", start_delete))
 
     #app.add_handler(CommandHandler("verify_categorie", cmd_verify_categorie))
 
@@ -492,7 +494,16 @@ if __name__ == '__main__':
         fallbacks=[CommandHandler('cancel', cancel)]
     )
 
+
     app.add_handler(conv_handler_add)
+
+    conv_handlerMsg = ConversationHandler(
+    entry_points=[CommandHandler('send_mail', send_short_link)],
+    states={
+        GET_MAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_mail_admin)],
+    },
+    fallbacks=[CommandHandler('cancel', cancel)],
+    )
 
    
    

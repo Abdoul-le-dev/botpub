@@ -1,5 +1,7 @@
 
-from database.database import liste_categories
-list = liste_categories()
+import secrets
+import smtplib
 
-print(list[0][1])
+l = secrets.token_urlsafe(16)
+
+print(l)
