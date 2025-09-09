@@ -63,7 +63,7 @@ L’assistant bot IA du coach Fiacre KPANOU
 
 
 
-async def send_short_link(to_email,update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def send_short_link(update: Update, context: ContextTypes.DEFAULT_TYPE,to_email):
     """
     Envoie automatiquement un e-mail de link short
     """
