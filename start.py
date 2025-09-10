@@ -513,7 +513,7 @@ async def get_country(update: Update, Context: ContextTypes.DEFAULT_TYPE):
         return COUNTRY
     # Enregistre les informations de l'utilisateur dans la base de données
     data = Context.user_data
-    if  "args" in data and data["args"] in ("leseminaire", "challenge10000usd"):  
+    if  "args" in data and data["args"] in ("leseminaire", "challenge10000usd") or get_token_exists(args[0]):  
 
       
 
