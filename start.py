@@ -79,7 +79,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
         if get_token_exists(args[0]):
 
-            update_token_used(args[0])
+            print("le token existe")    
 
         
 
@@ -897,6 +897,7 @@ async def button_callback_waiting_2(update: Update, context: ContextTypes.DEFAUL
                 print(f"[ERREUR TÂCHE] {e}")
 
         asyncio.create_task(safe_task(add_categorie(user_id, "challenge10000usd")))
+        update_token_used(args[0])
 
         if send_consent_email(to_email, username) : 
             await query.message.reply_text(
