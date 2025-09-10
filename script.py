@@ -480,7 +480,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("mail_none_participant", send_none_email))
 
     app.add_handler(CommandHandler("userDelete", start_delete))
-    app.add_handler(CommandHandler("generate_link_short", start_delete))
+    #app.add_handler(CommandHandler("generate_link_short", start_delete))
 
     #app.add_handler(CommandHandler("verify_categorie", cmd_verify_categorie))
 

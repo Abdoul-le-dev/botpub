@@ -113,7 +113,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
                     parse_mode='Markdown',
                     reply_markup=build_continue_button()
                 )
-
+                update_token_used(args[0])
                 return WAITING_ANSWER_1
 
             else:
