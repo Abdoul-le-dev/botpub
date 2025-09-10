@@ -72,7 +72,8 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
     args = Context.args
     print(args)
     #PromoV100
-    name = "leseminaire" 
+    name = "leseminaire"
+    Context.user_data["argss"] = args[0]
     if args and (args[0] == "challenge10000usd" or get_token_exists(args[0])):
     # code à exécuter si condition vraie
 
@@ -513,7 +514,7 @@ async def get_country(update: Update, Context: ContextTypes.DEFAULT_TYPE):
         return COUNTRY
     # Enregistre les informations de l'utilisateur dans la base de données
     data = Context.user_data
-    if  "args" in data and data["args"] in ("leseminaire", "challenge10000usd") or get_token_exists(args[0]):  
+    if  "args" in data and data["args"] in ("leseminaire", "challenge10000usd") or get_token_exists(data["argss"] ):  
 
       
 
