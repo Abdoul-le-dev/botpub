@@ -588,7 +588,7 @@ async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = context.user_data
 
-    if "args" in data and data["args"] == "challenge10000usd" :
+    if "args" in data and data["args"] == "challenge10000usd" or get_token_exists(data["argss"]):
 
         async def safe_task(coro):
             """Exécute une tâche async sans bloquer et log les erreurs."""
@@ -631,7 +631,7 @@ async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=build_continue_button()
         )
 
-
+        update_token_used(data['argss'])
         return WAITING_ANSWER_1
 
 
@@ -897,7 +897,8 @@ async def button_callback_waiting_2(update: Update, context: ContextTypes.DEFAUL
                 print(f"[ERREUR TÂCHE] {e}")
 
         asyncio.create_task(safe_task(add_categorie(user_id, "challenge10000usd")))
-        update_token_used(args[0])
+        
+        
 
         if send_consent_email(to_email, username) : 
             await query.message.reply_text(
