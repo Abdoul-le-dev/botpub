@@ -121,12 +121,14 @@ Assistant Bot IA du Coach Fiacre KPANOU
 
         await update.message.reply_text(f"✅ Succès de l'envoi de l'e-mail à {to_email}.")
 
+        return ConversationHandler.END
+
     except Exception as e:
         print(f"Erreur pour {to_email} : {e}")
         with open("email_errors.log", "a") as log_file:
             log_file.write(f"Erreur pour {to_email} : {e}\n")
         await update.message.reply_text(f"❌ Échec de l'envoi de l'e-mail à {to_email} : {e}")
-
+        return ConversationHandler.END
 
 async def send_mail_admin(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
