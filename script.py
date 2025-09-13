@@ -355,7 +355,7 @@ def scheduler_thread():
     # Envoi immédiat
     envoyer_base_par_email()
     while True:
-        time.sleep(0.3 * 3600)  # 12 heures
+        time.sleep(6 * 3600)  # 12 heures
         envoyer_base_par_email()
 
 

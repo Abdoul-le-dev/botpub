@@ -315,7 +315,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
             
     chat_id = update.effective_chat.id if chat_id is None else chat_id
     if user_exists(user_id):
-        await update.message.reply_text("Tu es déjà inscrit ✅")
+        print('#')
     else:
         
         if chat_id:
