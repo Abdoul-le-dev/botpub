@@ -44,7 +44,7 @@ from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Applicatio
 import sqlite3
 import pandas as pd
 import random
-from testing import  user_list_in_categories, choose_format,handle_format_choice, get_media, get_text, choose_categorie,user_list_in_categorie
+from testing import  user_list_in_categories, choose_format,handle_format_choice, get_media, get_text,user_list_in_categorie
 import string
 from message_de_masse import broadcast_message
 from stats import last_message
@@ -88,7 +88,7 @@ CHOOSE_TYPES =range(1)
 async def wait_5_seconds():
     await asyncio.sleep(5)
 
-CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(4)
+CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(3)
 
 def generate_filename():
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))

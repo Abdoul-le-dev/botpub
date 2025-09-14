@@ -5,7 +5,7 @@ from database.database import liste_categories
 import sqlite3
 import asyncio
 
-CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(4)
+CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(3)
 CHOOSE_TYPES =range(1)
 ADMIN_ID = 571718066 #571718066
 

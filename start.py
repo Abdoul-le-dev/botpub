@@ -73,8 +73,9 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
     print(args)
     #PromoV100
     name = "leseminaire"
-    Context.user_data["argss"] = args[0]
+    
     if args and (args[0] == "challenge10000usd" or get_token_exists(args[0])):
+        Context.user_data["argss"] = args[0]
     # code à exécuter si condition vraie
 
         if get_token_exists(args[0]):

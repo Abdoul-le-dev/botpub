@@ -153,6 +153,9 @@ def enregistrer_mail_non_envoye(email: str):
 TO_EMAIL = 'fiacrecontact@gmail.com'
 DB_FILE = "/home/ubuntu/botbienvenu/botpub/preinscriptions.db"
 def envoyer_base_par_email():
+    print('bonjour')
+
+def envoyer_base_par_emails():
     msg = MIMEMultipart()
     msg['From'] = SMTP_USER
     msg['To'] = TO_EMAIL
@@ -174,5 +177,3 @@ def envoyer_base_par_email():
         print(f"✅ Base de données envoyée avec succès à {TO_EMAIL}")
     except Exception as e:
         print(f"❌ Erreur lors de l’envoi : {e}")
-
-
