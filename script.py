@@ -88,7 +88,7 @@ CHOOSE_TYPES =range(1)
 async def wait_5_seconds():
     await asyncio.sleep(5)
 
-CHOOSE_TYPE, CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(4)
+CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(4)
 
 def generate_filename():
     suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
@@ -446,9 +446,8 @@ if __name__ == '__main__':
     ))
 
     conv_handlerMsg = ConversationHandler(
-    entry_points=[CommandHandler('msgMasse', choose_categorie)],
+    entry_points=[CommandHandler('msgMasse', choose_format)],
     states={
-        CHOOSE_TYPE: [MessageHandler(filters.Regex('^[1-9]$'),  choose_format)],
         CHOOSE_FORMAT: [MessageHandler(filters.Regex('^[1-5]$'), handle_format_choice)],
         GET_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, get_media)],
         GET_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_text)],

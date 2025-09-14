@@ -5,9 +5,9 @@ from database.database import liste_categories
 import sqlite3
 import asyncio
 
-CHOOSE_TYPE, CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(4)
+CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(4)
 CHOOSE_TYPES =range(1)
-ADMIN_ID = 571718066
+ADMIN_ID = 571718066 #571718066
 
 def limit_text(text, max_length=4096):
     """
@@ -16,38 +16,13 @@ def limit_text(text, max_length=4096):
     if len(text) > max_length:
         return text[:max_length-1] + "…"
     return text
-async def choose_categorie(update, context):
 
-    print(update.effective_user.id)
-
-    if update.effective_user.id != ADMIN_ID or update.effective_user.id != 6992809421: 
-        await update.message.reply_text("⛔ Désolé, cette commande est réservée à l’administrateur.")
-        return
-    
-    lists = liste_categories()
-    indice =0
-    msg  = ""
-    for list in lists:
-        
-        indice +=1
-        msg  += str(indice) + "-"+list[1] + "\n"
-    
-    await update.message.reply_text(msg
-        
-    )
-
-    await update.message.reply_text('Le numero de la categorie ? :\n\n')
-        
-
-    return CHOOSE_TYPE
 async def choose_format(update, context):
 
-    categorie = update.message.text[0]
-
-    #verifer que c'est un chiffre
-
-    context.user_data["categorie"] = categorie
-    
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Désolé, cette commande est réservée à l’administrateur.")
+        return ConversationHandler.END
+ 
     await update.message.reply_text(
         "📤 Choisis le format de ton message à diffuser, en envoyant simplement le **chiffre correspondant** :\n\n"
         "1 - Texte\n"
@@ -125,7 +100,7 @@ async def get_text(update, context):
 async def broadcast_messages(bot, admin_id, context_user_data):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
-    categorie = context_user_data.get("categorie")
+    categorie = 'challenge10000usd'  # Valeur par défaut
     #cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
     #cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
     cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", (categorie,))
