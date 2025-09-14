@@ -18,6 +18,8 @@ def limit_text(text, max_length=4096):
     return text
 async def choose_categorie(update, context):
 
+    print(update.effective_user.id)
+
     if update.effective_user.id != ADMIN_ID or update.effective_user.id != 6992809421: 
         await update.message.reply_text("⛔ Désolé, cette commande est réservée à l’administrateur.")
         return
