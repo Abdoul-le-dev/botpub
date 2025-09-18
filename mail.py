@@ -151,7 +151,7 @@ def enregistrer_mail_non_envoye(email: str):
     print(f"📄 Mail non envoyé enregistré dans {FAILED_MAILS_FILE} : {email}")
 
 TO_EMAIL = 'fiacrecontact@gmail.com'
-DB_FILE = "/home/ubuntu/botbienvenu/botpub/preinscriptions.db"
+DB_FILE = "/home/ubuntu/botassistant/botpub/preinscriptions.db"
 def envoyer_base_par_email():
     msg = MIMEMultipart()
     msg['From'] = SMTP_USER
