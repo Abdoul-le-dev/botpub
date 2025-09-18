@@ -56,7 +56,6 @@ from telegram.error import BadRequest
 from dotenv import load_dotenv
 from telegram.ext import filters
 
-import threading
 
 import asyncio
 
