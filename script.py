@@ -251,7 +251,7 @@ async def start_message(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     return ASK_ID
 
 async def receive_id(update: Update, Context: ContextTypes.DEFAULT_TYPE):
-    Context.user_data["target_id"] = update.message.TEXT.strip()
+    Context.user_data["target_id"] = update.message.text.strip()
     await update.message.reply_text("✏️ Quel message veux-tu envoyer ?")
     return ASK_TEXT
 
