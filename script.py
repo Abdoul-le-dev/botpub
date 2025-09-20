@@ -583,7 +583,7 @@ if __name__ == '__main__':
 
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, log_unhandled_message))
 
-    app.add_handler(CallbackQueryHandler(button_callback_waiting_2, pattern='^(enregistre)$'))
+    
 
     conv_handler_welcome = ConversationHandler(
     entry_points=[CallbackQueryHandler(get_level_welcome, pattern='^(enregistre)$')],
