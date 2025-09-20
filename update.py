@@ -152,4 +152,4 @@ def mail_table():
 
     conn.commit()
     conn.close()
-
+mail_table()
