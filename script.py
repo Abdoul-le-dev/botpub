@@ -257,7 +257,7 @@ async def receive_id(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
 async def receive_TEXT(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     target_id = Context.user_data["target_id"]
-    TEXT = update.message.TEXT
+    TEXT = update.message.text
 
     try:
         await Context.bot.send_message(chat_id=int(target_id), text=TEXT)
@@ -334,6 +334,17 @@ if __name__ == '__main__':
     #app.add_handler(MessageHandler(filters.ALL, detect_channel))
     
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
+    conv_handler_mail_user = ConversationHandler(
+    entry_points=[CommandHandler('addemail', save_mail)],
+    states={
+        USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_mail_id)],
+        PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_mail_pwd)],
+    },
+    fallbacks=[CommandHandler('cancel', cancel)],
+    allow_reentry=True,
+)
+
+    app.add_handler(conv_handler_mail_user)
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("JeMEnregistre", start)],
         states={
@@ -543,17 +554,7 @@ if __name__ == '__main__':
 
     app.add_handler(conv_handler_welcome)
 
-    conv_handler_mail_user = ConversationHandler(
-    entry_points=[CommandHandler('addemail', save_mail)],
-    states={
-        USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_mail_id)],
-        PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_mail_pwd)],
-    },
-    fallbacks=[CommandHandler('cancel', cancel)],
-    allow_reentry=True,
-)
-
-    app.add_handler(conv_handler_mail_user)
+    
 
     #app.add_handler(conv_handler_mail_user)
     #threading.Thread(target=scheduler_thread, daemon=True).start()

@@ -50,3 +50,23 @@ conv_handler_mail_user = ConversationHandler(
 )
 
 app.add_handler(conv_handler_mail_user)
+
+
+conv_handler_mail_user = ConversationHandler(
+    entry_points=[CommandHandler('addemail', save_mail)],
+    states={
+        USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_mail_id)],
+        PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_mail_pwd)],
+    },
+    fallbacks=[CommandHandler('cancel', cancel)],
+    allow_reentry=True,
+)
+
+convs_handler = ConversationHandler(
+    entry_points=[CommandHandler("message", start_message)],
+    states={
+        ASK_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_id)],
+        ASK_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_TEXT)],
+    },
+    fallbacks=[CommandHandler("cancel", cancel)]
+    )
