@@ -589,11 +589,11 @@ if __name__ == '__main__':
     entry_points=[CallbackQueryHandler(get_level_welcome, pattern='^(enregistre)$')],
     
     states={
-        LEVEL_WELCOME: [MessageHandler(filters.TEXT, get_why_welcome)],
-        WHY_WELCOME: [MessageHandler(filters.TEXT, get_numero_whatsapp_welcome)],
-        NUMERO_WHATSAPP_WELCOME: [MessageHandler(filters.TEXT, get_mail_welcome)],
-        MAIL_WELCOME: [MessageHandler(filters.TEXT, get_name_welcome)],
-        NOM_WELCOME: [MessageHandler(filters.TEXT, last_step_welcome)],
+        LEVEL_WELCOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_why_welcome)],
+        WHY_WELCOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_numero_whatsapp_welcome)],
+        NUMERO_WHATSAPP_WELCOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_mail_welcome)],
+        MAIL_WELCOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name_welcome)],
+        NOM_WELCOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, last_step_welcome)],
         
 
 
