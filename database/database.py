@@ -640,4 +640,74 @@ def mail_token_utilise(email: str) -> bool:
     if row and row[0]:   # row existe et la colonne token_utilise vaut 1 (True)
         return True
     else:
-        return False    
+        return False 
+
+
+def update_mail_count(user, increment=1):
+    """
+    Incrémente le compteur de mails envoyés pour un utilisateur.
+    
+    :param user: l'adresse email ou nom de l'utilisateur
+    :param increment: nombre à ajouter au compteur (par défaut 1)
+    """
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    
+    # Met à jour le compteur en l'incrémentant
+    cursor.execute("""
+        UPDATE mail_valide
+        SET nbre_mail_envoyer_jrs = nbre_mail_envoyer_jrs + ?
+        WHERE user = ?
+    """, (increment, user))
+    
+    conn.commit()
+    conn.close()
+
+def reset_all_mail_counts():
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        UPDATE mail_valide
+        SET nbre_mail_envoyer_jrs = 0
+    """)
+    
+    conn.commit()
+    conn.close()        
+
+def add_new_user(user, psw):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+            INSERT INTO mail_valide (user, psw, nbre_mail_envoyer_jrs)
+            VALUES (?, ?, 0)
+        """, (user, psw))
+        conn.commit()
+        print(f"Utilisateur '{user}' ajouté avec succès.")
+    except sqlite3.IntegrityError:
+        print(f"L'utilisateur '{user}' existe déjà !")
+    
+    conn.close()    
+
+def get_user_under_limit():
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    
+    # Sélection d'un utilisateur dont le compteur est < 2500
+    cursor.execute("""
+        SELECT user, psw FROM mail_valide
+        WHERE nbre_mail_envoyer_jrs < 2900
+        ORDER BY nbre_mail_envoyer_jrs ASC
+        LIMIT 1
+    """)
+    
+    result = cursor.fetchone()
+    conn.close()
+    
+    if result:
+        user_email, user_psw = result
+        return user_email, user_psw
+    else:
+        return None, None  # Aucun utilisateur disponible       

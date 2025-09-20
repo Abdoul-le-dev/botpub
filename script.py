@@ -37,8 +37,9 @@ from qcmprocess import set_nb_choix
 from qcmprocess import continue_choices
 from qcmprocess import validate_bad_reason  
 from challenge1000usd import send_short_link,send_mail_admin
+from constance import LEVEL_WELCOME, WHY_WELCOME, NUMERO_WHATSAPP_WELCOME, MAIL_WELCOME, NOM_WELCOME, USER, PWD
  
-
+from mail_fonction import save_mail_id,save_mail_pwd, save_mail
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
 import sqlite3
@@ -73,6 +74,7 @@ from constance import QUESTION, ANSWER, EXPLANATION, CATEGORIE,  NOM_CATEGORIE, 
 
 from exercice import recevoir_categorie,start_rapport,start_add_exercice, get_question, get_answer, get_explanation, get_categorie, cmd_verify_categorie,start_exercice,receive_answer,start_add_categorie, get_nom_categorie
 
+from seminaire import get_level_welcome,get_why_welcome,get_numero_whatsapp_welcome,get_mail_welcome,get_name_welcome,last_step_welcome
 type =""
 load_dotenv()
 
@@ -130,10 +132,19 @@ async def export_and_send_excel(update: Update, Context: ContextTypes.DEFAULT_TY
 
     await update.message.reply_text("📤 Exportation réussie. Fichier envoyé à l’administrateur.")
 
+def build_answer_keyboards():
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Je m'enregistre ", callback_data="enregistre")
+               
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     user = update.chat_join_request.from_user
     user_id = user.id
-    user_name = update.effective_user.first_name or " Futur trader"
+    user_name = update.effective_user.first_name or " CONFERENCE 1"
 
     chat_id = update.chat_join_request.chat.id
 
@@ -142,7 +153,7 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
     args = Context.args
     print("chat_id")
     print(chat_id)
-    print(args)
+    if args : print(args)
     
     if user_has_categorie(user_id,"leseminaire"):
         print("L'utilisateur a déjà une catégorie, il est déjà membre.")
@@ -165,14 +176,9 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
 
         return 
     
-        
-    
-    
-    
-    print(chat_id)
     
     if chat_id == CANAL_B_ID:
-        # Par exemple, tu interdis l’entrée
+       
         await Context.bot.send_message(
             chat_id=user.id,
             text=(
@@ -195,13 +201,13 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
 
         # Envoie un message privé
         try:
-            video_name = "welcome_messagess"
+            video_name = "welcome"
 
             file_id = get_file_id(video_name)
 
             if file_id:
                 # Réutiliser le file_id
-                await Context.bot.send_video(chat_id=user_id , video=file_id, caption="")
+                await Context.bot.send_video(chat_id=user_id , video=file_id, reply_markup= build_answer_keyboards())
                 
 
                 
@@ -211,17 +217,17 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
             else:
                 # Envoyer depuis fichier local, puis sauvegarder le file_id
                 video_path = "welcome.mp4"
-                msg = await Context.bot.send_video(chat_id=user_id , video=video_path, caption="Bienvenue ! 🎉")
+                msg = await Context.bot.send_video(chat_id=user_id , video=video_path, reply_markup= build_answer_keyboards())
                 new_file_id = msg.video.file_id
                 save_file_id(video_name, new_file_id)
                 
                 
 
             
-            await Context.bot.send_message(
-            chat_id=user_id,
-            text="🔥🔥✍️  Clique sur /JeMEnregistre Maintenant"
-            )
+            #await Context.bot.send_message(
+            #chat_id=user_id,
+            #text="🔥🔥✍️  Clique sur /JeMEnregistre Maintenant"
+            #)
 
             
         except Exception as e:
@@ -567,7 +573,39 @@ if __name__ == '__main__':
 
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, log_unhandled_message))
 
-    threading.Thread(target=scheduler_thread, daemon=True).start()
+    app.add_handler(CallbackQueryHandler(button_callback_waiting_2, pattern='^(enregistre)$'))
+
+    conv_handler_welcome = ConversationHandler(
+    entry_points=[CallbackQueryHandler(get_level_welcome, pattern='^(enregistre)$')],
+    
+    states={
+        LEVEL_WELCOME: [MessageHandler(filters.TEXT, get_why_welcome)],
+        WHY_WELCOME: [MessageHandler(filters.TEXT, get_numero_whatsapp_welcome)],
+        NUMERO_WHATSAPP_WELCOME: [MessageHandler(filters.TEXT, get_mail_welcome)],
+        MAIL_WELCOME: [MessageHandler(filters.TEXT, get_name_welcome)],
+        NOM_WELCOME: [MessageHandler(filters.TEXT, last_step_welcome)],
+        
+
+
+    },
+    
+    fallbacks=[CommandHandler('cancel', cancel)])
+
+    app.add_handler(conv_handler_welcome)
+
+    conv_handler_exercice_user = ConversationHandler(
+        entry_points=[CommandHandler('addemail#', save_mail)],
+        states={
+            USER: [MessageHandler(filters.TEXT & ~filters.COMMAND,save_mail_id)],
+            PWD: [[MessageHandler(filters.TEXT & ~filters.COMMAND, save_mail_pwd)]]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)],
+        allow_reentry=True,
+    )
+
+    app.add_handler(conv_handler_exercice_user)
+
+    #threading.Thread(target=scheduler_thread, daemon=True).start()
 
     print('running...')
     

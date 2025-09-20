@@ -130,5 +130,26 @@ def args_link():
     """)
 
     conn.commit()
+    conn.close()
 
-args_link()
+#args_link()
+
+import sqlite3
+
+def mail_table():
+    # Création de la table mail
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS mail_valide (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user TEXT UNIQUE NOT NULL,
+            psw TEXT NOT NULL,
+            nbre_mail_envoyer_jrs INTEGER       
+        )
+    """)
+
+    conn.commit()
+    conn.close()
+
