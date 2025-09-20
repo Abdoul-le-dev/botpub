@@ -37,8 +37,8 @@ from qcmprocess import set_nb_choix
 from qcmprocess import continue_choices
 from qcmprocess import validate_bad_reason  
 from challenge1000usd import send_short_link,send_mail_admin
-from constance import LEVEL_WELCOME, WHY_WELCOME, NUMERO_WHATSAPP_WELCOME, MAIL_WELCOME, NOM_WELCOME, USER, PWD
- 
+from constance import LEVEL_WELCOME, WHY_WELCOME, NUMERO_WHATSAPP_WELCOME, MAIL_WELCOME, NOM_WELCOME
+USER,PWD = range(2) 
 from mail_fonction import save_mail_id,save_mail_pwd, save_mail
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
