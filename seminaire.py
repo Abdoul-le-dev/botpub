@@ -10,7 +10,7 @@ import asyncio
 
 from mail_fonction import envoyer_email
 
-from database.database import save_user
+from database.database import save_user,user_has_categorie
 
 from database.database import add_categorie
 async def get_level_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -19,6 +19,10 @@ async def get_level_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     user_id = query.from_user.id
+
+    if user_has_categorie(user_id,"Grande_CONFERENCE_FIN_PROCESS_BOT"):
+
+        return ConversationHandler.END
 
     await query.message.reply_text(
     "📊 J’ai besoin de connaître ton niveau actuel en trading.\n\n"
@@ -90,7 +94,7 @@ async def get_numero_whatsapp_welcome(update: Update, context: ContextTypes.DEFA
 
     await update.message.reply_text(
     "`📞 Quel est ton numéro whatsapp ?`\n\n"
-    "`🌍 Envoie sous le format internationnal, ex: +*** ** ** ** **`",
+    "`🌍 Envoie sous le format internationnal, ex: +229 01 97 20 31 88`",
     parse_mode="Markdown")
 
 

@@ -188,8 +188,11 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
             except Exception as e:
                 print(f"[ERREUR TÂCHE] {e}")
 
+        if user_has_categorie(user_id,"Grande Conference JOIN CANAL"):
+            return
+        asyncio.create_task(safe_task(add_categorie(user.id, "Grande Conference JOIN CANAL")))  
 
-        asyncio.create_task(safe_task(add_categorie(user.id, "Grande Conference JOIN CANAL")))           
+                  
 
         # Envoie un message privé
         try:
