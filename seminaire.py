@@ -13,7 +13,12 @@ from database.database import save_user
 from database.database import add_categorie
 async def get_level_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     
-    await update.message.reply_text(
+    query = update.callback_query
+    await query.answer()
+
+    user_id = query.from_user.id
+
+    await query.message.reply_text(
     "📊 J’ai besoin de connaître ton niveau actuel en trading.\n\n"
     "Dis-moi où tu te situes aujourd’hui :\n\n"
     "1️⃣ DÉBUTANT – JE DÉCOUVRE À PEINE LE TRADING\n\n"
