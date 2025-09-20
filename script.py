@@ -603,17 +603,17 @@ if __name__ == '__main__':
 
     app.add_handler(conv_handler_welcome)
 
-    conv_handler_exercice_user = ConversationHandler(
+    conv_handler_mail_user = ConversationHandler(
         entry_points=[CommandHandler('addemail', save_mail)],
         states={
             USER: [MessageHandler(filters.TEXT & ~filters.COMMAND,save_mail_id)],
-            PWD: [[MessageHandler(filters.TEXT & ~filters.COMMAND, save_mail_pwd)]]
+            PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_mail_pwd)]
         },
         fallbacks=[CommandHandler('cancel', cancel)],
         allow_reentry=True,
     )
 
-    app.add_handler(conv_handler_exercice_user)
+    app.add_handler(conv_handler_mail_user)
 
     #threading.Thread(target=scheduler_thread, daemon=True).start()
 

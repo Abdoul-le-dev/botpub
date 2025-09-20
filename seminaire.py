@@ -3,7 +3,9 @@ from constance import LEVEL_WELCOME, WHY_WELCOME, NUMERO_WHATSAPP_WELCOME, MAIL_
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
-
+from telegram.ext import ContextTypes
+from telegram.error import TimedOut
+from telegram.error import BadRequest,ConversationHandler
 import asyncio
 
 from mail_fonction import envoyer_email
