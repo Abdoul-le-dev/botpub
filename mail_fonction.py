@@ -31,8 +31,7 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 
-SMTP_SERVER = "smtp.example.com"
-SMTP_PORT = 465  # pour SMTP_SSL
+
 
 async def envoyer_email(subjet, msge, mail, DB_FILE=None):
 

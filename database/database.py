@@ -710,4 +710,26 @@ def get_user_under_limit():
         user_email, user_psw = result
         return user_email, user_psw
     else:
-        return None, None  # Aucun utilisateur disponible       
+        return None, None  # Aucun utilisateur disponible      
+
+
+def get_user_categories(user_id):
+    try:
+        conn = sqlite3.connect('preinscriptions.db')  # Remplacez par votre nom de DB
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, name_categorie, created_at 
+            FROM categories 
+            WHERE id_user = ?
+            ORDER BY created_at DESC
+        ''', (user_id,))
+        
+        categories = cursor.fetchall()
+        conn.close()
+        
+        return categories
+        
+    except sqlite3.Error as e:
+        print(f"Erreur SQLite: {e}")
+        return []

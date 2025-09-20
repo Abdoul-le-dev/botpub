@@ -205,15 +205,14 @@ async def last_step_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(
             f"{prenom}, 🎉 ton inscription à la *Grande Conférence* est confirmée !\n\n"
-            "🗓 Date : 2 octobre à partir de 20h\n"
+            "🗓 Date : 2 octobre à partir de 20h heure de cotonou\n"
             "🔗 Le lien de la conférence te sera envoyé via :\n"
             "- Mon canal Telegram (vous y êtes déjà)\n"
             "- Par WhatsApp\n"
             "- Directement via l'assistant bot si tu le souhaites\n\n"
-            "📧 Je n’ai pas pu t’envoyer le mail de confirmation cette fois-ci, "
+            "📧 Je n’ai pas pu t’envoyer le mail de confirmation  "
             "mais ne t’inquiète pas : tout est bien enregistré.\n\n"
-            "Nous avons hâte de te retrouver pour cet événement exceptionnel !\n\n"
-            "🤖 Assistant Bot du coach Fiacre (@FIACRE_D_KPANOU_ASSISTANCE_bot)",
+            "Nous avons hâte de te retrouver pour cet événement exceptionnel !\n\n",
             parse_mode="Markdown"
         )
 

@@ -5,7 +5,7 @@ from jeu import export_and_send_pdf
 from database.database import init_db
 from database.database import save_user
 from database.database import user_exists,delete_user_data_from_db
-from database.database import save_message
+from database.database import save_message, get_user_categories
 from database.database import update_user_info
 from database.database import add_categorie,verify_categorie,add_new_user
 from database.database import user_has_categorie
@@ -91,6 +91,28 @@ async def wait_5_seconds():
 
 CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(3)
 
+async def categories_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Commande /categories pour afficher toutes les catégories de l'utilisateur
+    """
+    user_id = update.effective_user.id
+    categories = get_user_categories(user_id)
+    
+    if not categories:
+        await update.message.reply_text(
+            "📂 Vous n'avez aucune catégorie enregistrée.",
+            parse_mode="Markdown"
+        )
+        return
+    
+    # Construire le message
+    message = "📂 **Vos catégories :**\n\n"
+    
+    for i, (cat_id, name, created_at) in enumerate(categories, 1):
+        message += f"{i}. **{name}**\n"
+        message += f"   └ ID: `{cat_id}` | Créée: {created_at}\n\n"
+    
+    await update.message.reply_text(message, parse_mode="Markdown")
 
 def build_answer_keyboards():
     keyboard = [
@@ -458,6 +480,7 @@ if __name__ == '__main__':
     app.add_handler(conv_handler)
     app.add_handler(conv_handlerstart)
     app.add_handler(CommandHandler("LesGagnants", export_and_send_pdf))
+    app.add_handler(CommandHandler("categoriesss", categories_user))
 
     app.add_handler(CommandHandler("lastMessage", last_message))
     app.add_handler(CommandHandler("delete_all_exercices", delete_all_exercices))
