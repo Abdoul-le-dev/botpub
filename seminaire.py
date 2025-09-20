@@ -11,7 +11,7 @@ from mail_fonction import envoyer_email
 from database.database import save_user
 
 from database.database import add_categorie
-async def get_level_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+async def get_level_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     query = update.callback_query
     await query.answer()
@@ -33,7 +33,7 @@ async def get_level_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
     return LEVEL_WELCOME
 
-async def get_why_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+async def get_why_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print('yes')
     response = update.message.text.strip()
 
@@ -49,7 +49,7 @@ async def get_why_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
         )
         return LEVEL_WELCOME
     
-    Context.user_data["level"] = niveau_map[response]
+    context.user_data["level"] = niveau_map[response]
 
     await update.message.reply_text(
                
@@ -65,7 +65,7 @@ async def get_why_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
             )
     return WHY_WELCOME
 
-async def get_numero_whatsapp_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+async def get_numero_whatsapp_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     response = update.message.text.strip()
 
@@ -84,7 +84,7 @@ async def get_numero_whatsapp_welcome(update: Update, Context: ContextTypes.DEFA
         )
         return WHY_WELCOME
 
-    Context.user_data["why"] = why_map[response]
+    context.user_data["why"] = why_map[response]
 
     await update.message.reply_text(
     "`📞 Quel est ton numéro whatsapp ?`\n\n"
@@ -94,17 +94,17 @@ async def get_numero_whatsapp_welcome(update: Update, Context: ContextTypes.DEFA
 
     return NUMERO_WHATSAPP_WELCOME
 
-async def get_mail_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+async def get_mail_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not update.message or not update.message.text:
         if update.effective_chat:
-            await Context.bot.send_message(
+            await context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text="❌ Merci d’envoyer ton numéro."
             )
         return NUMERO_WHATSAPP_WELCOME
     
-    Context.user_data["phone"] = update.message.text
+    context.user_data["phone"] = update.message.text
 
     await update.message.reply_text(
                             "📧 `Pour traiter tes demandes en priorité à l'avenir, redonne-nous ton adresse mail, vu que tu fais maintenant partie de la famille.`\n\n"
@@ -114,13 +114,13 @@ async def get_mail_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     
     return MAIL_WELCOME 
 
-async def get_name_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+async def get_name_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not update.message or not update.message.text or "@" not in update.message.text:
         await update.message.reply_text("❌ Merci d’envoyer une adresse email valide.")
         return MAIL_WELCOME 
     # Enregistre l'email de l'utilisateur
-    Context.user_data["email"] = update.message.text
+    context.user_data["email"] = update.message.text
 
     await update.message.reply_text(
     "📌 Nous y sommes presque !\n"
@@ -133,11 +133,11 @@ async def get_name_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
     return NOM_WELCOME
 
-async def last_step_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+async def last_step_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = update.effective_user
 
-    Context.user_data["name"] = update.message.text
+    context.user_data["name"] = update.message.text
 
     async def safe_task(coro):
             """Exécute une tâche async sans bloquer et log les erreurs."""
@@ -146,23 +146,23 @@ async def last_step_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"[ERREUR TÂCHE] {e}")
 
-    if Context.user_data.get("name"):
+    if context.user_data.get("name"):
         asyncio.create_task(safe_task(save_user(
-                name=Context.user_data.get("name"),
-                phone=Context.user_data.get("phone"),
+                name=context.user_data.get("name"),
+                phone=context.user_data.get("phone"),
                 telegram_id=user.id,
                 contexte_user="Grande Conference", 
-                email=Context.user_data.get("email")  ,       
-                level=Context.user_data.get("level"),
-                why=Context.user_data.get("why")
+                email=context.user_data.get("email")  ,       
+                level=context.user_data.get("level"),
+                why=context.user_data.get("why")
                 
         )))
 
-    prenom = Context.user_data.get("name")  # à remplacer dynamiquement
+    prenom = context.user_data.get("name")  # à remplacer dynamiquement
 
     subject = "📌 Confirmation et informations pour la Grande Conférence"
 
-    mail = Context.user_data.get("email") 
+    mail = context.user_data.get("email") 
 
     msg = (
         f"Bonjour {prenom},\n\n"
