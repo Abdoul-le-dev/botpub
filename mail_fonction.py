@@ -34,7 +34,7 @@ from email import encoders
 SMTP_SERVER = "smtp.example.com"
 SMTP_PORT = 465  # pour SMTP_SSL
 
-def envoyer_email(subjet, msge, mail, DB_FILE=None):
+async def envoyer_email(subjet, msge, mail, DB_FILE=None):
 
     # Récupérer un utilisateur disponible
     SMTP_USER, SMTP_PASSWORD = get_user_under_limit()
