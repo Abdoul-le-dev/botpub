@@ -5,7 +5,7 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
 from telegram.ext import ContextTypes
 from telegram.error import TimedOut
-from telegram.error import BadRequest,ConversationHandler
+from telegram.error import BadRequest
 import asyncio
 
 from mail_fonction import envoyer_email

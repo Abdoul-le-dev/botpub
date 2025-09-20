@@ -244,12 +244,6 @@ async def cancel(update: Update, Context: ContextTypes.DEFAULT_TYPE) -> int:
 
 # États du formulaire
 #NAME, PHONE, COUNTRY, LEVEL,EMAIL,MOTIVATION = range(6)
-
-
-
-        
-
-
 ASK_ID, ASK_TEXT = range(2)
 
 async def start_message(update: Update, Context: ContextTypes.DEFAULT_TYPE):
@@ -309,6 +303,7 @@ if __name__ == '__main__':
 
     
     app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
+
     #app.add_handler(MessageHandler(filters.ALL, detect_channel))
     
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
@@ -532,15 +527,11 @@ if __name__ == '__main__':
     )
 
     app.add_handler(conv_handler_mail_user)
-
     #threading.Thread(target=scheduler_thread, daemon=True).start()
-
+    #app.add_handler(qcm_handler)
     print('running...')
     
-
-   
-
-    #app.add_handler(qcm_handler)
+    
     
 
     
