@@ -90,7 +90,7 @@ async def get_numero_whatsapp_welcome(update: Update, context: ContextTypes.DEFA
 
     await update.message.reply_text(
     "`📞 Quel est ton numéro whatsapp ?`\n\n"
-    "`🌍 Voici le mien : +22997203304`",
+    "`🌍 Envoie sous le format internationnal, ex: +*** ** ** ** **`",
     parse_mode="Markdown")
 
 

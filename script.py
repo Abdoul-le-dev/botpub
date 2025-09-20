@@ -193,7 +193,7 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
 
         # Envoie un message privé
         try:
-            video_name = "welcome"
+            video_name = "welcomes"
 
             file_id = get_file_id(video_name)
 
@@ -208,7 +208,7 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
                 
             else:
                 # Envoyer depuis fichier local, puis sauvegarder le file_id
-                video_path = "welcome.mp4"
+                video_path = "welcomes.mp4"
                 msg = await Context.bot.send_video(chat_id=user_id , video=video_path, reply_markup= build_answer_keyboards())
                 new_file_id = msg.video.file_id
                 save_file_id(video_name, new_file_id)
