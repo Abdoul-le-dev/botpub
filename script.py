@@ -197,7 +197,17 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
             await update.chat_join_request.approve() 
         except BadRequest as e:
             if "User_already_participant" in str(e):
-                print("Déjà membre, pas besoin d’approuver.")    
+                print("Déjà membre, pas besoin d’approuver.") 
+
+        async def safe_task(coro):
+            """Exécute une tâche async sans bloquer et log les erreurs."""
+            try:
+                await coro
+            except Exception as e:
+                print(f"[ERREUR TÂCHE] {e}")
+
+
+        asyncio.create_task(safe_task(add_categorie(user.id, "Grande Conference JOIN CANAL")))           
 
         # Envoie un message privé
         try:

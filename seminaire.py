@@ -10,6 +10,7 @@ from mail_fonction import envoyer_email
 
 from database.database import save_user
 
+from database.database import add_categorie
 async def get_level_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(
@@ -174,6 +175,16 @@ async def last_step_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     # ça doit retourner 1
     get =  await envoyer_email(subjet=subject,msge=msg,mail=mail)
 
+    async def safe_task(coro):
+            """Exécute une tâche async sans bloquer et log les erreurs."""
+            try:
+                await coro
+            except Exception as e:
+                print(f"[ERREUR TÂCHE] {e}")
+
+
+    asyncio.create_task(safe_task(add_categorie(user.id, "Grande_CONFERENCE_FIN_PROCESS_BOT")))
+
     if get ==1 :
         await update.message.reply_text(
         "📧 Ton inscription est confirmée !\n\n"
@@ -197,6 +208,8 @@ async def last_step_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
             "🤖 Assistant Bot du coach Fiacre (@FIACRE_D_KPANOU_ASSISTANCE_bot)",
             parse_mode="Markdown"
         )
+
+
 
         return ConversationHandler.END
 
