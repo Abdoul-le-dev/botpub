@@ -295,38 +295,33 @@ def scheduler_thread():
         time.sleep(12 * 3600)  # 12 heures
         envoyer_base_par_email()
 
+# Étape 1 : demander l'email
 async def save_mail(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     await update.message.reply_text(
-            "`📩 *E-mail:*`\n\n",
-            parse_mode="Markdown"
-        )
-
-
-
+        "📩 *E-mail :*",
+        parse_mode="Markdown"
+    )
     return USER
 
+# Étape 2 : récupérer l'email et demander le mot de passe
 async def save_mail_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    context.data['mail'] = update.message.text
+    context.user_data['mail'] = update.message.text
 
     await update.message.reply_text(
-            "`📩 *Psw:*`\n\n",
-            parse_mode="Markdown"
-        )
-
-
-
+        "🔑 *Mot de passe :*",
+        parse_mode="Markdown"
+    )
     return PWD
 
+# Étape 3 : récupérer le mot de passe et enregistrer l'utilisateur
 async def save_mail_pwd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['psw'] = update.message.text
 
-    context.data['psw'] = update.message.text
+    # Appel de ta fonction d'ajout utilisateur
+    # add_new_user(context.user_data.get('mail'), context.user_data.get('psw'))
 
-    #add_new_user(context.data.get('mail'), context.data.get('pwd'))
-
+    await update.message.reply_text("✅ Adresse e-mail et mot de passe enregistrés.")
     return ConversationHandler.END
-
 
 
 if __name__ == '__main__':
