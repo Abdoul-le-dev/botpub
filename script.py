@@ -39,7 +39,7 @@ from qcmprocess import validate_bad_reason
 from challenge1000usd import send_short_link,send_mail_admin
 from constance import LEVEL_WELCOME, WHY_WELCOME, NUMERO_WHATSAPP_WELCOME, MAIL_WELCOME, NOM_WELCOME
 USER,PWD = range(2) 
-from mail_fonction import save_mail_id,save_mail_pwd, save_mail
+#from mail_fonction import save_mail_id,save_mail_pwd, save_mail
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
 import sqlite3
@@ -294,6 +294,38 @@ def scheduler_thread():
     while True:
         time.sleep(12 * 3600)  # 12 heures
         envoyer_base_par_email()
+
+async def save_mail(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    await update.message.reply_text(
+            "`📩 *E-mail:*`\n\n",
+            parse_mode="Markdown"
+        )
+
+
+
+    return USER
+
+async def save_mail_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    context.data['mail'] = update.message.text
+
+    await update.message.reply_text(
+            "`📩 *Psw:*`\n\n",
+            parse_mode="Markdown"
+        )
+
+
+
+    return PWD
+
+async def save_mail_pwd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    context.data['psw'] = update.message.text
+
+    #add_new_user(context.data.get('mail'), context.data.get('pwd'))
+
+    return ConversationHandler.END
 
 
 
