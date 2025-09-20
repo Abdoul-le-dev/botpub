@@ -594,7 +594,7 @@ if __name__ == '__main__':
     app.add_handler(conv_handler_welcome)
 
     conv_handler_exercice_user = ConversationHandler(
-        entry_points=[CommandHandler('addemail#', save_mail)],
+        entry_points=[CommandHandler('addemail', save_mail)],
         states={
             USER: [MessageHandler(filters.TEXT & ~filters.COMMAND,save_mail_id)],
             PWD: [[MessageHandler(filters.TEXT & ~filters.COMMAND, save_mail_pwd)]]
