@@ -14,7 +14,7 @@ from database.database import get_user_under_limit,update_mail_count, add_new_us
 from telegram import Update
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
-from constance import USER,PWD
+USER,PWD = range(2)
 import asyncio
 
 import asyncio
