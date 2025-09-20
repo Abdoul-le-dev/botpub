@@ -1,0 +1,81 @@
+def generate_filename():
+    suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+    return f"preinscriptions_{suffix}.xlsx"
+
+async def export_and_send_messages(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    # Connexion et récupération des messages
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM messages")
+    rows = cursor.fetchall()
+    columns = [description[0] for description in cursor.description]
+    messages = [dict(zip(columns, row)) for row in rows]
+    conn.close()
+
+    # Export en JSON
+    with open("messages.json", "w", encoding="utf-8") as f:
+        json.dump(messages, f, ensure_ascii=False, indent=2)
+    print("✅ Fichier JSON généré.")
+
+    
+    with open("messages.json", "rb") as file:
+        await Context.bot.send_document(chat_id=ADMIN_ID, document=file, caption="📄 Fichier des messages")
+
+async def export_and_send_excel(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT id, name, phone, country, created_at, telegram_id FROM users")
+    rows = cursor.fetchall()
+    conn.close()
+
+    df = pd.DataFrame(rows, columns=["ID", "Nom", "Téléphone", "Pays", "Inscrit le","ID_TELEGRAM" ])
+    filename = generate_filename()
+    df.to_excel(filename, index=False)
+
+    # Envoi à l’administrateur
+    await Context.bot.send_document(chat_id=update.effective_user.id , document=open(filename, "rb"))
+
+    await update.message.reply_text("📤 Exportation réussie. Fichier envoyé à l’administrateur.")
+
+
+async def handle_data_command(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID or update.effective_user.id== 6992809421: 
+        await update.message.reply_text("⛔ Désolé, cette commande est réservée à l’administrateur.")
+        return
+
+    await export_and_send_excel(update, Context)
+
+async def handle_callback(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    print('now')
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "cta_start":
+       
+        chat_id = query.from_user.id
+        await start(update, Context, chat_id=chat_id)
+
+async def ask_broadcast(update, Context):
+    if update.effective_user.id != ADMIN_ID or update.effective_user.id== 6992809421: 
+        await update.message.reply_text("⛔ Désolé, cette commande est réservée à l’administrateur.")
+        return
+    await update.message.reply_text("📨 Quel message veux-tu envoyer à tous ?")
+    return ASK_BROADCAST
+
+async def send_broadcast(update, Context):
+    message = update.message.text
+    await broadcast_message(Context.bot, update.effective_user.id, message)
+    return ConversationHandler.END
+
+
+async def detect_channel(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    print(f"✅ Canal : {chat.title} — chat_id : {chat.id}")
+    await update.message.reply_text(f"ID du canal : `{chat.id}`", parse_mode="Markdown")
+
+app.add_handler(ConversationHandler(
+        entry_points=[CommandHandler("MessageDeMasse", ask_broadcast)],
+        states={ASK_BROADCAST: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_broadcast)]},
+        fallbacks=[CommandHandler('cancel', cancel)]
+    ))    
