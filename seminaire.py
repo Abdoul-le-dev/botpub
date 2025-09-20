@@ -34,6 +34,7 @@ async def get_level_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     return LEVEL_WELCOME
 
 async def get_why_welcome(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    print('yes')
     response = update.message.text.strip()
 
     niveau_map = {
