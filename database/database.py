@@ -510,6 +510,7 @@ def delete_user_data_from_db(user_id):
 
     cursor.execute("DELETE FROM resultat_student_day WHERE id_user = ?", (user_id,))
     cursor.execute("DELETE FROM resultat_student_question WHERE id_user = ?", (user_id,))
+    cursor.execute("DELETE FROM resultat_student_question WHERE id_user = ?", (user_id,))
     cursor.execute("DELETE FROM args WHERE id_user = ?", (user_id,))
 
     conn.commit()

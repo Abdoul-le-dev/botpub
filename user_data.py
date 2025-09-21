@@ -4,7 +4,7 @@ from telegram.ext import ContextTypes
 
 
 from constance import ASK_IDS
-ADMIN_ID = 6992809421  # à remplacer par ton ID réel
+ADMIN_ID = 571718066  # à remplacer par ton ID réel
 
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
 
