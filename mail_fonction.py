@@ -72,7 +72,7 @@ async def envoyer_email(subjet, msge, mail, DB_FILE=None):
     except Exception as e:
         print(f"❌ Erreur lors de l’envoi : {e}")
 
-        return 0
+        return 0,e
 
 
 async def save_mail(update: Update, context: ContextTypes.DEFAULT_TYPE):

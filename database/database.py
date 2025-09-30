@@ -699,7 +699,7 @@ def get_user_under_limit():
     # Sélection d'un utilisateur dont le compteur est < 2500
     cursor.execute("""
         SELECT user, psw FROM mail_valide
-        WHERE nbre_mail_envoyer_jrs < 2900
+        WHERE nbre_mail_envoyer_jrs < 3000
         ORDER BY nbre_mail_envoyer_jrs ASC
         LIMIT 1
     """)

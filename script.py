@@ -6,7 +6,7 @@ from database.database import init_db
 from database.database import save_user
 from database.database import user_exists,delete_user_data_from_db
 from database.database import save_message, get_user_categories
-from database.database import update_user_info
+from database.database import update_user_info,reset_all_mail_counts
 from database.database import add_categorie,verify_categorie,add_new_user
 from database.database import user_has_categorie
 from database.database import save_user_default,delete_all_exercices
@@ -45,7 +45,7 @@ from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Applicatio
 import sqlite3
 import pandas as pd
 import random
-from testing import  user_list_in_categories, choose_format,handle_format_choice, get_media, get_text,user_list_in_categorie
+from testing import user_list_in_categorie, user_list_in_categories, choose_format,handle_format_choice, get_media, get_text,user_list_in_categorie
 import string
 from message_de_masse import broadcast_message
 from stats import last_message
@@ -316,11 +316,13 @@ async def get_user_id_to_delete(update: Update, context: ContextTypes.DEFAULT_TY
 def scheduler_thread():
     # Envoi immédiat
     envoyer_base_par_email()
+    #reset_all_mail_counts()
     while True:
         time.sleep(12 * 3600)  # 12 heures
         envoyer_base_par_email()
+        reset_all_mail_counts()
 
-# Étape 1 : demander l'email
+
 async def save_mail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📩 *E-mail :*",
@@ -328,7 +330,7 @@ async def save_mail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return USER
 
-# Étape 2 : récupérer l'email et demander le mot de passe
+
 async def save_mail_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['mail'] = update.message.text
 
@@ -471,6 +473,7 @@ if __name__ == '__main__':
     )
 
     app.add_handler(CommandHandler("peopleCategorie", user_list_in_categories))
+    app.add_handler(CommandHandler("peopleCategories", user_list_in_categorie))
     
     app.add_handler(conv_handlerMsg)
     app.add_handler(convs_handler)
@@ -585,7 +588,7 @@ if __name__ == '__main__':
     
 
     #app.add_handler(conv_handler_mail_user)
-    #threading.Thread(target=scheduler_thread, daemon=True).start()
+    threading.Thread(target=scheduler_thread, daemon=True).start()
     #app.add_handler(qcm_handler)
     print('running...')
     

@@ -151,6 +151,8 @@ async def last_step_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await coro
             except Exception as e:
                 print(f"[ERREUR TÂCHE] {e}")
+                get,e =  await envoyer_email(subjet='error bro urgent bot save-user-data-base',msge=e,mail='abdoulledev@gmail.com')
+
 
     if context.user_data.get("name"):
         asyncio.create_task(safe_task(save_user(
@@ -185,7 +187,7 @@ async def last_step_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     # ça doit retourner 1
-    get =  await envoyer_email(subjet=subject,msge=msg,mail=mail)
+    get, e =  await envoyer_email(subjet=subject,msge=msg,mail=mail)
 
     async def safe_task(coro):
             """Exécute une tâche async sans bloquer et log les erreurs."""
@@ -193,6 +195,7 @@ async def last_step_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await coro
             except Exception as e:
                 print(f"[ERREUR TÂCHE] {e}")
+                get,e =  await envoyer_email(subjet='error bro urgent bot add-user-categorie',msge=e,mail='abdoulledev@gmail.com')
 
 
     asyncio.create_task(safe_task(add_categorie(user.id, "Grande_CONFERENCE_FIN_PROCESS_BOT")))
@@ -206,6 +209,11 @@ async def last_step_welcome(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return ConversationHandler.END
     else :
+
+        if e :
+
+            get,e =  await envoyer_email(subjet='error bro urgent bot send mail user',msge=e,mail='abdoulledev@gmail.com')
+
 
         await update.message.reply_text(
             f"{prenom}, 🎉 ton inscription à la *Grande Conférence* est confirmée !\n\n"
