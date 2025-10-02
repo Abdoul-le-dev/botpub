@@ -101,9 +101,9 @@ async def broadcast_messages(bot, admin_id, context_user_data):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
     categorie = 'challenge10000usd'  # Valeur par défaut
-    #cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
+    cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
     #cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
-    cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", (categorie,))
+    #cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", (categorie,))
     rows = cursor.fetchall()
     conn.close()
 
