@@ -5,7 +5,7 @@ from database.database import liste_categories
 import sqlite3
 import asyncio
 
-CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(3)
+WHO,CHOOSE_FORMAT,GET_MEDIA, GET_TEXT = range(4)
 CHOOSE_TYPES =range(1)
 ADMIN_ID = 571718066 #571718066
 
@@ -17,11 +17,32 @@ def limit_text(text, max_length=4096):
         return text[:max_length-1] + "…"
     return text
 
-async def choose_format(update, context):
+async def handle_who(update, context):
 
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("⛔ Désolé, cette commande est réservée à l’administrateur.")
         return ConversationHandler.END
+
+    await update.message.reply_text(
+        f"Choice : \n 1-Challenge \n 2- All",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+    # Pour les autres formats : texte seul, image seule, vidéo seule
+   
+    return WHO
+
+async def choose_format(update, context):
+
+
+    choix = update.message.text[0]
+    #user = update.effective_user.first_name or "toi"
+    if choix not in {'1','2'}:
+        await update.message.reply_text(f"❌ , ton choix n'est pas valide. Merci de choisir parmi les options.")
+        return CHOOSE_FORMAT
+    context.user_data["who"] = choix
+
+   
  
     await update.message.reply_text(
         "📤 Choisis le format de ton message à diffuser, en envoyant simplement le **chiffre correspondant** :\n\n"
@@ -35,10 +56,41 @@ async def choose_format(update, context):
     )
     return CHOOSE_FORMAT
 
+
+
 async def handle_format_choice(update, context):
     choix = update.message.text[0]
-    user = update.effective_user.first_name or "toi"
+    #user = update.effective_user.first_name or "toi"
     if choix not in {'1','2','3','4','5'}:
+        await update.message.reply_text(f"❌ , ton choix n'est pas valide. Merci de choisir parmi les options.")
+        return CHOOSE_FORMAT
+    context.user_data["format"] = choix
+
+    if choix in {'2', '3'}:  # Image + texte ou Vidéo + texte
+        type_media = "image" if choix == "2" else "vidéo"
+        await update.message.reply_text(
+            f"📁 , envoie maintenant ton fichier {type_media}.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return GET_MEDIA
+    
+    
+
+    # Pour les autres formats : texte seul, image seule, vidéo seule
+
+    await update.message.reply_text(
+        f"✏️ , envoie maintenant ton contenu (texte, image ou vidéo selon ton choix).",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    return GET_TEXT
+   
+   
+
+
+async def handle_format_choices(update, context):
+    choix = update.message.text[0]
+    user = update.effective_user.first_name or "toi"
+    if choix not in {'1','2'}:
         await update.message.reply_text(f"❌ , ton choix n'est pas valide. Merci de choisir parmi les options.")
         return CHOOSE_FORMAT
     context.user_data["format"] = choix
@@ -101,9 +153,18 @@ async def broadcast_messages(bot, admin_id, context_user_data):
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
     categorie = 'challenge10000usd'  # Valeur par défaut
-    cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
+
+
+    whos = context_user_data.get("who")
+    if whos == 1: 
+
+        cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
+    elif whos == 2:   
     #cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
-    #cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", (categorie,))
+        cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", (categorie,))
+    else:
+        await bot.send_message(admin_id, "❌ Error contact l'administrateur technique.")
+        return    
     rows = cursor.fetchall()
     conn.close()
 
@@ -118,6 +179,7 @@ async def broadcast_messages(bot, admin_id, context_user_data):
     if total == 0:
         await bot.send_message(admin_id, "❌ Aucun utilisateur à contacter.")
         return
+    
 
     format_choisi = context_user_data.get("format")
 

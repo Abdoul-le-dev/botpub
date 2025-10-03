@@ -45,7 +45,7 @@ from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Applicatio
 import sqlite3
 import pandas as pd
 import random
-from testing import user_list_in_categorie, user_list_in_categories, choose_format,handle_format_choice, get_media, get_text,user_list_in_categorie
+from testing import user_list_in_categorie, user_list_in_categories, choose_format,handle_format_choice,handle_who, get_media, get_text,user_list_in_categorie
 import string
 from message_de_masse import broadcast_message
 from stats import last_message
@@ -89,7 +89,7 @@ CHOOSE_TYPES =range(1)
 async def wait_5_seconds():
     await asyncio.sleep(5)
 
-CHOOSE_FORMAT, GET_MEDIA, GET_TEXT = range(3)
+WHO, CHOOSE_FORMAT,GET_MEDIA, GET_TEXT = range(4)
 
 async def categories_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -463,8 +463,9 @@ if __name__ == '__main__':
     
 
     conv_handlerMsg = ConversationHandler(
-    entry_points=[CommandHandler('msgMasse', choose_format)],
+    entry_points=[CommandHandler('msgMasse', handle_who)],
     states={
+        WHO: [MessageHandler(filters.Regex('^[1-2]$'), choose_format)],
         CHOOSE_FORMAT: [MessageHandler(filters.Regex('^[1-5]$'), handle_format_choice)],
         GET_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, get_media)],
         GET_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_text)],
