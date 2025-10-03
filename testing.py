@@ -156,10 +156,10 @@ async def broadcast_messages(bot, admin_id, context_user_data):
 
 
     whos = context_user_data.get("who")
-    if whos == 2: 
+    if whos == "2": 
 
         cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
-    elif whos == 1:   
+    elif whos == "1":   
     #cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
         cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", (categorie,))
     else:
