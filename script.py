@@ -384,7 +384,7 @@ if __name__ == '__main__':
 
 
     conv_handler_process_exam2 = ConversationHandler(
-    entry_points=[CallbackQueryHandler(start_exams, pattern='^(premiere)$')],
+    entry_points=[CallbackQueryHandler(start_exams, pattern='premiere')],
     
     states={
         WAITING_ANSWER_EXAM: [
@@ -393,6 +393,7 @@ if __name__ == '__main__':
     },
     
     fallbacks=[CommandHandler('cancel', cancel)],
+    per_message=True
     )
 
     app.add_handler(conv_handler_process_exam2)
