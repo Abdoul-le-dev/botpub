@@ -50,7 +50,7 @@ import string
 from message_de_masse import broadcast_message
 from stats import last_message
 from telegram import Update
-from qcmsemainaire import start_exam, verification_email
+from qcmsemainaire import start_exam,start_exams, verification_email
 
 
 from telegram.error import BadRequest
@@ -384,7 +384,7 @@ if __name__ == '__main__':
 
 
     conv_handler_process_exam2 = ConversationHandler(
-    entry_points=[CallbackQueryHandler(start_exam, pattern='^(premiere)$')],
+    entry_points=[CallbackQueryHandler(start_exams, pattern='^(premiere)$')],
     
     states={
         WAITING_ANSWER_EXAM: [
