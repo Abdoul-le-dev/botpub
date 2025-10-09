@@ -204,10 +204,10 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
     if data_user:
         if data_user['note_one'] == 0:
-            id_part_one, id_part_two = get_exam_parts(2)
+            id_part_one, id_part_two = get_exam_parts(1)
             args = id_part_one
         elif data_user['note_two'] == 0:    
-             id_part_one, id_part_two = get_exam_parts(2)
+             id_part_one, id_part_two = get_exam_parts(1)
              args = id_part_two
         else :
             await update.message.reply_text(
