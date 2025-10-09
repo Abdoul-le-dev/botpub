@@ -107,6 +107,10 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user = update.effective_user
     user_id = user.id
 
+    email = update.message.text.strip()
+
+
+
     # Préparer les données à envoyer
     data = {
         "user_email": email,
