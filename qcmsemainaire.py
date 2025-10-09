@@ -209,9 +209,11 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
              id_part_one, id_part_two = get_exam_parts(data_user['id'])
              args = id_part_two
         else :
-            return     
-    else : 
-        return
+            await update.message.reply_text(
+                    "Tu as déja Passer ton examen"
+                )
+            return ConversationHandler.END     
+   
 
     #args => categorie name
     categorie = get_categories(args)
