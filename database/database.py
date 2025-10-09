@@ -773,7 +773,7 @@ def get_exam_parts(exam_id: int):
     cursor.execute("""
     SELECT id_part_one, id_part_two
     FROM exam
-    WHEREexam_id = ?
+    WHERE exam_id = ?
     """, (exam_id,))
 
     result = cursor.fetchone()
