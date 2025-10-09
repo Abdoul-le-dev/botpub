@@ -397,6 +397,15 @@ def get_categories(args):
     rows = cursor.fetchone()
     result = rows[0] if rows else None
     return result
+
+
+def get_categories_exam(args):
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM categorie_exercice WHERE id = ?", (args,))
+    rows = cursor.fetchone()
+    result = rows[0] if rows else None
+    return result
    
 def update_arg(id_user: int, args_value: str):
     conn = sqlite3.connect('preinscriptions.db')

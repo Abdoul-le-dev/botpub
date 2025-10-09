@@ -13,7 +13,7 @@ import requests
 from constance import WAITING_ANSWER_EXAM,EMAIL_EXAM,QUESTION, ANSWER, EXPLANATION, CATEGORIE, NOM_CATEGORIE, WAITING_ANSWER,CHOISIR_CATEGORIE 
 from telegram import ReplyKeyboardRemove
 from database.database import update_exam_user,get_user_args,get_questions, save_user_answer, save_daily_result, delete_args
-from database.database import get_exam_parts,get_user_exam, get_category_questions_report,get_final_score,create_args,update_arg, add_categorie_exercice, verifier_et_valider_categorie,check_if_user,get_categories,verify_categorie, user_has_categorie
+from database.database import  add_exam_user,get_exam_parts,get_user_exam, get_category_questions_report,get_final_score,create_args,update_arg, add_categorie_exercice, verifier_et_valider_categorie,check_if_user,get_categories,verify_categorie, user_has_categorie
 
 url = "https://conference.fiacrekpanoudtrade.com/api/bot/telegram/assistant"
 
@@ -144,6 +144,8 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         parse_mode='Markdown'
                     )
                 
+                add_exam_user(user_id, email, 2)
+                
                 time.sleep(10) 
 
                 await update.message.reply_text(
@@ -212,8 +214,10 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                     "Tu as déja Passer ton examen"
                 )
-            return ConversationHandler.END     
-   
+            return ConversationHandler.END    
+    else :
+        return ConversationHandler.END         
+
 
     #args => categorie name
     categorie = get_categories(args)
