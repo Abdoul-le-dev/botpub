@@ -42,6 +42,17 @@ async def wait_5_seconds():
 async def wait_5_minutes():
     await asyncio.sleep(300)    
 
+def build_start_exam_keyboard():
+    """
+    Crée un clavier avec un bouton 'Commencer' pour lancer l'examen
+    """
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Commencer l'examen", callback_data="start_exam")
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
 def build_continue_button():
     keyboard = [
         [InlineKeyboardButton("📊 Poursuivre ", callback_data='Poursuivre')]
@@ -312,6 +323,16 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
                 return WHY
 
     
+    if args and args[0] == 'MonExamen':
+
+        
+        await update.message.reply_text(
+            "Cliquez sur **Commencer l'examen** pour démarrer le processus :",
+            reply_markup=build_start_exam_keyboard(),
+            parse_mode='Markdown'
+        )
+
+
    
             
     chat_id = update.effective_chat.id if chat_id is None else chat_id
@@ -371,6 +392,8 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
         return WHY
 
 async def get_why(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+
+
     response = update.message.text.strip()
 
     why_map = {

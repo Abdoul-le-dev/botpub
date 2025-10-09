@@ -734,3 +734,152 @@ def get_user_categories(user_id):
     except sqlite3.Error as e:
         print(f"Erreur SQLite: {e}")
         return []
+
+
+def add_exam(exam_name: str, id_part_one: int, id_part_two: int):
+    """
+    Ajoute un nouvel examen dans la table exam.
+    """
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    INSERT INTO exam (exam_name, id_part_one, id_part_two)
+    VALUES (?, ?, ?)
+    """, (exam_name, id_part_one, id_part_two))
+
+    conn.commit()
+    conn.close()
+
+    print(f"✅ Examen '{exam_name}' ajouté avec succès !")
+
+def get_exam_parts(exam_id: int):
+    """
+    Récupère les identifiants des deux parties (id_part_one et id_part_two)
+    pour un examen donné.
+    """
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    SELECT id_part_one, id_part_two
+    FROM exam
+    WHEREexam_id = ?
+    """, (exam_id,))
+
+    result = cursor.fetchone()
+    conn.close()
+
+    if result:
+        id_part_one, id_part_two = result
+        return id_part_one, id_part_two
+    else:
+        
+        return None   
+
+def add_exam_user(id_user: int, email: str, exam_id: str):
+    """
+    Ajoute un utilisateur dans la table exam_user
+    avant le début de son examen.
+    """
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    INSERT INTO exam_user (id_user, email, exam_id)
+    VALUES (?, ?, ?)
+    """, (id_user, email, exam_id))
+
+    conn.commit()
+    conn.close()
+
+    print(f"✅ Utilisateur {email} (ID: {id_user}) ajouté avec succès dans exam_user.")
+
+def update_exam_user(id_user: int, note: int, time_spent: str,qr_code : str, part: int):
+    """
+    Met à jour la note et le temps de l'utilisateur pour une partie spécifique.
+    
+    part = 1 → met à jour note_one et time_one  
+    part = 2 → met à jour note_two et time_two
+    """
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    if part == 1:
+        cursor.execute("""
+        UPDATE exam_user
+        SET note_one = ?, time_one = ?
+        WHERE id_user = ?
+        """, (note, time_spent, id_user))
+
+    elif part == 2:
+        cursor.execute("""
+        UPDATE exam_user
+        SET note_two = ?, time_two = ?
+        WHERE id_user = ?
+        """, (note, time_spent, id_user)) 
+    
+    elif part == 3:
+        cursor.execute("""
+        UPDATE exam_user
+        SET qr_code = ?
+        WHERE id_user = ?
+        """, (qr_code, id_user))
+
+    else:
+        print("⚠️ Partie invalide : utilisez 1 ou 2 pour 'part'.")
+        conn.close()
+        return
+
+    conn.commit()
+    conn.close()
+
+    print(f"✅ Données de la partie {part} mises à jour pour l’utilisateur {id_user}.")
+
+def get_user_exam(id_user: int):
+    """
+    Récupère les informations d'examen d'un utilisateur spécifique
+    dans la table exam_user.
+
+    Retourne un dictionnaire contenant :
+    - email
+    - exam_id
+    - note_one, time_one
+    - note_two, time_two
+    - qr_code
+    - created_at
+    - moyenne
+    """
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    SELECT email,exam_id, note_one, time_one, note_two, time_two, qr_code, created_at
+    FROM exam_user
+    WHERE id_user = ?
+    """, (id_user,))
+
+    result = cursor.fetchone()
+    conn.close()
+
+    if result:
+        email,exam_id, note_one, time_one, note_two, time_two, qr_code, created_at = result
+        moyenne = None
+        if note_one is not None and note_two is not None:
+            moyenne = (note_one + note_two) / 2
+
+        return {
+            "id_user": id_user,
+            "email": email,
+            "C" : exam_id,
+            "note_one": note_one,
+            "time_one": time_one,
+            "note_two": note_two,
+            "time_two": time_two,
+            "qr_code": qr_code,
+            "created_at": created_at,
+            "moyenne": moyenne
+        }
+    else:
+        print(f"⚠️ Aucun enregistrement trouvé pour l’utilisateur ID {id_user}.")
+        return None    

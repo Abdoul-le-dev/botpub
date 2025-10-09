@@ -287,6 +287,7 @@ async def process_answer(user_id, user_answer, query):
     )
 
     session['question_start_time'] = time.time()
+
 async def receive_answerss(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()

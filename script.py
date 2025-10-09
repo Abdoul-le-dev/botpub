@@ -37,7 +37,7 @@ from qcmprocess import set_nb_choix
 from qcmprocess import continue_choices
 from qcmprocess import validate_bad_reason  
 from challenge1000usd import send_short_link,send_mail_admin
-from constance import LEVEL_WELCOME, WHY_WELCOME, NUMERO_WHATSAPP_WELCOME, MAIL_WELCOME, NOM_WELCOME
+from constance import WAITING_ANSWER_EXAM,LEVEL_WELCOME, WHY_WELCOME, NUMERO_WHATSAPP_WELCOME, MAIL_WELCOME, NOM_WELCOME
 USER,PWD = range(2) 
 #from mail_fonction import save_mail_id,save_mail_pwd, save_mail
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
@@ -50,6 +50,7 @@ import string
 from message_de_masse import broadcast_message
 from stats import last_message
 from telegram import Update
+from qcmsemainaire import start_exam, verification_email
 
 
 from telegram.error import BadRequest
@@ -66,7 +67,7 @@ import json
 
 from start import button_callback_waiting_1, button_callback_waiting_2
 
-from constance import CHOISIR_CATEGORIE,NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS,EMAIL, EXPECTATIONS,DISCOVERY,WAITING_ANSWER
+from constance import EMAIL_EXAM, CHOISIR_CATEGORIE,NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS,EMAIL, EXPECTATIONS,DISCOVERY,WAITING_ANSWER
 
 from constance import ASK_USER_ID, GET_MAIL ,CATEGORIE, NOMBRE_QUESTIONS, QUESTION, NB_CHOIX, CHOIX, REPONSE_SUIVANTE
 
@@ -371,6 +372,40 @@ if __name__ == '__main__':
     allow_reentry=True,
     )
 
+    conv_handler_process_exam1 = ConversationHandler(
+    entry_points=[CallbackQueryHandler(start_exam, pattern='^(start_exam)$')],
+    
+    states={
+        EMAIL_EXAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, verification_email)],
+        
+    }, fallbacks=[CommandHandler('cancel', cancel)])
+
+    app.add_handler(conv_handler_process_exam1)
+
+
+    conv_handler_process_exam2 = ConversationHandler(
+    entry_points=[CallbackQueryHandler(start_exam, pattern='^(premiere)$')],
+    
+    states={
+      # WAITING_ANSWER_EXAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, verification_email)],
+       WAITING_ANSWER_EXAM: [ CallbackQueryHandler(receive_answer),],
+        
+    }, fallbacks=[CommandHandler('cancel', cancel)])
+
+    app.add_handler(conv_handler_process_exam2)
+
+    conv_handler_process_exam3 = ConversationHandler(
+    entry_points=[CallbackQueryHandler(start_exam, pattern='^(premiere)$')],
+    
+    states={
+      # WAITING_ANSWER_EXAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, verification_email)],
+       WAITING_ANSWER_EXAM: [ CallbackQueryHandler(receive_answer),],
+        
+    }, fallbacks=[CommandHandler('cancel', cancel)])
+
+    app.add_handler(conv_handler_process_exam3)
+
+
     conv_handler_welcome = ConversationHandler(
     entry_points=[CallbackQueryHandler(get_level_welcome, pattern='^(enregistre)$')],
     
@@ -383,9 +418,7 @@ if __name__ == '__main__':
         
 
 
-    },
-    
-    fallbacks=[CommandHandler('cancel', cancel)])
+    }, fallbacks=[CommandHandler('cancel', cancel)])
 
     app.add_handler(conv_handler_welcome)
 
