@@ -199,6 +199,7 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
 
     data_user = get_user_exam(user_id )
+    print(data_user)
 
     if data_user:
         if data_user['note_one'] == 0:
