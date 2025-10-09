@@ -52,6 +52,8 @@ def build_exam_2():
 
 async def start_exam(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    print('exam')
+
     user = update.effective_user
     user_id = user.id
 
