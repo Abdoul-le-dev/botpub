@@ -66,10 +66,7 @@ async def start_exam(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Tu as déja Passer ton examen"
                 )
             return ConversationHandler.END
-        else :
-            await update.message.reply_text("⚠️ Tu n'as pas d'examen en cours.")
-            return ConversationHandler.END     
-   
+        
     """
     Demande à l'utilisateur son e-mail pour vérification de l'offre
     Pack Trading Gagnant Objectif +5000 USD avant de poursuivre l'examen.
