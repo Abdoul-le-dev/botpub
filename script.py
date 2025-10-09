@@ -50,7 +50,7 @@ import string
 from message_de_masse import broadcast_message
 from stats import last_message
 from telegram import Update
-from qcmsemainaire import start_exam,start_exams, verification_email
+from qcmsemainaire import start_exam,start_exams, verification_email, receive_answer_exam
 
 
 from telegram.error import BadRequest
@@ -388,7 +388,7 @@ if __name__ == '__main__':
     
     states={
         WAITING_ANSWER_EXAM: [
-            CallbackQueryHandler(receive_answer),
+            CallbackQueryHandler(receive_answer_exam),
         ],
     },
     

@@ -235,7 +235,7 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
     await query.message.reply_text(
         f"__**🎓 Examen lancé !**__\n\n"
-        "📘 __*Voici le principe*__ :\n"
+        #"📘 __*Voici le principe*__ :\n"
         f"❓ __*Question 1 :*__\n\n`{questions[0][1]}`",
         parse_mode='Markdown',
         reply_markup=build_answer_keyboard())
@@ -248,7 +248,7 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
     
 
-async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def receive_answer_exam(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("Réponse reçue ! ⏳")  # Réponse immédiate à Telegram
 
@@ -257,7 +257,7 @@ async def receive_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Si pas de session, on stoppe
     if user_id not in sessions:
-        await query.message.reply_text("⚠️ Tu n'as pas d'examenen cours.")
+        await query.message.reply_text("⚠️ Tu n'as pas d'examen en cours.")
         return ConversationHandler.END
 
     # Lancer le traitement en arrière-plan
