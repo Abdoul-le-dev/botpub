@@ -19,10 +19,38 @@ def build_answer_keyboard():
 
 sessions = {}
 # États de la conversation 
-from constance import QUESTION, ANSWER, EXPLANATION, CATEGORIE, NOM_CATEGORIE, WAITING_ANSWER,CHOISIR_CATEGORIE 
+from constance import NAME_EXAM , ARGS_1, ARGS_2, QUESTION, ANSWER, EXPLANATION, CATEGORIE, NOM_CATEGORIE, WAITING_ANSWER,CHOISIR_CATEGORIE 
 from telegram import ReplyKeyboardRemove
-from database.database import add_exercice,get_user_args,get_questions, save_user_answer, save_daily_result, delete_args
+from database.database import add_exam,add_exercice,get_user_args,get_questions, save_user_answer, save_daily_result, delete_args
 from database.database import get_category_questions_report,get_final_score,create_args,update_arg, add_categorie_exercice, verifier_et_valider_categorie,check_if_user,get_categories,verify_categorie, user_has_categorie
+
+async def start_add_exam(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    if  update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Accès réservé à l’administrateur.")
+        return
+    await update.message.reply_text("📚 Exam name :")
+    return NAME_EXAM
+
+async def get_ars_1 (update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    Context.user_data['exam_name'] = update.message.text
+    await update.message.reply_text(" id_part one:")
+    return ARGS_1
+
+async def get_ars_2 (update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    Context.user_data['args_1'] = update.message.text
+    await update.message.reply_text(" id_part two:")
+    return ARGS_2
+
+
+async def get_ars_3 (update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    Context.user_data['args_2'] = update.message.text
+
+    add_exam(Context.user_data['exam_name'],  Context.user_data['args_1'],  Context.user_data['args_2'])
+
+
+    await update.message.reply_text(" Finish")
+    return ConversationHandler.END
+
 
 async def start_add_exercice(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     if  update.effective_user.id != ADMIN_ID:

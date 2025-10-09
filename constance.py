@@ -22,3 +22,5 @@ USER,PWD = range (2)
 EMAIL_EXAM = range(1)
 
 WAITING_ANSWER_EXAM =range(1)
+
+NAME_EXAM , ARGS_1, ARGS_2 = range(3)

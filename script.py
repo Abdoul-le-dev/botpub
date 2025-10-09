@@ -67,13 +67,13 @@ import json
 
 from start import button_callback_waiting_1, button_callback_waiting_2
 
-from constance import EMAIL_EXAM, CHOISIR_CATEGORIE,NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS,EMAIL, EXPECTATIONS,DISCOVERY,WAITING_ANSWER
+from constance import NAME_EXAM , ARGS_1, ARGS_2 , EMAIL_EXAM, CHOISIR_CATEGORIE,NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS,EMAIL, EXPECTATIONS,DISCOVERY,WAITING_ANSWER
 
 from constance import ASK_USER_ID, GET_MAIL ,CATEGORIE, NOMBRE_QUESTIONS, QUESTION, NB_CHOIX, CHOIX, REPONSE_SUIVANTE
 
 from constance import QUESTION, ANSWER, EXPLANATION, CATEGORIE,  NOM_CATEGORIE, WAITING_ANSWER_1, WAITING_ANSWER_2
 
-from exercice import recevoir_categorie,start_rapport,start_add_exercice, get_question, get_answer, get_explanation, get_categorie, cmd_verify_categorie,start_exercice,receive_answer,start_add_categorie, get_nom_categorie
+from exercice import start_add_exam,get_ars_1 , get_ars_2, get_ars_3, recevoir_categorie,start_rapport,start_add_exercice, get_question, get_answer, get_explanation, get_categorie, cmd_verify_categorie,start_exercice,receive_answer,start_add_categorie, get_nom_categorie
 
 from seminaire import get_level_welcome,get_why_welcome,get_numero_whatsapp_welcome,get_mail_welcome,get_name_welcome,last_step_welcome
 type =""
@@ -568,6 +568,18 @@ if __name__ == '__main__':
     )
 
     app.add_handler(conv_handler_exercice)
+
+    conv_handler_exam = ConversationHandler(
+        entry_points=[CommandHandler('add_exam', start_add_exam)],
+        states={ 
+           NAME_EXAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_ars_1)],
+           ARGS_1: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_ars_2)],
+           ARGS_2: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_ars_3)]
+        },
+        fallbacks=[CommandHandler('cancel', cancel)]
+    )
+
+    app.add_handler(conv_handler_exam)
     app.add_handler(CommandHandler('verify_categorie', cmd_verify_categorie))
     conv_handler_exercice_user = ConversationHandler(
         entry_points=[CommandHandler('commencerMesExerciesDuSeminaire', start_exercice)],
