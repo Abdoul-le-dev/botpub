@@ -12,7 +12,7 @@ import requests
 # États de la conversation 
 from constance import WAITING_ANSWER_EXAM,EMAIL_EXAM,QUESTION, ANSWER, EXPLANATION, CATEGORIE, NOM_CATEGORIE, WAITING_ANSWER,CHOISIR_CATEGORIE 
 from telegram import ReplyKeyboardRemove
-from database.database import update_exam_user,get_user_args,get_questions, save_user_answer, save_daily_result, delete_args
+from database.database import get_categories_exam,update_exam_user,get_user_args,get_questions, save_user_answer, save_daily_result, delete_args
 from database.database import  add_exam_user,get_exam_parts,get_user_exam, get_category_questions_report,get_final_score,create_args,update_arg, add_categorie_exercice, verifier_et_valider_categorie,check_if_user,get_categories,verify_categorie, user_has_categorie
 
 url = "https://conference.fiacrekpanoudtrade.com/api/bot/telegram/assistant"
@@ -204,10 +204,10 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
     if data_user:
         if data_user['note_one'] == 0:
-            id_part_one, id_part_two = get_exam_parts(1)
+            id_part_one, id_part_two = get_exam_parts(2)
             args = id_part_one
         elif data_user['note_two'] == 0:    
-             id_part_one, id_part_two = get_exam_parts(1)
+             id_part_one, id_part_two = get_exam_parts(2)
              args = id_part_two
         else :
             await update.message.reply_text(
@@ -219,7 +219,7 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
 
     #args => categorie name
-    categorie = get_categories(args)
+    categorie = get_categories_exam(args)
     questions = get_questions(categorie)
 
 
