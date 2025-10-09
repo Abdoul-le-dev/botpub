@@ -57,24 +57,19 @@ async def start_exam(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
 
-    if check_if_user(user_id):
-        args = get_user_args(user_id)
-        print(args)
-        if create_args(user_id,args, 0) == 'already':
-                await update.message.reply_text(
+    data_user = get_user_exam(user_id )
+
+    if data_user:
+        if data_user['note_two'] != 0:
+
+            await update.message.reply_text(
                     "Tu as déja Passer ton examen"
                 )
-                return ConversationHandler.END
-        if verify_categorie(args) != None :
-            #user_has_categorie(user_id,'leseminaire'):
-             print(args)
-        else:
-            await update.message.reply_text("⚠️⚠️⚠️")
-            return ConversationHandler.END   
-    else:
-        await update.message.reply_text("⚠️ Tu n'as pas d'examen en cours. Veuillez bien vouloir vous  inscrire.")
-        return ConversationHandler.END 
-    
+            return ConversationHandler.END
+        else :
+            await update.message.reply_text("⚠️ Tu n'as pas d'examen en cours.")
+            return ConversationHandler.END     
+   
     """
     Demande à l'utilisateur son e-mail pour vérification de l'offre
     Pack Trading Gagnant Objectif +5000 USD avant de poursuivre l'examen.
