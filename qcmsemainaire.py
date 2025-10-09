@@ -191,8 +191,11 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    print('yes')
     user = update.effective_user
     user_id = user.id
+
+    
 
 
     data_user = get_user_exam(user_id )
