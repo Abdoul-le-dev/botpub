@@ -87,18 +87,18 @@ async def start_exam(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if context.user_data.get('awaiting_email'):
-        email = update.message.text.strip()
+   
+    email = update.message.text.strip()
         
         # Simple validation de base (tu peux la rendre plus complète)
-        if "@" in email and "." in email:
+    if "@" in email and "." in email:
             await update.message.reply_text(
                 f"✅ Email : `{email}` reçu !\n"
                 "Vérification....."
                 , parse_mode='Markdown'
             )
 
-        else:
+    else:
             await update.message.reply_text(
                 "⚠️ L'adresse e-mail semble invalide. Renvoyer une address email vailde:"
             )
@@ -107,7 +107,7 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user = update.effective_user
     user_id = user.id
 
-    email = update.message.text.strip()
+    #email = update.message.text.strip()
 
 
 
@@ -121,7 +121,7 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     try:
         # Envoi de la requête POST avec le JSON
-        response = await requests.post(url, json=data)
+        response = requests.post(url, json=data)
         print(response)
         # Vérifier si la requête s'est bien passée (code 200)
         if response.status_code == 200:
