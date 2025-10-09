@@ -93,6 +93,8 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
             reply_markup=build_start_exam_keyboard(),
             parse_mode='Markdown'
         )
+
+        return ConversationHandler.END
     
     if args and (args[0] == "challenge10000usd" or get_token_exists(args[0])):
         Context.user_data["argss"] = args[0]
