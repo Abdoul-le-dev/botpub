@@ -115,7 +115,7 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
     data = {
         "user_email": email,
         "user_id_telegram": user.id,
-        "id_produit": 3
+        "id_produit": 1
     }
 
     
