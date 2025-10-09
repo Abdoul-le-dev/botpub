@@ -190,9 +190,11 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
-    print('yes')
-    user = update.effective_user
-    user_id = user.id
+    query = update.callback_query
+    await query.answer("Réponse reçue ! ⏳")  # Réponse immédiate à Telegram
+
+    user_id = query.from_user.id
+
 
     
 
@@ -231,7 +233,7 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
             'answers': [],
     }
 
-    await update.message.reply_text(
+    await query.message.reply_text(
         f"__**🎓 Examen lancé !**__\n\n"
         "📘 __*Voici le principe*__ :\n"
         f"❓ __*Question 1 :*__\n\n`{questions[0][1]}`",
