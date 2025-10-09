@@ -316,11 +316,11 @@ async def get_user_id_to_delete(update: Update, context: ContextTypes.DEFAULT_TY
 
 def scheduler_thread():
     # Envoi immédiat
-    envoyer_base_par_email()
+    #envoyer_base_par_email()
     #reset_all_mail_counts()
     while True:
         time.sleep(12 * 3600)  # 12 heures
-        envoyer_base_par_email()
+       # envoyer_base_par_email()
         reset_all_mail_counts()
 
 
@@ -387,12 +387,16 @@ if __name__ == '__main__':
     entry_points=[CallbackQueryHandler(start_exam, pattern='^(premiere)$')],
     
     states={
-      # WAITING_ANSWER_EXAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, verification_email)],
-       WAITING_ANSWER_EXAM: [ CallbackQueryHandler(receive_answer),],
-        
-    }, fallbacks=[CommandHandler('cancel', cancel)])
+        WAITING_ANSWER_EXAM: [
+            CallbackQueryHandler(receive_answer),
+        ],
+    },
+    
+    fallbacks=[CommandHandler('cancel', cancel)],
+    )
 
     app.add_handler(conv_handler_process_exam2)
+
 
     conv_handler_process_exam3 = ConversationHandler(
     entry_points=[CallbackQueryHandler(start_exam, pattern='^(premiere)$')],
