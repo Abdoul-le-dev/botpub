@@ -121,8 +121,8 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     try:
         # Envoi de la requête POST avec le JSON
-        response = requests.post(url, json=data)
-
+        response = await requests.post(url, json=data)
+        print(response)
         # Vérifier si la requête s'est bien passée (code 200)
         if response.status_code == 200:
             # Convertir la réponse JSON en dictionnaire Python
