@@ -138,7 +138,7 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if result.get("success"):
                  
                 await update.message.reply_text(
-                        f"✅ {result["first_name"]}, vous êtes bien inscrite !\n\n"
+                        f"✅ {result['user']["first_name"]}, vous êtes bien inscrite !\n\n"
                         "Votre inscription a été vérifiée avec succès pour le **Pack Trading Gagnant Objectif +5000 USD**.\n"
                         "Merci pour votre engagement et bienvenue à l'examen !",
                         parse_mode='Markdown'
