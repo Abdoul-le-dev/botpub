@@ -84,6 +84,15 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
     print(args)
     #PromoV100
     name = "leseminaire"
+
+    if args and args[0] == 'MonExamen':
+
+        
+        await update.message.reply_text(
+            "Cliquez sur **Commencer l'examen** pour démarrer le processus :",
+            reply_markup=build_start_exam_keyboard(),
+            parse_mode='Markdown'
+        )
     
     if args and (args[0] == "challenge10000usd" or get_token_exists(args[0])):
         Context.user_data["argss"] = args[0]
@@ -323,14 +332,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
                 return WHY
 
     
-    if args and args[0] == 'MonExamen':
-
-        
-        await update.message.reply_text(
-            "Cliquez sur **Commencer l'examen** pour démarrer le processus :",
-            reply_markup=build_start_exam_keyboard(),
-            parse_mode='Markdown'
-        )
+    
 
 
    
