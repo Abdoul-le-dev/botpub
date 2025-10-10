@@ -404,7 +404,7 @@ if __name__ == '__main__':
     
     states={
       # WAITING_ANSWER_EXAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, verification_email)],
-       WAITING_ANSWER_EXAM: [ CallbackQueryHandler(receive_answer),],
+       WAITING_ANSWER_EXAM: [ CallbackQueryHandler(receive_answer_exam),],
         
     }, fallbacks=[CommandHandler('cancel', cancel)])
 
@@ -534,7 +534,7 @@ if __name__ == '__main__':
     #app.add_handler(CommandHandler("mail_all_participant", send_email))
     #app.add_handler(CommandHandler("mail_none_participant", send_none_email))
 
-    #app.add_handler(CommandHandler("userDelete", start_delete))
+    app.add_handler(CommandHandler("userDelete", start_delete))
   
 
     conv_handler_add = ConversationHandler(

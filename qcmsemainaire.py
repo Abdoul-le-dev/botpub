@@ -327,10 +327,12 @@ async def process_answer(user_id, user_answer, query):
             if data_user['note_one'] != 0 and data_user['note_two'] == 0:
 
                 await query.message.reply_text(msg, parse_mode="Markdown", reply_markup=build_exam_2())
+                return ConversationHandler.END    
                 
             elif data_user['note_two'] != 0: 
 
                  await query.message.reply_text(msg, parse_mode="Markdown")   
+                 return ConversationHandler.END    
                 
             else :
                 return     
