@@ -400,7 +400,7 @@ if __name__ == '__main__':
 
 
     conv_handler_process_exam3 = ConversationHandler(
-    entry_points=[CallbackQueryHandler(start_exam, pattern='^(premiere)$')],
+    entry_points=[CallbackQueryHandler(start_exams, pattern='second')],
     
     states={
       # WAITING_ANSWER_EXAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, verification_email)],
