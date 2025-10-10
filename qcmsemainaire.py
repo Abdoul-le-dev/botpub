@@ -308,7 +308,7 @@ async def process_answer(user_id, user_answer, query):
 
                 update_exam_user(user_id, note, total_time,"", 1 )
                 
-            elif data_user['note_two'] != 0 and data_user['note_two'] == 0 :    
+            elif data_user['note_one'] != 0 and data_user['note_two'] == 0 :    
                 
                 update_exam_user(user_id, note, total_time,"", 2 )
             else :
@@ -391,5 +391,5 @@ def build_result_message(answers, total_time,user_id, categorie_name):
         msg += "📚 `Courage, révise un peu et ça ira mieux la prochaine fois.`"
        
 
-    update_arg(user_id,categorie_name)
+    #update_arg(user_id,categorie_name)
     return msg, correct_count
