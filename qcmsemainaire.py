@@ -210,7 +210,7 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
              id_part_one, id_part_two = get_exam_parts(1)
              args = id_part_two
         else :
-            await update.message.reply_text(
+            await query.message.reply_text(
                     "Tu as déja Passer ton examen"
                 )
             return ConversationHandler.END    
@@ -243,6 +243,8 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
 
     sessions[user_id]['question_start_time'] = time.time()
+
+    print('suivant')
 
     return WAITING_ANSWER_EXAM
 

@@ -393,7 +393,7 @@ if __name__ == '__main__':
     },
     
     fallbacks=[CommandHandler('cancel', cancel)],
-    per_message=True
+    #per_chat=True,
     )
 
     app.add_handler(conv_handler_process_exam2)
@@ -515,26 +515,26 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("peopleCategories", user_list_in_categorie))
     
     app.add_handler(conv_handlerMsg)
-    app.add_handler(convs_handler)
+   # app.add_handler(convs_handler)
 
-    app.add_handler(conv_handler_jeu)
+    #app.add_handler(conv_handler_jeu)
     
 
 
 
     app.add_handler(conv_handler)
     app.add_handler(conv_handlerstart)
-    app.add_handler(CommandHandler("LesGagnants", export_and_send_pdf))
-    app.add_handler(CommandHandler("categoriesss", categories_user))
+    #app.add_handler(CommandHandler("LesGagnants", export_and_send_pdf))
+    #app.add_handler(CommandHandler("categoriesss", categories_user))
 
-    app.add_handler(CommandHandler("lastMessage", last_message))
-    app.add_handler(CommandHandler("delete_all_exercices", delete_all_exercices))
+    #app.add_handler(CommandHandler("lastMessage", last_message))
+    #app.add_handler(CommandHandler("delete_all_exercices", delete_all_exercices))
 
-    app.add_handler(CommandHandler("userInfo", user_info))
-    app.add_handler(CommandHandler("mail_all_participant", send_email))
-    app.add_handler(CommandHandler("mail_none_participant", send_none_email))
+    #app.add_handler(CommandHandler("userInfo", user_info))
+    #app.add_handler(CommandHandler("mail_all_participant", send_email))
+    #app.add_handler(CommandHandler("mail_none_participant", send_none_email))
 
-    app.add_handler(CommandHandler("userDelete", start_delete))
+    #app.add_handler(CommandHandler("userDelete", start_delete))
   
 
     conv_handler_add = ConversationHandler(
@@ -585,6 +585,7 @@ if __name__ == '__main__':
     )
 
     app.add_handler(conv_handler_exam)
+
     app.add_handler(CommandHandler('verify_categorie', cmd_verify_categorie))
     conv_handler_exercice_user = ConversationHandler(
         entry_points=[CommandHandler('commencerMesExerciesDuSeminaire', start_exercice)],
@@ -639,7 +640,7 @@ if __name__ == '__main__':
     
 
     #app.add_handler(conv_handler_mail_user)
-    threading.Thread(target=scheduler_thread, daemon=True).start()
+    #threading.Thread(target=scheduler_thread, daemon=True).start()
     #app.add_handler(qcm_handler)
     print('running...')
     
