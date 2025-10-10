@@ -43,7 +43,7 @@ def build_exam_1():
 def build_exam_2():
     keyboard = [
         [
-            InlineKeyboardButton("✅Je Commence La second Epreuve", callback_data="Second")
+            InlineKeyboardButton("✅Je Commence La second Epreuve", callback_data="second")
             #InlineKeyboardButton("❌ Non j'ai pas compris", callback_data="no")
         ]
     ]
