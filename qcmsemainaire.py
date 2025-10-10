@@ -249,6 +249,7 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     
 
 async def receive_answer_exam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print('reçu')
     query = update.callback_query
     await query.answer("Réponse reçue ! ⏳")  # Réponse immédiate à Telegram
 
@@ -257,16 +258,20 @@ async def receive_answer_exam(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     # Si pas de session, on stoppe
     if user_id not in sessions:
+        print("1")
         await query.message.reply_text("⚠️ Tu n'as pas d'examen en cours.")
         return ConversationHandler.END
 
     # Lancer le traitement en arrière-plan
+    print("2")
     asyncio.create_task(process_answer(user_id, user_answer, query))
     return WAITING_ANSWER_EXAM
 
 
 async def process_answer(user_id, user_answer, query):
     session = sessions[user_id]
+
+    print("3")
 
     # Si toutes les questions sont déjà traitées
     if session['index'] >= len(session['questions']):
