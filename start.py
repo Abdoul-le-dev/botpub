@@ -89,7 +89,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
         
         await update.message.reply_text(
-            "🎓 Pour démarrer ton examen, **clique sur :** /CommencerMonExamen",
+            "🎓, **Clique sur :** /CommencerMonExamen  pour démarrer ton examen",
             parse_mode='Markdown'
         )
 
