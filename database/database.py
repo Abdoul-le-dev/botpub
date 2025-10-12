@@ -863,7 +863,7 @@ def get_user_exam(id_user: int):
     cursor = conn.cursor()
 
     cursor.execute("""
-    SELECT email,exam_id, note_one, time_one, note_two, time_two, qr_code, created_at
+    SELECT email,user_name, last_name, exam_id, note_one, time_one, note_two, time_two, qr_code, created_at
     FROM exam_user
     WHERE id_user = ?
     """, (id_user,))
