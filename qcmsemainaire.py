@@ -394,7 +394,7 @@ async def process_answer(user_id, user_answer, query):
                 note_partie_2 = data_user['note_two']   # sur 10
                 total = note_partie_1 + note_partie_2   # sur 20
                  
-                result = await send_exam_result_email(data_user['email'],data_user['user_name'] , data_user['last_name'] ,'Test de niveau B', total) 
+                result = await send_exam_result_email(user_id,data_user['email'],data_user['user_name'] , data_user['last_name'] ,'Test de niveau B', total) 
                 async def safe_task(coro):
                     """Exécute une tâche async sans bloquer et log les erreurs."""
                     try:
