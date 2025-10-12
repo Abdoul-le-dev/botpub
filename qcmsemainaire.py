@@ -273,7 +273,11 @@ async def receive_answer_exam(update: Update, context: ContextTypes.DEFAULT_TYPE
                 
             if data_user['note_one'] != 0 and data_user['note_two'] == 0 :    
                 
-                await query.message.reply_text(f"👆 {data_user['user_name'] } Clique à nouveau sur le bouton  juste au-dessus pour lancer ton épreuve.")
+                await query.message.reply_text(
+                    f"⚠️ __**👆 {data_user['user_name']} !**__\n"
+                    "Clique à nouveau sur le bouton juste au-dessus pour **lancer ton épreuve**.",
+                    parse_mode="Markdown"
+                )
 
             else :
                 await query.message.reply_text("⚠️ Tu n'as pas d'examen en cours.")    
@@ -457,7 +461,7 @@ def build_result_message(answers, total_time,user_id, categorie_name):
     return msg, correct_count
 
 
-async def send_exam_result_email(user_email, user_name, user_surname, exam_name, note):
+async def send_exam_result_emails(user_email, user_name, user_surname, exam_name, note):
     # 1️⃣ Génération du contenu du QR code
     exam_date = datetime.now().strftime("%d/%m/%Y à %H:%M")
     qr_data = f"""
@@ -504,4 +508,51 @@ async def send_exam_result_email(user_email, user_name, user_surname, exam_name,
     result = await envoyer_email(subject, msg, user_name, file_path)
 
     return result
-    
+
+async def send_exam_result_email(user_email, user_name, user_surname, exam_name, note):
+    # 1️⃣ Génération du contenu du QR code
+    exam_date = datetime.now().strftime("%d/%m/%Y à %H:%M")
+    qr_data = f"""
+Nom: {user_name}
+Prénom: {user_surname}
+Examen: {exam_name}
+Note: {note}/20
+Date: {exam_date}
+"""
+
+    # 2️⃣ Création du QR code
+    qr = qrcode.QRCode(version=1, box_size=10, border=4)
+    qr.add_data(qr_data.strip())
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    # 3️⃣ Préparation du dossier pour stocker le QR code
+    qr_dir = "qrcode"  # dossier relatif au projet
+    os.makedirs(qr_dir, exist_ok=True)  # crée le dossier s'il n'existe pas
+
+    # 4️⃣ Nom du fichier QR
+    file_path = os.path.join(qr_dir, f"{user_name}_{user_surname}_qr.png")
+    img.save(file_path)
+
+    # 5️⃣ Préparation de l’e-mail
+    subject = f"🎓 Résultat de ton examen — {exam_name}"
+    msg = f"""
+Salut {user_name},
+
+Félicitations 🎉 !
+
+Voici ton résultat :
+- Examen : {exam_name}
+- Note totale : {note}/20
+- Date : {exam_date}
+
+Un QR code contenant tes informations est joint à cet e-mail. 
+Garde-le précieusement, il te servira pour ton prochain coaching.
+
+Bien à toi,
+L’équipe de coaching.
+"""
+
+    # 6️⃣ Envoi de l’email (fonction existante)
+    result = await envoyer_email(subject, msg, user_email, file_path)
+    return result    
