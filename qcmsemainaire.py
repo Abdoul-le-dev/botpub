@@ -201,16 +201,7 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("Réponse reçue ! ⏳")  # Réponse immédiate à Telegram
 
-    user_id = query.from_user.id
-
-    if Context.user_data.get('email_validated', False):
-    
-        return ConversationHandler.END
-
-        
-
-
-    
+    user_id = query.from_user.id 
 
 
     data_user = get_user_exam(user_id )
@@ -303,9 +294,15 @@ async def receive_answer_exam(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if data_user:
                 
-        if data_user['note_one'] != 0 and data_user['note_two'] != 0 :    
+        if data_user['note_one'] != 0 and data_user['note_two'] != 0 : 
+
+            if user_id in sessions:
+                del sessions[user_id]
+
+            # Fin de toutes les conversations
+            return ConversationHandler.END   
                 
-            return ConversationHandler.END
+            
         return ConversationHandler.END
 
     return WAITING_ANSWER_EXAM
