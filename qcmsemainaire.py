@@ -295,11 +295,11 @@ async def receive_answer_exam(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if data_user:
                 
-        if data_user['note_one'] != 0 and data_user['note_two'] != 0 :    
-                
-            return ConversationHandler.END
-        return ConversationHandler.END
+        if data_user['note_one'] != 0 and data_user['note_two'] != 0 :  
 
+            del sessions[user_id]   
+            return ConversationHandler.END
+        
     return WAITING_ANSWER_EXAM
 
 
