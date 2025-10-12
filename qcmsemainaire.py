@@ -17,7 +17,7 @@ from mail_fonction import  envoyer_email
 from constance import WAITING_ANSWER_EXAM,EMAIL_EXAM,QUESTION, ANSWER, EXPLANATION, CATEGORIE, NOM_CATEGORIE, WAITING_ANSWER,CHOISIR_CATEGORIE 
 from telegram import ReplyKeyboardRemove
 from database.database import get_categories_exam,update_exam_user,get_user_args,get_questions, save_user_answer, save_daily_result, delete_args
-from database.database import  add_exam_user,get_exam_parts,get_user_exam, get_category_questions_report,get_final_score,create_args,update_arg, add_categorie_exercice, verifier_et_valider_categorie,check_if_user,get_categories,verify_categorie, user_has_categorie
+from database.database import  add_categorie, add_exam_user,get_exam_parts,get_user_exam, get_category_questions_report,get_final_score,create_args,update_arg, add_categorie_exercice, verifier_et_valider_categorie,check_if_user,get_categories,verify_categorie, user_has_categorie
 
 url = "https://conference.fiacrekpanoudtrade.com/api/bot/telegram/assistant"
 
@@ -364,8 +364,14 @@ async def process_answer(user_id, user_answer, query):
                 total = note_partie_1 + note_partie_2   # sur 20
                  
                 result = await send_exam_result_email(data_user['email'],data_user['user_name'] , data_user['last_name'] ,'Test de niveau B', total) 
+                async def safe_task(coro):
+                    """Exécute une tâche async sans bloquer et log les erreurs."""
+                    try:
+                        await coro
+                    except Exception as e:
+                        print(f"[ERREUR TÂCHE] {e}")
 
-                
+                asyncio.create_task(safe_task(add_categorie(user_id, 'Conf_1')))
 
                 #
 
