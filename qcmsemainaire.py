@@ -267,12 +267,13 @@ async def receive_answer_exam(update: Update, context: ContextTypes.DEFAULT_TYPE
     if user_id not in sessions:
         print("1")
         data_user = get_user_exam(user_id )
+        print(data_user)
 
         if data_user:
                 
             if data_user['note_one'] != 0 and data_user['note_two'] == 0 :    
                 
-                await query.message.reply_text(f"👆 {data_user[' user_name'] } Clique à nouveau sur le bouton  juste au-dessus pour lancer ton épreuve.")
+                await query.message.reply_text(f"👆 {data_user['user_name'] } Clique à nouveau sur le bouton  juste au-dessus pour lancer ton épreuve.")
 
             else :
                 await query.message.reply_text("⚠️ Tu n'as pas d'examen en cours.")    
