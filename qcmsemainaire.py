@@ -145,7 +145,7 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
                         parse_mode='Markdown'
                     )
                 
-                add_exam_user(user_id, email, 2)
+                add_exam_user(user_id, email,result['user']["first_name"],result['user']["last_name"], 2)
                 
                 time.sleep(10) 
 
