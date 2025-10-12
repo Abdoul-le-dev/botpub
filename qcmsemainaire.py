@@ -91,6 +91,16 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
    
     email = update.message.text.strip()
+
+    user = update.effective_user
+    user_id = user.id
+
+    data_user = get_user_exam(user_id )
+
+    if data_user:
+        if data_user['note_two'] != 0:
+            print('ici')
+            return ConversationHandler.END
         
         # Simple validation de base (tu peux la rendre plus complète)
     if "@" in email and "." in email:
@@ -140,7 +150,7 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if result.get("success"):
                  
                 await update.message.reply_text(
-                        f"✅ {result['user']["first_name"]}, vous êtes bien inscrite !\n\n"
+                        f"✅ {result['user']["first_name"]}, vous êtes bien inscrit !\n\n"
                         "Votre inscription a été vérifiée avec succès pour le **Pack Trading Gagnant Objectif +5000 USD**.\n"
                         "Merci pour votre engagement et bienvenue à l'examen !",
                         parse_mode='Markdown'
@@ -201,12 +211,22 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
     user_id = query.from_user.id
 
+    data_user = get_user_exam(user_id )
+    print(data_user)
+
+    if data_user:
+        if data_user['note_two'] != 0:
+
+            await update.message.reply_text(
+                    "Tu as déja Passer ton examen"
+                )
+            return ConversationHandler.END
+
 
     
 
 
-    data_user = get_user_exam(user_id )
-    print(data_user)
+    
 
     if data_user:
         if data_user['note_one'] == 0:
@@ -297,7 +317,7 @@ async def receive_answer_exam(update: Update, context: ContextTypes.DEFAULT_TYPE
                 
         if data_user['note_one'] != 0 and data_user['note_two'] != 0 :  
 
-            del sessions[user_id]   
+            #del sessions[user_id]   
             return ConversationHandler.END
         
     return WAITING_ANSWER_EXAM
