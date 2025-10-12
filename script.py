@@ -373,7 +373,7 @@ if __name__ == '__main__':
     )
 
     conv_handler_process_exam1 = ConversationHandler(
-    entry_points=[CallbackQueryHandler(start_exam, pattern="exam")],#CommandHandler('CommencerMonExamen', start_exam)],#[CallbackQueryHandler(start_exam)],
+    entry_points=[CommandHandler('CommencerMonExamen', start_exam)],#[CallbackQueryHandler(start_exam)],
     
     states={
         EMAIL_EXAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, verification_email)],

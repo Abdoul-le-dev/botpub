@@ -89,10 +89,10 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
         
         await update.message.reply_text(
-            "🎓 Pour démarrer ton examen, **clique sur le bouton ci-dessous : Commencer l'examen** ⬇️",
-            reply_markup=build_start_exam_keyboard(),
+            "🎓 Pour démarrer ton examen, **clique sur :** `/CommencerMonExamen` ⬇️",
             parse_mode='Markdown'
         )
+
 
 
         return ConversationHandler.END
