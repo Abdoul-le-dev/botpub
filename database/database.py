@@ -796,7 +796,7 @@ def add_exam_user(id_user: int, email: str,user_name: str,last_name: str, exam_i
 
     cursor.execute("""
     INSERT INTO exam_user (id_user, email, user_name, last_name, exam_id)
-    VALUES (?, ?, ?)
+    VALUES (?, ?, ?,?,?)
     """, (id_user, email, user_name, last_name, exam_id))
 
     conn.commit()
