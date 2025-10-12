@@ -272,6 +272,7 @@ async def receive_answer_exam(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Lancer le traitement en arrière-plan
     print("2")
     asyncio.create_task(process_answer(user_id, user_answer, query))
+    await asyncio.sleep(2)
     return WAITING_ANSWER_EXAM
 
 
@@ -346,7 +347,7 @@ async def process_answer(user_id, user_answer, query):
                 note_partie_2 = data_user['note_two']   # sur 10
                 total = note_partie_1 + note_partie_2   # sur 20
                  
-                result = send_exam_result_email(data_user['email'],data_user['user_name'] , data_user['last_name'] ,'Test de niveau B', total) 
+                result = await send_exam_result_email(data_user['email'],data_user['user_name'] , data_user['last_name'] ,'Test de niveau B', total) 
 
                 
 
@@ -372,8 +373,10 @@ async def process_answer(user_id, user_answer, query):
                     f"🧮 Total : `{total}/20`\n\n"
                     f"{msg}\n\n"
                     "📅 Votre séance d’e-coaching privée avec le coach est prévue pour le *lundi à 10h00*.\n"
-                    "📧 Un e-mail vous a été envoyé avec un *code QR* qui vous servira pour vos futures séances."
+                    "📧 Un e-mail vous a été envoyé avec un *code QR* qui vous servira à l'avenir."
                 )
+
+                await asyncio.sleep(5)
 
                 await query.message.reply_text(final_message, parse_mode="Markdown")
 
