@@ -138,8 +138,6 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
             # Exemple de traitement selon la réponse
             if result.get("success"):
-
-                context.user_data['email_validated'] = True
                  
                 await update.message.reply_text(
                         f"✅ {result['user']["first_name"]}, vous êtes bien inscrite !\n\n"
@@ -201,7 +199,10 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer("Réponse reçue ! ⏳")  # Réponse immédiate à Telegram
 
-    user_id = query.from_user.id 
+    user_id = query.from_user.id
+
+
+    
 
 
     data_user = get_user_exam(user_id )
@@ -294,15 +295,9 @@ async def receive_answer_exam(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     if data_user:
                 
-        if data_user['note_one'] != 0 and data_user['note_two'] != 0 : 
-
-            if user_id in sessions:
-                del sessions[user_id]
-
-            # Fin de toutes les conversations
-            return ConversationHandler.END   
+        if data_user['note_one'] != 0 and data_user['note_two'] != 0 :    
                 
-            
+            return ConversationHandler.END
         return ConversationHandler.END
 
     return WAITING_ANSWER_EXAM
