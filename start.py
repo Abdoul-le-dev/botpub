@@ -48,7 +48,7 @@ def build_start_exam_keyboard():
     """
     keyboard = [
         [
-            InlineKeyboardButton("✅ Commencer l'examen", callback_data="start_exam")
+            InlineKeyboardButton("✅ Commencer l'examen", callback_data="exam")
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
