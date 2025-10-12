@@ -425,8 +425,10 @@ async def process_answer(user_id, user_answer, query):
                     f"📗 Partie 2 : `{note_partie_2}/10`\n\n"
                     f"🧮 Total : `{total}/20`\n\n"
                     f"{msg}\n\n"
-                    "📅 Votre séance d’e-coaching privée avec le coach est prévue pour le *lundi à 10h00*.\n"
-                    "📧 Un e-mail vous a été envoyé avec un *code QR* qui vous servira à l'avenir."
+                    "📅 Votre séance d’e-coaching privée avec le coach est prévue pour bientôt.\n"
+                    "📲 Vous recevrez la date exacte directement via ce bot, ainsi qu’une notification lorsqu’elle sera confirmée.\n"
+                    "📧 Un e-mail vous a également été envoyé avec un *code QR*, qui vous servira pour votre séances."
+
                 )
 
                 await asyncio.sleep(5)
