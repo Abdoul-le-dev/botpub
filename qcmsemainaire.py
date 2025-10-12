@@ -4,6 +4,7 @@ from telegram import Update
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
 from exercice import get_question, get_answer
 import time
+import uuid
 ADMIN_ID =571718066 
 import asyncio
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -101,7 +102,7 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     else:
             await update.message.reply_text(
-                "⚠️ L'adresse e-mail semble invalide. Renvoyer une address email vailde:"
+                "⚠️ L'adresse e-mail semble invalide. Renvoyer une address email valide:"
             )
             return EMAIL_EXAM
 
@@ -137,6 +138,8 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
             # Exemple de traitement selon la réponse
             if result.get("success"):
+
+                context.user_data['email_validated'] = True
                  
                 await update.message.reply_text(
                         f"✅ {result['user']["first_name"]}, vous êtes bien inscrite !\n\n"
@@ -199,6 +202,12 @@ async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     await query.answer("Réponse reçue ! ⏳")  # Réponse immédiate à Telegram
 
     user_id = query.from_user.id
+
+    if Context.user_data.get('email_validated', False):
+    
+        return ConversationHandler.END
+
+        
 
 
     
@@ -278,6 +287,7 @@ async def receive_answer_exam(update: Update, context: ContextTypes.DEFAULT_TYPE
                     "**CLIQUE À NOUVEAU SUR LE BOUTON JUSTE AU-DESSUS POUR LANCER TON ÉPREUVE.**",
                     parse_mode="Markdown"
                 )
+                return ConversationHandler.END
 
             else :
                 await query.message.reply_text("⚠️ Tu n'as pas d'examen en cours.")    
@@ -289,6 +299,15 @@ async def receive_answer_exam(update: Update, context: ContextTypes.DEFAULT_TYPE
     print("2")
     asyncio.create_task(process_answer(user_id, user_answer, query))
     await asyncio.sleep(2)
+    data_user = get_user_exam(user_id )
+
+    if data_user:
+                
+        if data_user['note_one'] != 0 and data_user['note_two'] != 0 :    
+                
+            return ConversationHandler.END
+        return ConversationHandler.END
+
     return WAITING_ANSWER_EXAM
 
 
@@ -515,14 +534,17 @@ async def send_exam_result_emails(user_email, user_name, user_surname, exam_name
 
     return result
 
-async def send_exam_result_email(user_email, user_name, user_surname, exam_name, note):
+async def send_exam_result_email(user_id,user_email, user_name, user_surname, exam_name, note):
     # 1️⃣ Génération du contenu du QR code
+    user_id_unique = str(uuid.uuid4())
     exam_date = datetime.now().strftime("%d/%m/%Y à %H:%M")
     qr_data = f"""
 Nom: {user_name}
 Prénom: {user_surname}
+Mail: {user_email}
 Examen: {exam_name}
 Note: {note}/20
+Id Unique : {user_id_unique}
 Date: {exam_date}
 """
 
@@ -531,6 +553,9 @@ Date: {exam_date}
     qr.add_data(qr_data.strip())
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
+
+    update_exam_user(user_id,user_id_unique,3)
+    
 
     # 3️⃣ Préparation du dossier pour stocker le QR code
     qr_dir = "qrcode"  # dossier relatif au projet
