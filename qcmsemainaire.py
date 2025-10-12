@@ -274,8 +274,8 @@ async def receive_answer_exam(update: Update, context: ContextTypes.DEFAULT_TYPE
             if data_user['note_one'] != 0 and data_user['note_two'] == 0 :    
                 
                 await query.message.reply_text(
-                    f"⚠️ __**👆 {data_user['user_name']} !**__\n"
-                    "Clique à nouveau sur le bouton juste au-dessus pour **lancer ton épreuve**.",
+                    f"⚠️ 👆 **{data_user['user_name'].upper()} !**\n"
+                    "**CLIQUE À NOUVEAU SUR LE BOUTON JUSTE AU-DESSUS POUR LANCER TON ÉPREUVE.**",
                     parse_mode="Markdown"
                 )
 

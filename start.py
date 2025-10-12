@@ -89,8 +89,8 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
         
         await update.message.reply_text(
-            "Cliquez sur ** /CommencerMonExamen** pour démarrer le processus :",
-            #reply_markup=build_start_exam_keyboard(),
+            #"Cliquez sur ** /CommencerMonExamen** pour démarrer le processus :",
+            reply_markup=build_start_exam_keyboard(),
             parse_mode='Markdown'
         )
 
