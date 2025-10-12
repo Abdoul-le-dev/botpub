@@ -568,7 +568,7 @@ Date: {exam_date}
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
 
-    update_exam_user(user_id,user_id_unique,3)
+    update_exam_user(user_id, 0, "", user_id_unique, 3)
     
 
     # 3️⃣ Préparation du dossier pour stocker le QR code
