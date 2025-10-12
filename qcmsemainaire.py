@@ -8,6 +8,10 @@ ADMIN_ID =571718066
 import asyncio
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 import requests
+import time
+from datetime import datetime
+import qrcode
+from mail_fonction import  envoyer_email
 
 # États de la conversation 
 from constance import WAITING_ANSWER_EXAM,EMAIL_EXAM,QUESTION, ANSWER, EXPLANATION, CATEGORIE, NOM_CATEGORIE, WAITING_ANSWER,CHOISIR_CATEGORIE 
@@ -190,6 +194,7 @@ async def verification_email(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def start_exams(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+    print('exams')
     query = update.callback_query
     await query.answer("Réponse reçue ! ⏳")  # Réponse immédiate à Telegram
 
@@ -327,17 +332,57 @@ async def process_answer(user_id, user_answer, query):
             if data_user['note_one'] != 0 and data_user['note_two'] == 0:
 
                 await query.message.reply_text(msg, parse_mode="Markdown", reply_markup=build_exam_2())
+
                 return ConversationHandler.END    
                 
             elif data_user['note_two'] != 0: 
 
-                 await query.message.reply_text(msg, parse_mode="Markdown")   
-                 return ConversationHandler.END    
+                await query.message.reply_text(msg, parse_mode="Markdown")  
+
+                #envoi de mail 
+                 
+                # Supposons que tu as ces données :
+                note_partie_1 = data_user['note_one']   # sur 10
+                note_partie_2 = data_user['note_two']   # sur 10
+                total = note_partie_1 + note_partie_2   # sur 20
+                 
+                result = send_exam_result_email(data_user['email'],data_user['user_name'] , data_user['last_name'] ,'Test de niveau B', total) 
+
+                
+
+                #
+
+                # Déterminer le message selon la note totale
+                if total >= 18:
+                    msg = "🌟 *Excellent !* Tu fais partie des meilleurs, ton travail est remarquable."
+                elif total >= 16:
+                    msg = "💪 *Très bien !* Ta maîtrise du sujet est impressionnante."
+                elif total >= 14:
+                    msg = "👏 *Bien joué !* Tes efforts portent leurs fruits."
+                elif total >= 12:
+                    msg = "🙂 *Passable.* Tu as réussi, mais tu peux encore progresser."
+                else:
+                    msg = "📚 *Insuffisant.* Continue à travailler, la prochaine sera la bonne !"
+
+                # Construire le message final
+                final_message = (
+                    "__**🎓 Résultat final de ton examen**__\n\n"
+                    f"📘 Partie 1 : `{note_partie_1}/10`\n"
+                    f"📗 Partie 2 : `{note_partie_2}/10`\n\n"
+                    f"🧮 Total : `{total}/20`\n\n"
+                    f"{msg}\n\n"
+                    "📅 Votre séance d’e-coaching privée avec le coach est prévue pour le *lundi à 10h00*.\n"
+                    "📧 Un e-mail vous a été envoyé avec un *code QR* qui vous servira pour vos futures séances."
+                )
+
+                await query.message.reply_text(final_message, parse_mode="Markdown")
+
+                return ConversationHandler.END    
                 
             else :
-                return     
+                return ConversationHandler.END     
         else : 
-            return
+            return ConversationHandler.END 
 
         
         
@@ -395,3 +440,53 @@ def build_result_message(answers, total_time,user_id, categorie_name):
 
     #update_arg(user_id,categorie_name)
     return msg, correct_count
+
+
+async def send_exam_result_email(user_email, user_name, user_surname, exam_name, note):
+    # 1️⃣ Génération du contenu du QR code
+    exam_date = datetime.now().strftime("%d/%m/%Y à %H:%M")
+    qr_data = f"""
+    Nom: {user_name}
+    Prénom: {user_surname}
+    Examen: {exam_name}
+    Note: {note}/20
+    Date: {exam_date}
+    """
+
+    # 2️⃣ Création du QR code
+    qr = qrcode.QRCode(version=1, box_size=10, border=4)
+    qr.add_data(qr_data.strip())
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    # Nom du fichier QR
+    file_path = f"/qrcode/{user_name}_{user_surname}_qr.png"
+    img.save(file_path)
+
+    # 3️⃣ Préparation de l’e-mail
+   
+    subject = f"🎓 Résultat de ton examen — {exam_name}"
+   
+   
+
+    msg ="""
+        Salut {user_name},
+
+        Félicitations 🎉 !
+
+        Voici ton résultat :
+        - Examen : {exam_name}
+        - Note totale : {note}/20
+        - Date : {exam_date}
+
+        Un QR code contenant tes informations est joint à cet e-mail. 
+        Garde-le précieusement, il te servira pour ton prochain coaching.
+
+        Bien à toi,
+        L’équipe de coaching.
+        """
+
+    result = await envoyer_email(subject, msg, user_name, file_path)
+
+    return result
+    

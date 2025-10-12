@@ -786,7 +786,7 @@ def get_exam_parts(exam_id: int):
         
         return None   
 
-def add_exam_user(id_user: int, email: str, exam_id: str):
+def add_exam_user(id_user: int, email: str,user_name: str,last_name: str, exam_id: str): 
     """
     Ajoute un utilisateur dans la table exam_user
     avant le début de son examen.
@@ -795,9 +795,9 @@ def add_exam_user(id_user: int, email: str, exam_id: str):
     cursor = conn.cursor()
 
     cursor.execute("""
-    INSERT INTO exam_user (id_user, email, exam_id)
+    INSERT INTO exam_user (id_user, email, user_name, last_name, exam_id)
     VALUES (?, ?, ?)
-    """, (id_user, email, exam_id))
+    """, (id_user, email, user_name, last_name, exam_id))
 
     conn.commit()
     conn.close()
@@ -872,7 +872,7 @@ def get_user_exam(id_user: int):
     conn.close()
 
     if result:
-        email,exam_id, note_one, time_one, note_two, time_two, qr_code, created_at = result
+        email, user_name, last_name,exam_id, note_one, time_one, note_two, time_two, qr_code, created_at = result
         moyenne = None
         if note_one is not None and note_two is not None:
             moyenne = (note_one + note_two) / 2
@@ -880,6 +880,8 @@ def get_user_exam(id_user: int):
         return {
             "id_user": id_user,
             "email": email,
+            "user_name": user_name,
+            "last_name": last_name,
             "C" : exam_id,
             "note_one": note_one,
             "time_one": time_one,

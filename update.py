@@ -179,6 +179,8 @@ def exam_user():
         exam_id TEXT NOT NULL,           
         id_user INTEGER NOT NULL,
         email TEXT NOT NULL,
+        user_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,                      
         note_one INTEGER DEFAULT 0,
         time_one TEXT DEFAULT NULL,
         note_two INTEGER DEFAULT 0,
@@ -191,5 +193,39 @@ def exam_user():
     conn.commit()
     conn.close()
 
-exam_table()
-exam_user()    
+#exam_table()
+#exam_user()    
+
+import sqlite3
+
+def recreate_exam_user_table():
+    """Supprime et recrée la table exam_user."""
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    # Supprimer la table si elle existe
+    cursor.execute("DROP TABLE IF EXISTS exam_user")
+
+    # Recréer la table
+    cursor.execute("""
+    CREATE TABLE exam_user (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        exam_id TEXT NOT NULL,           
+        id_user INTEGER NOT NULL,
+        email TEXT NOT NULL,
+        user_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,                      
+        note_one INTEGER DEFAULT 0,
+        time_one TEXT DEFAULT NULL,
+        note_two INTEGER DEFAULT 0,
+        time_two TEXT DEFAULT NULL,
+        qr_code TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    )
+    """)
+
+    conn.commit()
+    conn.close()
+    print("✅ Table 'exam_user' supprimée et recréée avec succès.")
+
+recreate_exam_user_table()    
