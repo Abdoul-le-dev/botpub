@@ -193,8 +193,8 @@ def exam_user():
     conn.commit()
     conn.close()
 
-exam_table()
-exam_user()    
+#exam_table()
+#exam_user()    
 
 import sqlite3
 
@@ -228,4 +228,4 @@ def recreate_exam_user_table():
     conn.close()
     print("✅ Table 'exam_user' supprimée et recréée avec succès.")
 
-#recreate_exam_user_table()    
+recreate_exam_user_table()    
