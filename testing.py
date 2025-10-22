@@ -144,7 +144,7 @@ async def get_media(update, context):
             # Si le fichier est trop gros
             if "File is too big" in str(e):
                 await update.message.reply_text(
-                    "⚠️ La vidéo est trop volumineuse pour être téléchargée via Telegram.\n"
+                    
                     " Sauvegarder localement..."
                 )
                 try:
@@ -260,12 +260,12 @@ async def broadcast_messages(bot, admin_id, context_user_data):
 
                     if file_id:
                         # Réutiliser le file_id
-                        await bot.send_video(chat_id=user_id , video=file_id, reply_markup= build_answer_keyboards())
+                        await bot.send_video(chat_id=user_id , video=file_id,caption=texte )
                     
                     else:
                         # Envoyer depuis fichier local, puis sauvegarder le file_id
                         video_path = "1.mp4"
-                        msg = await bot.send_video(chat_id=user_id , video=video_path)
+                        msg = await bot.send_video(chat_id=user_id , video=video_path, caption=texte)
                         new_file_id = msg.video.file_id
                         save_file_id(video_name, new_file_id)
 
@@ -273,17 +273,9 @@ async def broadcast_messages(bot, admin_id, context_user_data):
                     print(f"Impossible d’envoyer un message à {user_id} : {e}")   
                     return      
                 
-                
 
-            
-            #await Context.bot.send_message(
-            #chat_id=user_id,
-            #text="🔥🔥✍️  Clique sur /JeMEnregistre Maintenant"
-            #)
-
-
-                with open(media_file_id, "rb") as video_file:
-                    await bot.send_video(chat_id=user_id, video=InputFile(video_file))
+                    #with open(media_file_id, "rb") as video_file:
+                    #await bot.send_video(chat_id=user_id, video=InputFile(video_file))
 
                 #await bot.send_video(chat_id=user_id, video=media_file_id, caption=texte)
 
