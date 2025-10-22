@@ -4,6 +4,8 @@ from telegram.ext import ConversationHandler
 from database.database import liste_categories
 from telegram.error import BadRequest
 from telegram import InputFile
+from database.database import get_file_id
+from database.database import save_file_id
 
 import sqlite3
 import asyncio
@@ -150,9 +152,9 @@ async def get_media(update, context):
                     file_path = f"video_.mp4"
 
                     context.user_data["media_file_id"] = file_path
-                    await update.message.video.get_file()  # Peut échouer à nouveau
-                    await update.message.video.download_to_drive(custom_path=file_path)
-                    await update.message.reply_text(f"✅ Vidéo enregistrée localement ")
+                   # await update.message.video.get_file()  # Peut échouer à nouveau
+                   # await update.message.video.download_to_drive(custom_path=file_path)
+                    #await update.message.reply_text(f"✅ Vidéo enregistrée localement ")
                 except Exception as ex:
                     await update.message.reply_text(
                         f"❌ Impossible de télécharger la vidéo localement : {ex}"
@@ -250,6 +252,35 @@ async def broadcast_messages(bot, admin_id, context_user_data):
                 await bot.send_photo(chat_id=user_id, photo=media_file_id, caption=texte)
 
             elif format_choisi == "3":  # Vidéo + texte
+
+                try:
+                    video_name = "1"
+
+                    file_id = get_file_id(video_name)
+
+                    if file_id:
+                        # Réutiliser le file_id
+                        await bot.send_video(chat_id=user_id , video=file_id, reply_markup= build_answer_keyboards())
+                    
+                    else:
+                        # Envoyer depuis fichier local, puis sauvegarder le file_id
+                        video_path = "1.mp4"
+                        msg = await bot.send_video(chat_id=user_id , video=video_path)
+                        new_file_id = msg.video.file_id
+                        save_file_id(video_name, new_file_id)
+
+                except Exception as e:
+                    print(f"Impossible d’envoyer un message à {user_id} : {e}")   
+                    return      
+                
+                
+
+            
+            #await Context.bot.send_message(
+            #chat_id=user_id,
+            #text="🔥🔥✍️  Clique sur /JeMEnregistre Maintenant"
+            #)
+
 
                 with open(media_file_id, "rb") as video_file:
                     await bot.send_video(chat_id=user_id, video=InputFile(video_file))
