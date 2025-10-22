@@ -63,7 +63,7 @@ async def choose_format(update, context):
 
 
 
-async def handle_format_choice(update, context):
+async def handle_format_choic(update, context):
     choix = update.message.text[0]
     #user = update.effective_user.first_name or "toi"
     if choix not in {'1','2','3','4','5'}:
@@ -89,7 +89,54 @@ async def handle_format_choice(update, context):
     )
     return GET_TEXT
    
-   
+async def handle_format_choice(update, context):
+    choix = update.message.text[0]
+    if choix not in {'1','2','3','4','5'}:
+        await update.message.reply_text("❌ , ton choix n'est pas valide. Merci de choisir parmi les options.")
+        return CHOOSE_FORMAT
+
+    context.user_data["format"] = choix
+
+    # 1 = texte seul -> on attend du texte
+    if choix == '1':
+        await update.message.reply_text(
+            "✏️ , envoie maintenant ton texte.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return GET_TEXT
+
+    # 2 = image + texte -> on attend d'abord l'image
+    if choix == '2':
+        await update.message.reply_text(
+            "📁 , envoie maintenant ton fichier image.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return GET_MEDIA
+
+    # 3 = vidéo + texte -> on attend d'abord la vidéo
+    if choix == '3':
+        await update.message.reply_text(
+            "📁 , envoie maintenant ta vidéo.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return GET_MEDIA
+
+    # 4 = image seule -> on attend l'image (pas de texte ensuite)
+    if choix == '4':
+        await update.message.reply_text(
+            "📁 , envoie maintenant ton image.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return GET_MEDIA
+
+    # 5 = vidéo seule -> on attend la vidéo (pas de texte ensuite)
+    if choix == '5':
+        await update.message.reply_text(
+            "📁 , envoie maintenant ta vidéo.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return GET_MEDIA
+
 
 
 async def handle_format_choices(update, context):
@@ -115,7 +162,7 @@ async def handle_format_choices(update, context):
     )
     return GET_TEXT
 
-async def get_media(update, context):
+async def get_medias(update, context):
     choix = context.user_data["format"]
     user = update.effective_user.first_name or "toi"
 
@@ -179,6 +226,74 @@ async def get_media(update, context):
 
     await update.message.reply_text(f"✏️ , envoie maintenant le texte associé à ce fichier.")
     return GET_TEXT
+
+async def get_media(update, context):
+    choix = context.user_data.get("format")
+    user = update.effective_user.first_name or "toi"
+
+    # Image attendue (2: image+texte, 4: image seule)
+    if choix in {"2", "4"}:
+        if update.message.photo:
+            try:
+                photo_file = await update.message.photo[-1].get_file()
+                context.user_data["media_file_id"] = photo_file.file_id
+                await update.message.reply_text("👍 Image reçue avec succès.")
+            except Exception as e:
+                await update.message.reply_text(f"❌ Erreur en récupérant l'image : {e}")
+                return GET_MEDIA
+        else:
+            await update.message.reply_text("❌ Ce n'est pas une image valide. Merci d'envoyer une image.")
+            return GET_MEDIA
+
+        if choix == "2":
+            # On attend le texte pour la légende
+            await update.message.reply_text("✏️ , envoie maintenant le texte associé à l'image.")
+            return GET_TEXT
+        else:
+            # 4 = image seule -> pas de texte, on lance la diffusion directement (texte vide)
+            context.user_data["text_content"] = ""
+            await update.message.reply_text("✅ Ton message (image seule) est prêt à être diffusé !")
+            asyncio.create_task(broadcast_messages(context.bot, update.effective_user.id, context.user_data))
+            return ConversationHandler.END
+
+    # Vidéo attendue (3: vidéo+texte, 5: vidéo seule)
+    elif choix in {"3", "5"}:
+        if update.message.video:
+            try:
+                video_file = await update.message.video.get_file()
+                context.user_data["media_file_id"] = video_file.file_id
+                await update.message.reply_text("👍 Vidéo reçue avec succès.")
+            except BadRequest as e:
+                if "File is too big" in str(e):
+                    await update.message.reply_text(
+                        "⚠️ La vidéo est trop volumineuse pour Telegram. Essaie avec une version plus légère."
+                    )
+                    return GET_MEDIA
+                else:
+                    await update.message.reply_text(f"❌ Erreur Telegram : {e}")
+                    return GET_MEDIA
+            except Exception as e:
+                await update.message.reply_text(f"❌ Erreur en récupérant la vidéo : {e}")
+                return GET_MEDIA
+        else:
+            await update.message.reply_text("❌ Ce n'est pas une vidéo valide. Merci d'envoyer une vidéo.")
+            return GET_MEDIA
+
+        if choix == "3":
+            # On attend le texte pour la légende
+            await update.message.reply_text("✏️ , envoie maintenant le texte associé à la vidéo.")
+            return GET_TEXT
+        else:
+            # 5 = vidéo seule -> pas de texte, on lance la diffusion directement (texte vide)
+            context.user_data["text_content"] = ""
+            await update.message.reply_text("✅ Ton message (vidéo seule) est prêt à être diffusé !")
+            asyncio.create_task(broadcast_messages(context.bot, update.effective_user.id, context.user_data))
+            return ConversationHandler.END
+
+    else:
+        # Sécurité si jamais format manquant
+        await update.message.reply_text("❌ Format inconnu. Reprends le choix du format, s'il te plaît.")
+        return CHOOSE_FORMAT
 
 async def get_text(update, context):
     user = update.effective_user.first_name or "toi"
