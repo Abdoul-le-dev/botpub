@@ -277,7 +277,7 @@ async def broadcast_messages(bot, admin_id, context_user_data):
                     #with open(media_file_id, "rb") as video_file:
                     #await bot.send_video(chat_id=user_id, video=InputFile(video_file))
 
-                #await bot.send_video(chat_id=user_id, video=media_file_id, caption=texte)
+                    #test await bot.send_video(chat_id=user_id, video=media_file_id, caption=texte)
 
             elif format_choisi == "4":  # Image seule
                 await bot.send_photo(chat_id=user_id, photo=media_file_id)
