@@ -595,7 +595,7 @@ Un QR code contenant tes informations est joint à cet e-mail.
 Garde-le précieusement, il te servira pour ton prochain coaching.
 
 Bien à toi,
-L’équipe de coaching.
+Fiacre KPANOU
 """
 
     # 6️⃣ Envoi de l’email (fonction existante)

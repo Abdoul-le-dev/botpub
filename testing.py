@@ -2,6 +2,9 @@ from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import ConversationHandler
 
 from database.database import liste_categories
+from telegram.error import BadRequest
+from telegram import InputFile
+
 import sqlite3
 import asyncio
 
@@ -124,6 +127,46 @@ async def get_media(update, context):
             return GET_MEDIA
 
     elif choix == "3":  # Vidéo + texte
+
+     if update.message.video:
+        try:
+            # Essaye d'obtenir le fichier depuis Telegram
+            video_file = await update.message.video.get_file()
+            context.user_data["media_file_id"] = video_file.file_id
+            await update.message.reply_text("👍 Vidéo reçue avec succès depuis Telegram.")
+            
+            # Optionnel : tu peux aussi la télécharger localement
+            # await video_file.download_to_drive(custom_path="video.mp4")
+
+        except BadRequest as e:
+            # Si le fichier est trop gros
+            if "File is too big" in str(e):
+                await update.message.reply_text(
+                    "⚠️ La vidéo est trop volumineuse pour être téléchargée via Telegram.\n"
+                    " Sauvegarder localement..."
+                )
+                try:
+                    # Téléchargement local manuel (si possible)
+                    file_path = f"video_.mp4"
+
+                    context.user_data["media_file_id"] = file_path
+                    await update.message.video.get_file()  # Peut échouer à nouveau
+                    await update.message.video.download_to_drive(custom_path=file_path)
+                    await update.message.reply_text(f"✅ Vidéo enregistrée localement ")
+                except Exception as ex:
+                    await update.message.reply_text(
+                        f"❌ Impossible de télécharger la vidéo localement : {ex}"
+                    )
+                    return GET_MEDIA
+            else:
+                # Autres erreurs Telegram
+                await update.message.reply_text(f"❌ Erreur : {e}")
+                return GET_MEDIA
+
+    else:
+        await update.message.reply_text("❌ Ce n'est pas une vidéo valide. Merci d'envoyer une vidéo.")
+        return GET_MEDIA
+    
         if update.message.video:
             video_file = await update.message.video.get_file()
             context.user_data["media_file_id"] = video_file.file_id
@@ -186,6 +229,7 @@ async def broadcast_messages(bot, admin_id, context_user_data):
     
     texte = context_user_data.get("text_content", "")
     media_file_id = context_user_data.get("media_file_id")
+ 
 
     # Vérification préalable : si média requis mais absent => stop
     if format_choisi in {"2", "3", "4", "5"} and not media_file_id:
@@ -206,7 +250,11 @@ async def broadcast_messages(bot, admin_id, context_user_data):
                 await bot.send_photo(chat_id=user_id, photo=media_file_id, caption=texte)
 
             elif format_choisi == "3":  # Vidéo + texte
-                await bot.send_video(chat_id=user_id, video=media_file_id, caption=texte)
+
+                with open(media_file_id, "rb") as video_file:
+                    await bot.send_video(chat_id=user_id, video=InputFile(video_file))
+
+                #await bot.send_video(chat_id=user_id, video=media_file_id, caption=texte)
 
             elif format_choisi == "4":  # Image seule
                 await bot.send_photo(chat_id=user_id, photo=media_file_id)
