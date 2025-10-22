@@ -271,8 +271,7 @@ async def broadcast_messages(bot, admin_id, context_user_data):
 
                 except Exception as e:
                     print(f"Impossible d’envoyer un message à {user_id} : {e}")   
-                    return      
-                
+                    
 
                     #with open(media_file_id, "rb") as video_file:
                     #await bot.send_video(chat_id=user_id, video=InputFile(video_file))
