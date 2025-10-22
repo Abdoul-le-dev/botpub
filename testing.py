@@ -253,30 +253,35 @@ async def broadcast_messages(bot, admin_id, context_user_data):
 
             elif format_choisi == "3":  # Vidéo + texte
 
-                try:
-                    video_name = "1"
+                if sent and sent> 89:
 
-                    file_id = get_file_id(video_name)
+                    try:
+                        video_name = "1"
 
-                    if file_id:
-                        # Réutiliser le file_id
-                        await bot.send_video(chat_id=user_id , video=file_id,caption=texte )
-                    
-                    else:
-                        # Envoyer depuis fichier local, puis sauvegarder le file_id
-                        video_path = "1.mp4"
-                        msg = await bot.send_video(chat_id=user_id , video=video_path, caption=texte)
-                        new_file_id = msg.video.file_id
-                        save_file_id(video_name, new_file_id)
+                        file_id = get_file_id(video_name)
 
-                except Exception as e:
-                    print(f"Impossible d’envoyer un message à {user_id} : {e}")   
-                    
+                        if file_id:
+                            # Réutiliser le file_id
+                            await bot.send_video(chat_id=user_id , video=file_id,caption=texte )
 
-                    #with open(media_file_id, "rb") as video_file:
-                    #await bot.send_video(chat_id=user_id, video=InputFile(video_file))
+                            print('yes')
+                            print(sent)
+                        
+                        else:
+                            # Envoyer depuis fichier local, puis sauvegarder le file_id
+                            video_path = "1.mp4"
+                            msg = await bot.send_video(chat_id=user_id , video=video_path, caption=texte)
+                            new_file_id = msg.video.file_id
+                            save_file_id(video_name, new_file_id)
 
-                    #test await bot.send_video(chat_id=user_id, video=media_file_id, caption=texte)
+                    except Exception as e:
+                        print(f"Impossible d’envoyer un message à {user_id} : {e}")   
+                        
+
+                        #with open(media_file_id, "rb") as video_file:
+                        #await bot.send_video(chat_id=user_id, video=InputFile(video_file))
+
+                        #test await bot.send_video(chat_id=user_id, video=media_file_id, caption=texte)
 
             elif format_choisi == "4":  # Image seule
                 await bot.send_photo(chat_id=user_id, photo=media_file_id)
