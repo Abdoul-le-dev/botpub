@@ -518,9 +518,11 @@ async def user_list_in_categorie(update, context):
 
     if rows_1 and rows_2 :
 
-        user_id_collect.update([r[0] for r in rows_1]) # ajoute les id_user de rows_1
+       
 
         user_id_collect.update([r[0] for r in rows_2]) # ajoute les id_user de rows_2
+
+        user_id_collect.update([r[0] for r in rows_1]) # ajoute les id_user de rows_1
 
         user_ids_1 = list(user_id_collect)
 
