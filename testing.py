@@ -519,7 +519,8 @@ async def user_list_in_categorie(update, context):
     if rows_1 and rows_2 :
 
        
-
+        user_rows_1 = len([row[0] for row in rows_1])
+        user_rows_2 = len([row[0] for row in rows_2])
         user_id_collect.update([r[0] for r in rows_2]) # ajoute les id_user de rows_2
 
         user_id_collect.update([r[0] for r in rows_1]) # ajoute les id_user de rows_1
@@ -532,7 +533,7 @@ async def user_list_in_categorie(update, context):
     total = len(user_ids)
     total_1 = len(user_ids_1)
 
-    await update.message.reply_text(f"📤 total: {total} dans la catégorie {categorie}, total_1 = {total_1}")
+    await update.message.reply_text(f"📤 total: {total} dans la catégorie {categorie}, total_1 = {total_1}, 1 : {user_rows_1}, 2: {user_rows_2}")
     return ConversationHandler.END
 
 async def user_list_in_categorie_1(update, context):
