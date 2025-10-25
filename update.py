@@ -235,6 +235,11 @@ def mails():
     conn = sqlite3.connect('preinscriptions.db')
     cursor = conn.cursor()
 
+
+    """Supprime et recrée la table  participants_2nd."""
+    # Supprimer la table si elle existe
+    cursor.execute("DROP TABLE IF EXISTS  participants_2nd")
+
     # === 2. Création de la table si elle n'existe pas déjà ===
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS participants_2nd (
