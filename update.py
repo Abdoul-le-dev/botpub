@@ -228,4 +228,24 @@ def recreate_exam_user_table():
     conn.close()
     print("✅ Table 'exam_user' supprimée et recréée avec succès.")
 
-recreate_exam_user_table()    
+#recreate_exam_user_table()    
+
+def mails():
+    # === 1. Connexion à la base SQLite (ou création si elle n'existe pas) ===
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    # === 2. Création de la table si elle n'existe pas déjà ===
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS participants_2nd (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nom TEXT NOT NULL,
+        email TEXT NOT NULL,
+        token TEXT UNIQUE NOT NULL,
+        mail_envoyer BOOLEAN DEFAULT 0,
+        token_utilise BOOLEAN DEFAULT 0
+        created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    )
+    """)
+
+    conn.commit()

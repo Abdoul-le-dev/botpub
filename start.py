@@ -97,7 +97,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
         return ConversationHandler.END
     
-    if args and (args[0] == "challenge10000usd" or get_token_exists(args[0])):
+    if args and (args[0] == "second_challenge10000usd" or args[0] == "second_challenge10000usd" or get_token_exists(args[0])):
         Context.user_data["argss"] = args[0]
     # code à exécuter si condition vraie
 
@@ -110,7 +110,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
         #verifier si le user ses déja inscrit 
         
 
-        if user_has_categorie(user_id,args[0]) or  user_has_categorie(user_id,"challenge10000usd") :
+        if user_has_categorie(user_id,args[0]) or  user_has_categorie(user_id,"second_challenge10000usd") :
             await update.message.reply_text(
                 "Vous vous êtes déjà inscrit au challenge 10 000 USD ✅,soyez patient."
             )
@@ -163,6 +163,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
 
                 return NAME
+    
                     
 
     if args and args[0] != name:
@@ -543,7 +544,7 @@ async def get_country(update: Update, Context: ContextTypes.DEFAULT_TYPE):
         return COUNTRY
     # Enregistre les informations de l'utilisateur dans la base de données
     data = Context.user_data
-    if  "args" in data and data["args"] in ("leseminaire", "challenge10000usd") or get_token_exists(data["argss"] ):  
+    if  "args" in data and data["args"] in ("leseminaire", "challenge10000usd", "second_challenge10000usd") or get_token_exists(data["argss"] ):  
 
       
 
@@ -617,7 +618,7 @@ async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = context.user_data
 
-    if "args" in data and data["args"] == "challenge10000usd" or get_token_exists(data["argss"]):
+    if "args" in data and data["args"] == "second_challenge10000usd" or get_token_exists(data["argss"]):
 
         async def safe_task(coro):
             """Exécute une tâche async sans bloquer et log les erreurs."""
@@ -866,8 +867,11 @@ async def button_callback_waiting_1(update: Update, context: ContextTypes.DEFAUL
     if query.data == "Poursuivre":
 
         await query.message.reply_text(
-            "*📄 Acte d’Engagement et de Consentement – Programme 200 → 10.000 USD*\n\n"
-            "En validant mon inscription, je déclare avoir compris et accepté ce qui suit :\n\n"
+            "*📄 Acte d’Engagement et de Consentement – Programme 200 → 10.000 USD (2ᵉ Tentative)*\n\n"
+            "En validant mon inscription, je déclare avoir lu, compris et accepté les conditions ci-dessous :\n\n"
+            "⚠️ *Contexte* : `Le premier essai de ce programme s’est solder par un échec , au cours duquel les participants ont perdu leur capital.`\n"
+            "`Cette deuxième tentative constitue un nouveau challenge, mais elle présente également un risque élevé pouvant entraîner la perte partielle ou totale du capital engagé.`\n"
+            "`Je comprends donc que rien ne garantit la réussite ou le gain annoncé.`\n\n"
             "🔹 *Respect des règles* : `Je m’engage à suivre scrupuleusement toutes les instructions de prise de position et de gestion de trade transmises.`\n"
             "`Ces informations sont strictement personnelles et confidentielles. Toute diffusion entraînera mon exclusion immédiate et sans appel.`\n\n"
             "🔹 *Compétences requises* : `Je reconnais disposer des bases nécessaires en trading (prise de position, break-even, clôture de trade)`\n"
@@ -879,10 +883,9 @@ async def button_callback_waiting_1(update: Update, context: ContextTypes.DEFAUL
             "🔹 *Responsabilité* : `J’accepte de dégager M. Fiacre KPANOU et son académie RMI CLASS de toute responsabilité`\n"
             "`liée à l’utilisation des signaux, aux pertes, réclamations ou frais pouvant en résulter.`\n\n"
             "🔹 *Transparence* : `J’accepte de partager mes résultats en toute transparence à la fin du programme.`\n\n"
-            "_En participant, je confirme avoir lu et compris ces avertissements et je m’engage en toute connaissance de cause, à mes propres risques._",
+            "_En participant, je confirme mon engagement volontaire et éclairé, en toute connaissance des risques encourus._",
             parse_mode='Markdown',
             reply_markup=build_continue_button_1())
-
         # Mettre à jour l'état de l'utilisateur
         return WAITING_ANSWER_2
     
@@ -925,7 +928,7 @@ async def button_callback_waiting_2(update: Update, context: ContextTypes.DEFAUL
             except Exception as e:
                 print(f"[ERREUR TÂCHE] {e}")
 
-        asyncio.create_task(safe_task(add_categorie(user_id, "challenge10000usd")))
+        asyncio.create_task(safe_task(add_categorie(user_id, "second_challenge10000usd")))
         
         
 

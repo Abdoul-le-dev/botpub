@@ -36,12 +36,14 @@ Nous confirmons que vous avez accepté les clauses du Challenge Trading 200 → 
 
 - Épinglez le bot sur Telegram.  
 - Activez les notifications pour ne manquer aucune information.  
-- Dès que le challenge commencera, vous recevrez **un message directement dans Telegram** ainsi qu’un **e-mail de rappel**.
+- Dès que le challenge commencera, vous recevrez **un message directement dans Telegram** ou **e-mail de rappel**.
 
-Bonne chance et restez attentif aux instructions !
+Merci pour votre confiance.
+
+Je nous souhaite bonne chance et restez attentif aux instructions !
 
 Cordialement,  
-L’assistant bot IA du coach Fiacre KPANOU
+L’assistant bot du coach Fiacre KPANOU
 """
 
     msg.attach(MIMEText(body, 'plain'))
@@ -100,7 +102,7 @@ Cliquez sur le lien, suivez les instructions du bot et profitez pleinement de ce
 À très vite de l'autre côté !
 
 Cordialement,  
-Assistant Bot IA du Coach Fiacre KPANOU
+Assistant Bot  du Coach Fiacre KPANOU
 
 """
 

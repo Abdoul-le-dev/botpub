@@ -579,7 +579,7 @@ def mail_user(nom, email, token):
 
     # 🔹 Insertion dans la base de données
     cursor.execute("""
-    INSERT OR IGNORE INTO participants (nom, email, token,mail_envoyer, token_utilise )
+    INSERT OR IGNORE INTO participants_2nd (nom, email, token,mail_envoyer, token_utilise )
     VALUES (?, ?, ?, 0,0)
     """, (nom, email, token))
 
@@ -590,7 +590,7 @@ def update_mail_status(email):
     cursor = conn.cursor()
 
     cursor.execute("""
-    UPDATE participants
+    UPDATE participants_2nd
     SET mail_envoyer = 1
     WHERE email = ?
     """, (email,))
@@ -616,7 +616,7 @@ def update_token_used(token):
     cursor = conn.cursor()
 
     cursor.execute("""
-    UPDATE participants
+    UPDATE participants_2nd
     SET token_utilise = 1
     WHERE token = ?
     """, (token,))
@@ -629,7 +629,7 @@ def get_token_exists(token):
     cursor = conn.cursor()
 
     cursor.execute("""
-    SELECT 1 FROM participants
+    SELECT 1 FROM participants_2nd
     WHERE token = ? AND token_utilise = 0
     """, (token,))
 
@@ -642,7 +642,7 @@ def mail_token_utilise(email: str) -> bool:
     conn = get_conn()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT token_utilise FROM participants WHERE email = ?", (email,))
+    cursor.execute("SELECT token_utilise FROM participants_2nd WHERE email = ?", (email,))
     row = cursor.fetchone()
 
     conn.close()
