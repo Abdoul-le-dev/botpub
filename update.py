@@ -243,7 +243,7 @@ def mails():
         email TEXT NOT NULL,
         token TEXT UNIQUE NOT NULL,
         mail_envoyer BOOLEAN DEFAULT 0,
-        token_utilise BOOLEAN DEFAULT 0
+        token_utilise BOOLEAN DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
     )
     """)
