@@ -45,12 +45,12 @@ from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Applicatio
 import sqlite3
 import pandas as pd
 import random
-from testing import user_list_in_categorie, user_list_in_categories, choose_format,handle_format_choice,handle_who, get_media, get_text,user_list_in_categorie
+from testing import user_list_in_categorie, user_list_in_categories, user_list_in_categorie_1, choose_format,handle_format_choice,handle_who, get_media, get_text,user_list_in_categorie
 import string
 from message_de_masse import broadcast_message
 from stats import last_message
 from telegram import Update
-from qcmsemainaire import start_exam,start_exams, verification_email, receive_answer_exam
+from qcmsemainaire import start_exam,start_exams, verification_email, receive_answer_exam, try_mail
 
 
 from telegram.error import BadRequest
@@ -512,7 +512,9 @@ if __name__ == '__main__':
     )
 
     app.add_handler(CommandHandler("peopleCategorie", user_list_in_categories))
-    app.add_handler(CommandHandler("peopleCategories", user_list_in_categorie))
+    app.add_handler(CommandHandler("peopleCategorie_1", user_list_in_categorie)) 
+    app.add_handler(CommandHandler("peopleCategorie_2", user_list_in_categorie_1)) 
+    app.add_handler(CommandHandler("now", try_mail))
     
     app.add_handler(conv_handlerMsg)
    # app.add_handler(convs_handler)

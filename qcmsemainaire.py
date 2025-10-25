@@ -458,6 +458,9 @@ async def process_answer(user_id, user_answer, query):
     
 
 
+
+
+
 def build_result_message(answers, total_time,user_id, categorie_name):
     """
     answers = liste de tuples : (question_id, user_answer, correct_answer, explanation)
@@ -601,3 +604,14 @@ Fiacre KPANOU
     # 6️⃣ Envoi de l’email (fonction existante)
     result = await envoyer_email(subject, msg, user_email, file_path)
     return result    
+
+
+async def try_mail():
+
+    result = await send_exam_result_email(8195437212,"abdoulledev@gmail.com","test" , "test" ,'Test de niveau B', 15) 
+    async def safe_task(coro):
+        """Exécute une tâche async sans bloquer et log les erreurs."""
+        try:
+            await coro
+        except Exception as e:
+            print(f"[ERREUR TÂCHE] {e}")

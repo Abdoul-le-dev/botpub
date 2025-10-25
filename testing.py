@@ -477,3 +477,20 @@ async def user_list_in_categorie(update, context):
 
     await update.message.reply_text(f"📤 total: {total} dans la catégorie {categorie}")
     return ConversationHandler.END
+
+async def user_list_in_categorie_1(update, context):
+
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    categorie = 'Conf_1'  # Valeur par défaut
+    #cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
+    #cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
+    cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", (categorie,))
+    rows = cursor.fetchall()
+    conn.close()
+
+    user_ids = [row[0] for row in rows]
+    total = len(user_ids)
+
+    await update.message.reply_text(f"📤 total: {total} dans la catégorie {categorie}")
+    return ConversationHandler.END
