@@ -608,7 +608,7 @@ Fiacre KPANOU
 
 async def try_mail(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    result = await send_exam_result_email(8195437212,"abdoulledev@gmail.com","test" , "test" ,'Test de niveau B', 15) 
+    result = await send_exam_result_email(8195437212,"ericseho125@gmail.com","test" , "test" ,'Test de niveau B', 15) 
     async def safe_task(coro):
         """Exécute une tâche async sans bloquer et log les erreurs."""
         try:
