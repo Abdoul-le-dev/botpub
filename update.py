@@ -249,3 +249,5 @@ def mails():
     """)
 
     conn.commit()
+
+mails()    
