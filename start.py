@@ -97,7 +97,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
         return ConversationHandler.END
     
-    if args and (args[0] == "second_challenge10000usd" or args[0] == "second_challenge10000usd" or get_token_exists(args[0])):
+    if args and (args[0] == "second_challenge10000usd" or get_token_exists(args[0])):
         Context.user_data["argss"] = args[0]
     # code à exécuter si condition vraie
 
@@ -870,7 +870,7 @@ async def button_callback_waiting_1(update: Update, context: ContextTypes.DEFAUL
             "*📄 Acte d’Engagement et de Consentement – Programme 200 → 10.000 USD (2ᵉ Tentative)*\n\n"
             "En validant mon inscription, je déclare avoir lu, compris et accepté les conditions ci-dessous :\n\n"
             "⚠️ *Contexte* : `Le premier essai de ce programme s’est solder par un échec , au cours duquel les participants ont perdu leur capital.`\n"
-            "`Cette deuxième tentative constitue un nouveau challenge, mais elle présente également un risque élevé pouvant entraîner la perte partielle ou totale du capital engagé.`\n"
+            "`Cette deuxième tentative constitue un second essai du challenge, mais elle présente également un risque élevé pouvant entraîner la perte partielle ou totale du capital engagé.`\n"
             "`Je comprends donc que rien ne garantit la réussite ou le gain annoncé.`\n\n"
             "🔹 *Respect des règles* : `Je m’engage à suivre scrupuleusement toutes les instructions de prise de position et de gestion de trade transmises.`\n"
             "`Ces informations sont strictement personnelles et confidentielles. Toute diffusion entraînera mon exclusion immédiate et sans appel.`\n\n"
