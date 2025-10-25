@@ -503,7 +503,7 @@ if __name__ == '__main__':
     conv_handlerMsg = ConversationHandler(
     entry_points=[CommandHandler('msgMasse', handle_who)],
     states={
-        WHO: [MessageHandler(filters.Regex('^[1-2]$'), choose_format)],
+        WHO: [MessageHandler(filters.Regex('^[1-4]$'), choose_format)],
         CHOOSE_FORMAT: [MessageHandler(filters.Regex('^[1-5]$'), handle_format_choice)],
         GET_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, get_media)],
         GET_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_text)],

@@ -196,7 +196,7 @@ def exam_user():
 #exam_table()
 #exam_user()    
 
-import sqlite3
+
 
 def recreate_exam_user_table():
     """Supprime et recrée la table exam_user."""

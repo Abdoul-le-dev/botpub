@@ -29,7 +29,7 @@ async def handle_who(update, context):
         return ConversationHandler.END
 
     await update.message.reply_text(
-        f"Choice : \n 1-Challenge \n 2- All",
+        f"Choice : \n 1-Challenge_V100_round_1 \n 2- Challenge_V100_round_2 \n 3-Ebook_formation \n 4- All",
         reply_markup=ReplyKeyboardRemove()
     )
 
@@ -42,7 +42,7 @@ async def choose_format(update, context):
 
     choix = update.message.text[0]
     #user = update.effective_user.first_name or "toi"
-    if choix not in {'1','2'}:
+    if choix not in {'1','2','3','4'}:
         await update.message.reply_text(f"❌ , ton choix n'est pas valide. Merci de choisir parmi les options.")
         return CHOOSE_FORMAT
     context.user_data["who"] = choix
@@ -316,19 +316,52 @@ async def broadcast_messages(bot, admin_id, context_user_data):
 
 
     whos = context_user_data.get("who")
-    if whos == "2": 
+    if whos == "4": 
 
         cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
+
+    if whos == "2": 
+
+        start_date = "2025-10-20 00:00:00"
+
+        end_date =  "2025-10-26 00:00:00"
+
+        rows_1 = cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("second_challenge10000usd",)).fetchall()
+
+        rows_2 = cursor.execute("SELECT id_user FROM categories WHERE name_categorie =? AND created_at BETWEEN ? AND ?", (categorie,start_date,end_date)).fetchall()
+
+    elif whos == "3": 
+        cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("Conf_1",))   
     elif whos == "1":   
     #cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
         cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", (categorie,))
     else:
         await bot.send_message(admin_id, "❌ Error contact l'administrateur technique.")
         return    
-    rows = cursor.fetchall()
-    conn.close()
+    
+    if whos =='1' or whos =="3" or whos =="4":
 
-    user_ids = [row[0] for row in rows]
+        rows = cursor.fetchall()    
+        conn.close()
+        user_ids = [row[0] for row in rows]
+        
+    elif whos =="2" : 
+
+        user_id_collect = set()
+
+        if rows_1 and rows_2 :
+
+            user_id_collect.update([r[0] for r in rows_1]) # ajoute les id_user de rows_1
+
+            user_id_collect.update([r[0] for r in rows_2]) # ajoute les id_user de rows_2
+
+            user_ids = list(user_id_collect)
+    else:
+
+        await bot.send_message(admin_id, "❌ Aucune liste disponible.")
+        return ConversationHandler.END   
+
+
     total = len(user_ids)
     sent = 0
     await bot.send_message(admin_id,
@@ -470,12 +503,34 @@ async def user_list_in_categorie(update, context):
     #cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
     cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", (categorie,))
     rows = cursor.fetchall()
+
+    start_date = "2025-10-20 00:00:00"
+
+    end_date =  "2025-10-26 00:00:00"
+
+    rows_1 = cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("second_challenge10000usd",)).fetchall()
+
+    rows_2 = cursor.execute("SELECT id_user FROM categories WHERE name_categorie =? AND created_at BETWEEN ? AND ?", (categorie,start_date,end_date)).fetchall()
+
     conn.close()
+
+    user_id_collect = set()
+
+    if rows_1 and rows_2 :
+
+        user_id_collect.update([r[0] for r in rows_1]) # ajoute les id_user de rows_1
+
+        user_id_collect.update([r[0] for r in rows_2]) # ajoute les id_user de rows_2
+
+        user_ids_1 = list(user_id_collect)
+
+    
 
     user_ids = [row[0] for row in rows]
     total = len(user_ids)
+    total_1 = len(user_ids_1)
 
-    await update.message.reply_text(f"📤 total: {total} dans la catégorie {categorie}")
+    await update.message.reply_text(f"📤 total: {total} dans la catégorie {categorie}, total_1 = {total_1}")
     return ConversationHandler.END
 
 async def user_list_in_categorie_1(update, context):
