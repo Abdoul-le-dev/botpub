@@ -606,7 +606,7 @@ Fiacre KPANOU
     return result    
 
 
-async def try_mail():
+async def try_mail(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     result = await send_exam_result_email(8195437212,"abdoulledev@gmail.com","test" , "test" ,'Test de niveau B', 15) 
     async def safe_task(coro):
