@@ -50,6 +50,8 @@ import string
 from message_de_masse import broadcast_message
 from stats import last_message
 from telegram import Update
+
+from challenge1000usd import check_user_doublon, delete_user_doublon
 from qcmsemainaire import start_exam,start_exams, verification_email, receive_answer_exam, try_mail
 
 
@@ -533,6 +535,8 @@ if __name__ == '__main__':
     #app.add_handler(CommandHandler("delete_all_exercices", delete_all_exercices))
 
     app.add_handler(CommandHandler("userInfo", user_info))
+    app.add_handler(CommandHandler("user_check_doublou", check_user_doublon))
+    app.add_handler(CommandHandler("user_delete_doublou", delete_user_doublon))
     #app.add_handler(CommandHandler("mail_all_participant", send_email))
     #app.add_handler(CommandHandler("mail_none_participant", send_none_email))
 

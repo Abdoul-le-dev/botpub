@@ -6,8 +6,8 @@ from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Applicatio
 import asyncio
 import secrets
 from constance import GET_MAIL
-from database.database import get_mail_and_name, mail_user, update_mail_status
-
+from database.database import get_mail_and_name, mail_user, update_mail_status, find_category_duplicates,delete_user_duplicates
+ADMIN_ID = 571718066
 def send_consent_email(to_email, username):
     """
     Envoie automatiquement un e-mail de confirmation de consentement
@@ -142,3 +142,44 @@ async def send_mail_admin(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
 
     return GET_MAIL
+
+
+async def check_user_doublon(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+
+    if update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Accès réservé à l’administrateur.")
+        return
+
+    try:
+        args =Context.args[0]
+    except:
+        await update.message.reply_text("❌ une categorie est attendu.")
+        return
+
+    
+
+    resultat = find_category_duplicates(args)
+
+    await update.message.reply_text(
+            f"{resultat}",
+            parse_mode="Markdown"
+        )
+    
+async def delete_user_doublon(update: Update, Context: ContextTypes.DEFAULT_TYPE):
+
+    if  update.effective_user.id != ADMIN_ID:
+        await update.message.reply_text("⛔ Accès réservé à l’administrateur.")
+        return
+
+    try:
+        args = int(Context.args[0])
+    except:
+        await update.message.reply_text("❌ Fournis un ID Telegram valide après la commande.")
+        return
+
+    resultat = delete_user_duplicates(args)
+
+    await update.message.reply_text(
+            f"{resultat}",
+            parse_mode="Markdown"
+        )    

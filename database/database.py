@@ -542,11 +542,17 @@ def verify_name_phone_mail(user_id):
     conn = get_conn()
     cursor = conn.cursor()
 
-    cursor.execute(''' SELECT 1 FROM users WHERE telegram_id = ? AND email IS NOT NULL AND phone IS NOT NULL''', (user_id,))
+    cursor.execute("""
+        SELECT 1
+        FROM users
+        WHERE telegram_id = ?
+          AND email IS NOT NULL AND TRIM(email) <> ''
+          AND phone IS NOT NULL AND TRIM(phone) <> ''
+    """, (user_id,))
 
-    result =cursor.fetchone() is not None
+    result = cursor.fetchone() is not None
     conn.close()
-    return result 
+    return result
 
 def get_mail_and_name(user_id):
     conn = get_conn()
@@ -894,3 +900,82 @@ def get_user_exam(id_user: int):
     else:
         print(f"⚠️ Aucun enregistrement trouvé pour l’utilisateur ID {id_user}.")
         return None    
+    
+def find_category_duplicates(categorie: str):
+    """
+    Retourne une liste de tuples (user_id, total, doublons)
+    pour tous les user_id qui apparaissent plus d'une fois
+    dans la catégorie donnée.
+    """
+    conn = get_conn()
+    cursor = conn.cursor()
+
+    rows = cursor.execute("""
+        SELECT id_user, COUNT(*) AS total
+        FROM categories
+        WHERE name_categorie = ?
+        GROUP BY id_user
+        HAVING COUNT(*) > 1
+        ORDER BY total DESC, id_user ASC
+    """, (categorie,)).fetchall()
+
+    conn.close()
+
+    # Format: (user_id, total, doublons = total - 1)
+    return [(r[0], r[1], r[1] - 1) for r in rows]
+
+
+def delete_user_duplicates(user_id: int,
+                           categorie: str = "second_challenge10000usd",
+                           keep: str = "oldest") -> tuple[int, int | None]:
+    """
+    Supprime tous les doublons pour (user_id, categorie) et ne garde qu'une seule ligne.
+    - keep="oldest": garde le plus ancien (created_at ASC, id ASC)
+    - keep="newest": garde le plus récent (created_at DESC, id DESC)
+
+    Retourne (deleted_count, kept_id).
+    deleted_count = nombre de lignes supprimées
+    kept_id = id de la ligne conservée (None si aucune ligne trouvée)
+    """
+    order_clause = "created_at ASC, id ASC" if keep == "oldest" else "created_at DESC, id DESC"
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        # On choisit la ligne à garder
+        cur.execute(
+            f"""
+            SELECT id
+            FROM categories
+            WHERE id_user = ? AND name_categorie = ?
+            ORDER BY {order_clause}
+            LIMIT 1
+            """,
+            (user_id, categorie)
+        )
+        row = cur.fetchone()
+        if not row:
+            # Aucun enregistrement pour ce couple (user_id, categorie)
+            return (0, None)
+
+        kept_id = row[0]
+
+        # Supprimer tout le reste
+        conn.execute("BEGIN")
+        before = conn.total_changes
+        cur.execute(
+            """
+            DELETE FROM categories
+            WHERE id_user = ? AND name_categorie = ? AND id <> ?
+            """,
+            (user_id, categorie, kept_id)
+        )
+        conn.commit()
+        deleted_count = conn.total_changes - before
+        return (deleted_count, kept_id)
+    except Exception as e:
+        conn.rollback()
+        print(f"[ERREUR] delete_user_duplicates: {e}")
+        return (0, None)
+    finally:
+        conn.close()
