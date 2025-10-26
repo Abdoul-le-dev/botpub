@@ -532,7 +532,7 @@ if __name__ == '__main__':
     #app.add_handler(CommandHandler("lastMessage", last_message))
     #app.add_handler(CommandHandler("delete_all_exercices", delete_all_exercices))
 
-    #app.add_handler(CommandHandler("userInfo", user_info))
+    app.add_handler(CommandHandler("userInfo", user_info))
     #app.add_handler(CommandHandler("mail_all_participant", send_email))
     #app.add_handler(CommandHandler("mail_none_participant", send_none_email))
 

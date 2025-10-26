@@ -521,6 +521,7 @@ async def user_list_in_categorie(update, context):
        
         user_rows_1 = len([row[0] for row in rows_1])
         user_rows_2 = len([row[0] for row in rows_2])
+        
         user_id_collect.update([r[0] for r in rows_2]) # ajoute les id_user de rows_2
 
         user_id_collect.update([r[0] for r in rows_1]) # ajoute les id_user de rows_1
