@@ -902,6 +902,45 @@ def get_user_exam(id_user: int):
         return None    
 
 
+def get_user_exams(email):
+
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    SELECT email,user_name, last_name, exam_id, note_one, time_one, note_two, time_two, qr_code, created_at
+    FROM exam_user
+    WHERE email = ?
+    """, (email,))
+
+    result = cursor.fetchone()
+    conn.close()
+
+    if result:
+        email, user_name, last_name,exam_id, note_one, time_one, note_two, time_two, qr_code, created_at = result
+        moyenne = None
+        if note_one is not None and note_two is not None:
+            moyenne = (note_one + note_two) / 2
+
+        return {
+
+            "email": email,
+            "user_name": user_name,
+            "last_name": last_name,
+            "C" : exam_id,
+            "note_one": note_one,
+            "time_one": time_one,
+            "note_two": note_two,
+            "time_two": time_two,
+            "qr_code": qr_code,
+            "created_at": created_at,
+            "moyenne": moyenne
+        }
+    else:
+        print(f"⚠️ Aucun enregistrement trouvé pour l’utilisateur ID {id_user}.")
+        return None    
+
+
 
 def find_category_duplicates(categorie: str):
     """

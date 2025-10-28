@@ -4,7 +4,7 @@ from mail_fonction import  envoyer_email
 
 import qrcode, os
 
-from database.database import get_user_exam
+from database.database import get_user_exam,get_user_exams
 
 from telegram import InputFile, Update
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
@@ -73,7 +73,7 @@ async def qr_code_generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        telegram_id = context.args[0]
+        email = context.args[0]
     except:
         await update.message.reply_text("❌ Fournis un mail Telegram valide après la commande.")
         return
@@ -81,7 +81,7 @@ async def qr_code_generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
    
 
     
-    data_user = get_user_exam(user_id )
+    data_user = get_user_exams(user_id )
 
     result = await send_exam_result_email(data_user['qr_code'],data_user['email'], data_user['user_name'], data_user['last_name'],
                  'Test Niveau b',data_user['moyenne'], data_user['created_at']  )
