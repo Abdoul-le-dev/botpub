@@ -29,7 +29,7 @@ async def handle_who(update, context):
         return ConversationHandler.END
 
     await update.message.reply_text(
-        f"Choice : \n 1-Challenge_V100_round_1 \n 2- Challenge_V100_round_2 \n 3-Ebook_formation \n 4- All",
+        f"Choice : \n 1-Challenge_V100_round_1 \n 2- Challenge_V100_round_2 \n 3-Ebook_formation \n 4- All ",
         reply_markup=ReplyKeyboardRemove()
     )
 
@@ -553,6 +553,63 @@ async def user_list_in_categorie_1(update, context):
 
     await update.message.reply_text(f"📤 total: {total} dans la catégorie {categorie}")
     return ConversationHandler.END
+
+async def user_list_in_categorie_2(update, context):
+
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    
+
+    
+    rows_1 = cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("Mardi 16h",))
+    rows_1 =  rows_1.fetchall()
+
+    rows_2 = cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("Mardi 20h",))
+    rows_2 =  rows_2.fetchall()
+
+    rows_3 = cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("Mercredi 16h",))
+    rows_3 =  rows_3.fetchall()
+
+    rows_4 = cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("Mercredi 20h",))
+    rows_4 =  rows_4.fetchall()
+
+    rows_5 = cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("Jeudi 16h",))
+    rows_5 =  rows_5.fetchall()
+
+    rows_6 = cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("Jeudi 20H",))
+    rows_6 =  rows_6.fetchall()
+    conn.close()
+
+    user_ids_1 = [row[0] for row in rows_1]
+    total_1 = len(user_ids_1)
+
+    user_ids_2 = [row[0] for row in rows_2]
+    total_2 = len(user_ids_2)
+
+    user_ids_3 = [row[0] for row in rows_3]
+    total_3 = len(user_ids_3)
+
+    user_ids_4 = [row[0] for row in rows_4]
+    total_4 = len(user_ids_4)
+
+    user_ids_5 = [row[0] for row in rows_5]
+    total_5 = len(user_ids_5)
+
+    user_ids_6 = [row[0] for row in rows_6]
+    total_6 = len(user_ids_6)
+
+    await update.message.reply_text(f"📤 total: {total_1} inscrite pour le **Mardi 16h**")
+    await update.message.reply_text(f"📤 total: {total_2} inscrite pour le **Mardi 20h**")
+
+    await update.message.reply_text(f"📤 total: {total_3} inscrite pour le **Mercredi 16h**")
+    await update.message.reply_text(f"📤 total: {total_4} inscrite pour le **Mercredi 20h**")
+
+    await update.message.reply_text(f"📤 total: {total_5} inscrite pour le **Jeudi 16h**")
+    await update.message.reply_text(f"📤 total: {total_6} inscrite pour le **Jeudi 20h**")
+
+    return ConversationHandler.END
+
+
 
 
 async def user_list_email_conf1(update, context):

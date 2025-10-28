@@ -31,7 +31,7 @@ from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Applicatio
 import sqlite3
 import pandas as pd
 import random
-from testing import user_list_in_categorie, user_list_in_categories, user_list_in_categorie_1, choose_format,handle_format_choice,handle_who, get_media, get_text,user_list_in_categorie
+from testing import user_list_in_categorie, user_list_in_categories,user_list_in_categorie_2, user_list_in_categorie_1, choose_format,handle_format_choice,handle_who, get_media, get_text,user_list_in_categorie
 import string
 from message_de_masse import broadcast_message
 from stats import last_message
@@ -503,6 +503,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("peopleCategorie", user_list_in_categories))
     app.add_handler(CommandHandler("peopleCategorie_1", user_list_in_categorie)) 
     app.add_handler(CommandHandler("peopleCategorie_2", user_list_in_categorie_1)) 
+    app.add_handler(CommandHandler("mes_seances", user_list_in_categorie_2)) 
     app.add_handler(CommandHandler("now", try_mail))
     
     app.add_handler(conv_handlerMsg)
