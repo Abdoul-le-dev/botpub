@@ -1,7 +1,7 @@
 import json 
 import sqlite3
 
-from telegram import InputFile, Update, context
+from telegram import InputFile, Update
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
 
 ADMIN_ID = 571718066
