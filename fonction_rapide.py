@@ -81,7 +81,7 @@ async def qr_code_generate(update: Update, context: ContextTypes.DEFAULT_TYPE):
    
 
     
-    data_user = get_user_exams(user_id )
+    data_user = get_user_exams(email )
 
     result = await send_exam_result_email(data_user['qr_code'],data_user['email'], data_user['user_name'], data_user['last_name'],
                  'Test Niveau b',data_user['moyenne'], data_user['created_at']  )
