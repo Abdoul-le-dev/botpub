@@ -598,14 +598,14 @@ async def user_list_in_categorie_2(update, context):
     user_ids_6 = [row[0] for row in rows_6]
     total_6 = len(user_ids_6)
 
-    await update.message.reply_text(f"📤 total: {total_1} inscrite pour le **Mardi 16h**")
-    await update.message.reply_text(f"📤 total: {total_2} inscrite pour le **Mardi 20h**")
+    await update.message.reply_text(f"📤 {total_1} personnes inscrite pour le **Mardi 16h**")
+    await update.message.reply_text(f"📤 {total_2} personnes inscrite pour le **Mardi 20h**")
 
-    await update.message.reply_text(f"📤 total: {total_3} inscrite pour le **Mercredi 16h**")
-    await update.message.reply_text(f"📤 total: {total_4} inscrite pour le **Mercredi 20h**")
+    await update.message.reply_text(f"📤 {total_3} personnes inscrite pour le **Mercredi 16h**")
+    await update.message.reply_text(f"📤 {total_4} personnes inscrite pour le **Mercredi 20h**")
 
-    await update.message.reply_text(f"📤 total: {total_5} inscrite pour le **Jeudi 16h**")
-    await update.message.reply_text(f"📤 total: {total_6} inscrite pour le **Jeudi 20h**")
+    await update.message.reply_text(f"📤 {total_5} personnes inscrite pour le **Jeudi 16h**")
+    await update.message.reply_text(f"📤 {total_6} personnes inscrite pour le **Jeudi 20h**")
 
     return ConversationHandler.END
 
