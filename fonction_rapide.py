@@ -49,7 +49,7 @@ async def send_file_user_exam(update: Update, Context: ContextTypes.DEFAULT_TYPE
     file_name = json_exam_user()
 
     with open(file_name, "rb") as f:
-        await context.bot.send_document(
+        await Context.bot.send_document(
             chat_id=user_id,
             document=InputFile(f, filename=file_name),
             caption="Voici le JSON de l'exam_id=2 📄"
