@@ -3,7 +3,7 @@ from telegram import Update, InputFile
 from jeu import export_and_send_pdf
 from challenge1000usd import send_consent_email
 from database.database import init_db
-from database.database import save_user, update_token_used
+from database.database import save_user, update_token_used ,get_user_exam
 from database.database import user_exists, verify_name_phone_mail
 from database.database import save_message,verify_categorie
 from database.database import update_user_info
@@ -14,7 +14,7 @@ from database.database import user_has_categorie,get_token_exists
 from telegram.error import TimedOut
 from database.database import get_mail_and_name
 
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup,ReplyKeyboardRemove
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
 import sqlite3
 import pandas as pd
@@ -35,7 +35,7 @@ import asyncio
 
 import time
 
-from constance import NAME, PHONE, COUNTRY, LEVEL, WHAT,WHY, EMAIL, EXPECTATIONS,DISCOVERY, WAITING_ANSWER_1, WAITING_ANSWER_2
+from constance import DAYS, NAME, PHONE, COUNTRY, LEVEL, WHAT,WHY, EMAIL, EXPECTATIONS,DISCOVERY, WAITING_ANSWER_1, WAITING_ANSWER_2
 
 async def wait_5_seconds():
     await asyncio.sleep(10)
@@ -84,6 +84,30 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
     print(args)
     #PromoV100
     name = "leseminaire"
+
+    if args and args[0] in ("my_coching_days"):
+
+        data_user = get_user_exam(user_id)
+
+        
+        message = (
+            f"👋 Bonjour { data_user['user_name']} !\n\n"
+            f"Nous organisons ton prochain **coaching avec M. Fiacre** 🎓\n"
+            f"📅 Peux-tu me dire quel jour tu serais disponible ?"
+        )
+
+        keyboard = [
+            ["Mardi 16h", "Mardi 20h", "Mercredi 16h"],
+            ["Mercredi 20h", "Jeudi 16h", "Jeudi 20H"]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+
+        await update.message.reply_text(message, reply_markup=reply_markup)
+
+
+        return DAYS
+
+
 
     if args and args[0] == 'MonExamen':
 
@@ -164,7 +188,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
                 return NAME
     
-                    
+                  
 
     if args and args[0] != name:
         if verify_categorie(args[0]) != None:
@@ -970,6 +994,91 @@ async def button_callback_waiting_2(update: Update, context: ContextTypes.DEFAUL
             return ConversationHandler.END
 
 
+async def select_days_coaching(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    user_id = update.effective_user.id
+    chosen_day = update.message.text
+
+    data_user = get_user_exam(user_id)
+
+     # 1️⃣ Message de confirmation du jour choisi
+    await update.message.reply_text(
+        f"✅ Merci { data_user['user_name']} ! Tu as choisi **{chosen_day}** "
+        f"pour ton coaching avec M. Fiacre 💼",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+    # attendre un peu
+
+    time.sleep(10)
+
+    # 2️⃣ Message professionnel avec le lien de réunion
+    meeting_link = "https://meet.google.com/abc-defg-hij"  # 🔗 Remplace par ton vrai lien
+
+    
+
+   
+
+    meet1= ""
+    meet2= ""
+    meet3= ""
+    meet4= ""
+    meet5= ""
+    meet6= ""
+
+    if chosen_day =="Mardi 16h" :
+
+        meeting_link = meet1
+
+        asyncio.create_task(add_categorie(user_id, chosen_day))
+
+    elif chosen_day == "Mardi 20h":
+
+        meeting_link = meet2
+
+        asyncio.create_task(add_categorie(user_id, chosen_day))
+
+    elif chosen_day =="Mercredi 16h" :
+
+        meeting_link = meet3
+
+        asyncio.create_task(add_categorie(user_id, chosen_day))
+
+    elif chosen_day =="Mercredi 20h" :
+
+        meeting_link = meet4 
+
+        asyncio.create_task(add_categorie(user_id, chosen_day)) 
+    
+    elif chosen_day =="Jeudi 16h" :
+
+        meeting_link = meet5 
+
+        asyncio.create_task(add_categorie(user_id, chosen_day))
+
+    elif chosen_day =="Jeudi 16h" :
+
+        meeting_link = meet6 
+
+        asyncio.create_task(add_categorie(user_id, chosen_day))            
+    else:
+    
+        return ConversationHandler.End
+
+    meeting_msg = (
+        f"📅 Ton coaching est donc prévu pour **{chosen_day} **.\n\n"
+        f"🧑‍🏫 Lien de la réunion : {meeting_link}\n\n"
+        f"Merci d’être ponctuel et de te connecter quelques minutes avant le début. ⏰\n"
+        f"💬 Toutes les informations importantes te seront également transmises "
+        f"par ce bot ou par e-mail 📧 pour que tu ne rates rien.\n\n"
+        f"En cas d’empêchement, pense à prévenir le support RMI à l’avance.\n\n"
+        f"À très bientôt 👋\n"
+        f"— *M. Fiacre*"
+    )
+
+    await update.message.reply_text(meeting_msg, parse_mode="Markdown")
+
+    return ConversationHandler.END
    
 
         

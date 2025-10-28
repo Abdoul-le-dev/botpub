@@ -900,7 +900,9 @@ def get_user_exam(id_user: int):
     else:
         print(f"⚠️ Aucun enregistrement trouvé pour l’utilisateur ID {id_user}.")
         return None    
-    
+
+
+
 def find_category_duplicates(categorie: str):
     """
     Retourne une liste de tuples (user_id, total, doublons)

@@ -14,7 +14,7 @@ from user_data import user_info
 from database.database import get_file_id
 from database.database import save_file_id
 from mail import send_email,send_none_email,envoyer_base_par_email
-from start import get_phone ,get_country ,get_name ,start 
+from start import get_phone ,get_country ,get_name ,start , select_days_coaching
 from fonction_rapide import send_file_user_exam
 from start import get_what, get_expectations,get_discovery,get_why, get_email, get_level
 from user_data import start_delete
@@ -55,7 +55,7 @@ import json
 
 from start import button_callback_waiting_1, button_callback_waiting_2
 
-from constance import NAME_EXAM , ARGS_1, ARGS_2 , EMAIL_EXAM, CHOISIR_CATEGORIE,NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS,EMAIL, EXPECTATIONS,DISCOVERY,WAITING_ANSWER
+from constance import NAME_EXAM , ARGS_1, ARGS_2 , EMAIL_EXAM, CHOISIR_CATEGORIE,NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS,EMAIL, EXPECTATIONS,DISCOVERY,WAITING_ANSWER,DAYS
 
 from constance import ASK_USER_ID, GET_MAIL ,CATEGORIE, NOMBRE_QUESTIONS, QUESTION, NB_CHOIX, CHOIX, REPONSE_SUIVANTE
 
@@ -447,6 +447,7 @@ if __name__ == '__main__':
             EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
             EXPECTATIONS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_expectations)],
             DISCOVERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_discovery)],
+            DAYS:[MessageHandler(filters.TEXT & ~filters.COMMAND, select_days_coaching)],
             WAITING_ANSWER_1: [CallbackQueryHandler(button_callback_waiting_1, pattern='^Poursuivre$')],
             WAITING_ANSWER_2: [CallbackQueryHandler(button_callback_waiting_2, pattern='^(Accepte|Refus)$')]
             
@@ -524,6 +525,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("user_check_doublou", check_user_doublon))
     app.add_handler(CommandHandler("user_delete_doublou", delete_user_doublon))
     app.add_handler(CommandHandler("fichier_exam", send_file_user_exam))
+    app.add_handler(CommandHandler("qr_code", send_file_user_exam))
     #app.add_handler(CommandHandler("mail_none_participant", send_none_email))
 
     app.add_handler(CommandHandler("userDelete", start_delete))
