@@ -53,6 +53,8 @@ import time
 
 import json
 
+from fonction_rapide import qr_code_generate
+
 from start import button_callback_waiting_1, button_callback_waiting_2
 
 from constance import NAME_EXAM , ARGS_1, ARGS_2 , EMAIL_EXAM, CHOISIR_CATEGORIE,NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS,EMAIL, EXPECTATIONS,DISCOVERY,WAITING_ANSWER,DAYS
@@ -526,7 +528,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("user_check_doublou", check_user_doublon))
     app.add_handler(CommandHandler("user_delete_doublou", delete_user_doublon))
     app.add_handler(CommandHandler("fichier_exam", send_file_user_exam))
-    app.add_handler(CommandHandler("qr_code", send_file_user_exam))
+    app.add_handler(CommandHandler("qr_code", qr_code_generate))
     #app.add_handler(CommandHandler("mail_none_participant", send_none_email))
 
     app.add_handler(CommandHandler("userDelete", start_delete))
