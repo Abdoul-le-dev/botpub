@@ -521,7 +521,7 @@ async def user_list_in_categorie(update, context):
        
         user_rows_1 = len([row[0] for row in rows_1])
         user_rows_2 = len([row[0] for row in rows_2])
-        
+
         user_id_collect.update([r[0] for r in rows_2]) # ajoute les id_user de rows_2
 
         user_id_collect.update([r[0] for r in rows_1]) # ajoute les id_user de rows_1
@@ -545,6 +545,24 @@ async def user_list_in_categorie_1(update, context):
     #cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
     #cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
     cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", (categorie,))
+    rows = cursor.fetchall()
+    conn.close()
+
+    user_ids = [row[0] for row in rows]
+    total = len(user_ids)
+
+    await update.message.reply_text(f"📤 total: {total} dans la catégorie {categorie}")
+    return ConversationHandler.END
+
+
+async def user_list_email_conf1(update, context):
+
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    categorie = 'Conf_1'  # Valeur par défaut
+    #cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
+    #cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
+    cursor.execute("SELECT id_user FROM exam_user WHERE name_categorie =?", (categorie,))
     rows = cursor.fetchall()
     conn.close()
 

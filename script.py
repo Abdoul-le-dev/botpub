@@ -14,28 +14,14 @@ from user_data import user_info
 from database.database import get_file_id
 from database.database import save_file_id
 from mail import send_email,send_none_email,envoyer_base_par_email
-from start import start
-from start import get_name
-from start import get_phone     
-from start import get_country
-#from start import get_email
-#from start import get_motivation
-from start import get_level
-from start import get_why, get_email
-from start import get_what, get_expectations,get_discovery
+from start import get_phone ,get_country ,get_name ,start 
+from fonction_rapide import send_file_user_exam
+from start import get_what, get_expectations,get_discovery,get_why, get_email, get_level
 from user_data import start_delete
-from qcmprocess import start_qcm_creation
-from qcmprocess import set_categorie
-from qcmprocess import set_nb_questions
-from qcmprocess import set_question     
-from qcmprocess import set_nb_choix
-from qcmprocess import add_choix
-from qcmprocess import validate_choix
-from qcmprocess import set_categorie
-from qcmprocess import set_question
-from qcmprocess import set_nb_choix
-from qcmprocess import continue_choices
-from qcmprocess import validate_bad_reason  
+from qcmprocess import start_qcm_creation,validate_bad_reason,set_categorie,set_nb_questions,set_question,set_nb_choix
+
+from qcmprocess import add_choix,set_nb_choix,validate_choix, set_categorie,set_question
+
 from challenge1000usd import send_short_link,send_mail_admin
 from constance import WAITING_ANSWER_EXAM,LEVEL_WELCOME, WHY_WELCOME, NUMERO_WHATSAPP_WELCOME, MAIL_WELCOME, NOM_WELCOME
 USER,PWD = range(2) 
@@ -318,7 +304,7 @@ async def get_user_id_to_delete(update: Update, context: ContextTypes.DEFAULT_TY
 
 def scheduler_thread():
     # Envoi immédiat
-    #envoyer_base_par_email()
+    envoyer_base_par_email()
     #reset_all_mail_counts()
     while True:
         time.sleep(12 * 3600)  # 12 heures
@@ -537,7 +523,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("userInfo", user_info))
     app.add_handler(CommandHandler("user_check_doublou", check_user_doublon))
     app.add_handler(CommandHandler("user_delete_doublou", delete_user_doublon))
-    #app.add_handler(CommandHandler("mail_all_participant", send_email))
+    app.add_handler(CommandHandler("fichier_exam", send_file_user_exam))
     #app.add_handler(CommandHandler("mail_none_participant", send_none_email))
 
     app.add_handler(CommandHandler("userDelete", start_delete))
@@ -646,7 +632,7 @@ if __name__ == '__main__':
     
 
     #app.add_handler(conv_handler_mail_user)
-    #threading.Thread(target=scheduler_thread, daemon=True).start()
+    threading.Thread(target=scheduler_thread, daemon=True).start()
     #app.add_handler(qcm_handler)
     print('running...')
     
