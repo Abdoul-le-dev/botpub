@@ -138,7 +138,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
         if user_has_categorie(user_id,args[0]) or user_has_categorie(user_id,"1_MOIS_Offre") :
             await update.message.reply_text(
                 "Votre inscription a bien été prise en compte. De nouvelles informations vous seront communiquées très prochainement."
-"
+
             )
             return ConversationHandler.END
         else:
