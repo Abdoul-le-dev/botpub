@@ -169,8 +169,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
                 await update.message.reply_text(
                 "__**✅ Finalisation de votre inscription**__\n\n"
                 "📄 Cette étape se déroulera en 2 phases simples où vous aurez simplement à compléter les informations nécessaires.\n\n",
-                parse_mode='Markdown',
-                reply_markup=build_continue_button())
+                parse_mode='Markdown')
 
                 return NAME
 

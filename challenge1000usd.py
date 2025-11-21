@@ -84,14 +84,14 @@ async def send_short_link(update: Update, context: ContextTypes.DEFAULT_TYPE,):
     msg = MIMEMultipart()
     msg['From'] = from_email
     msg['To'] = to_email
-    msg['Subject'] = "Confirmation de votre inscription au Challenge Trading 200 → 10.000 USD"
+    msg['Subject'] = "Confirmation de votre inscription "
     token = secrets.token_urlsafe(16)
     # --- Corps du mail ---
 
     body = f"""
 Cher(e) participant(e),
 
-Félicitations 🎉 Votre inscription à la **RMI CLASS – Saison des Performances** a bien été confirmée.
+Félicitations 🎉 Votre inscription à la RMI CLASS – Saison des Performances a bien été confirmée.
 
 Vous venez d’intégrer un programme intensif d’1 mois, conçu pour accélérer vos résultats en trading, renforcer vos compétences et vous exposer aux meilleures opportunités du marché (Forex & Indices).
 
