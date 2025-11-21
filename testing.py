@@ -29,7 +29,7 @@ async def handle_who(update, context):
         return ConversationHandler.END
 
     await update.message.reply_text(
-        f"Choice : \n 1-Challenge_V100_round_1 \n 2- Challenge_V100_round_2 \n 3-Ebook_formation \n 4- All ",
+        f"Choice : \n 1-Challenge_V100_round_1 \n\n 2- Challenge_V100_round_2 \n\n 3-Ebook_formation \n\n 4- TEAMS 1 MOIS \n\n 5- All ",
         reply_markup=ReplyKeyboardRemove()
     )
 
@@ -316,7 +316,7 @@ async def broadcast_messages(bot, admin_id, context_user_data):
 
 
     whos = context_user_data.get("who")
-    if whos == "4": 
+    if whos == "5": 
 
         cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
 
@@ -331,7 +331,9 @@ async def broadcast_messages(bot, admin_id, context_user_data):
         rows_2 = cursor.execute("SELECT id_user FROM categories WHERE name_categorie =? AND created_at BETWEEN ? AND ?", (categorie,start_date,end_date)).fetchall()
 
     elif whos == "3": 
-        cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("Conf_1",))   
+        cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("Conf_1",)) 
+    elif whos == "4": 
+        cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("1_MOIS_Offre",))       
     elif whos == "1":   
     #cursor.execute("SELECT id_user FROM categories WHERE id_user IS NOT NULL")
         cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", (categorie,))
@@ -339,7 +341,7 @@ async def broadcast_messages(bot, admin_id, context_user_data):
         await bot.send_message(admin_id, "❌ Error contact l'administrateur technique.")
         return    
     
-    if whos =='1' or whos =="3" or whos =="4":
+    if whos =='1' or whos =="3" or whos =="5" or whos =="4":
 
         rows = cursor.fetchall()    
         conn.close()

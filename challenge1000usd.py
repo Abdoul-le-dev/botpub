@@ -87,24 +87,33 @@ async def send_short_link(update: Update, context: ContextTypes.DEFAULT_TYPE,):
     msg['Subject'] = "Confirmation de votre inscription au Challenge Trading 200 → 10.000 USD"
     token = secrets.token_urlsafe(16)
     # --- Corps du mail ---
-    body = f"""
-Cher participant ,
-Félicitations 🎉 Nous avons bien reçu votre paiement et vous êtes désormais inscrit(e) pour notre challenge exclusif.
 
-Voici votre lien d’accès unique pour rejoindre le challenge :
+    body = f"""
+Cher(e) participant(e),
+
+Félicitations 🎉 Votre inscription à la **RMI CLASS – Saison des Performances** a bien été confirmée.
+
+Vous venez d’intégrer un programme intensif d’1 mois, conçu pour accélérer vos résultats en trading, renforcer vos compétences et vous exposer aux meilleures opportunités du marché (Forex & Indices).
+
+Voici votre lien d’accès personnel pour rejoindre l’espace réservé aux membres :
 
 🔗 https://t.me/FIACRE_D_KPANOU_ASSISTANCE_bot?start={token}
 
-⚠️ Ce lien est strictement personnel. Ne le partagez sous aucun prétexte : tout partage entraînera votre retrait immédiat de la liste des participants.
+⚠️ Ce lien est strictement personnel. Ne le partagez en aucun cas. Tout partage entraînera votre retrait immédiat du programme, sans remboursement.
 
-Cliquez sur le lien, suivez les instructions du bot et profitez pleinement de cette expérience unique.
+Étapes à suivre :
+1. Cliquez sur le lien ci-dessus
+2. Démarrez le bot
+3. Suivez les instructions pour accéder au challenge
 
-À très vite de l'autre côté !
+Donnez tout 💯
+
+À très vite à l’intérieur.
 
 Cordialement,  
-Assistant Bot  du Coach Fiacre KPANOU
-
+Assistant Bot du Coach Fiacre KPANOU
 """
+
 
     msg.attach(MIMEText(body, 'plain'))
 

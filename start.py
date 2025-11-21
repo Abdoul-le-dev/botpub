@@ -145,7 +145,8 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
             if user_exists(user_id) and verify_name_phone_mail(user_id):
 
                 
-
+                #challenge
+                """
                 await update.message.reply_text(
                     "__**✅ Finalisation de votre inscription**__\n\n"
                    # "🚀 __*Objectif*__ : Transformer 200 USD en 1000 USD grâce à un plan de trading structuré.\n\n"
@@ -162,7 +163,19 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
                     reply_markup=build_continue_button()
                 )
                 update_token_used(args[0])
-                return WAITING_ANSWER_1
+                return WAITING_ANSWER_1 
+                """
+
+                await update.message.reply_text(
+                "__**✅ Finalisation de votre inscription**__\n\n"
+                "📄 Cette étape se déroulera en 2 phases simples où vous aurez simplement à compléter les informations nécessaires.\n\n",
+                parse_mode='Markdown',
+                reply_markup=build_continue_button())
+
+                return NAME
+
+
+                #Offre 1 mois 
 
             else:
 
@@ -638,6 +651,7 @@ async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["email"] = update.message.text
 
     user = update.effective_user
+    user_id= user.id
     chat_id = update.effective_chat.id
 
     data = context.user_data
@@ -669,6 +683,8 @@ async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )))
             #asyncio.create_task(safe_task(add_categorie(user.id, context.user_data.get("args"))))
 
+        #challenge
+        """
         await update.message.reply_text(
             "✅ **Parfait, vos différentes informations ont été enregistrées.**\n\n"
             "__**💹Finalisation de votre inscription au Challenge Trading 200 → 1000 USD**__\n\n"
@@ -684,9 +700,26 @@ async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode='Markdown',
             reply_markup=build_continue_button()
         )
+        """
+
+        asyncio.create_task(safe_task(add_categorie(user_id, "1_MOIS_Offre")))
+        
+
+        await update.message.reply_text(
+            f"__**✅ Inscription confirmée**__\n\n"
+            f"Merci {context.user_data.get("name")}, toutes vos informations ont bien été enregistrées.\n\n"
+            f"📚 Nous travaillerons ensemble 2 à 3 fois par semaine pendant 1 mois, au cours duquel vous serez accompagné(e) étape par étape pour améliorer vos performances en trading.\n\n"
+            f"📩 Les liens des sessions de travail vous seront envoyés directement via mon Assistant Bot.\n\n"
+            f"📊 Lorsque des opportunités de trade se présenteront, elles vous seront également envoyées ici, en temps réel.\n\n"
+            f"🚀 Restez attentif et préparez-vous à passer un niveau supérieur.",
+            parse_mode='Markdown'
+        )
+
 
         update_token_used(data['argss'])
-        return WAITING_ANSWER_1
+
+       
+        #return WAITING_ANSWER_1
 
 
     # Demande la motivation pour rejoindre la formation
