@@ -167,11 +167,14 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
                 """
 
                 await update.message.reply_text(
-                "__**✅ Finalisation de votre inscription**__\n\n"
-                "📄 Cette étape se déroulera en 2 phases simples où vous aurez simplement à compléter les informations nécessaires.\n\n",
-                parse_mode='Markdown')
+                    "__**✅ Finalisation de votre inscription**__\n\n"
+                    "📄 Cette étape se déroulera en quelques phases simples afin de recueillir les informations nécessaires à votre inscription.\n\n"
+                    "✍️ Veuillez indiquer votre **Nom** pour poursuivre :",
+                    parse_mode='Markdown'
+                )
 
                 return NAME
+
 
 
                 #Offre 1 mois 
