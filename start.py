@@ -133,10 +133,11 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
         #verifier si le user ses déja inscrit 
         
+        #user_has_categorie(user_id,"second_challenge10000usd")
 
-        if user_has_categorie(user_id,args[0]) or  user_has_categorie(user_id,"second_challenge10000usd") :
+        if user_has_categorie(user_id,args[0]) or user_has_categorie(user_id,"1_MOIS_Offre") :
             await update.message.reply_text(
-                "Vous vous êtes déjà inscrit au challenge 10 000 USD ✅,soyez patient."
+                "Vous vous êtes déjà,soyez patient."
             )
             return ConversationHandler.END
         else:
@@ -719,6 +720,8 @@ async def get_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
         update_token_used(data['argss'])
+
+        return ConversationHandler.END
 
        
         #return WAITING_ANSWER_1
