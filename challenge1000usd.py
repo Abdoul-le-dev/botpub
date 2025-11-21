@@ -77,8 +77,8 @@ async def send_short_link(update: Update, context: ContextTypes.DEFAULT_TYPE,):
     """
 
     # --- Paramètres de l'expéditeur ---
-    from_email = "challenge10000usd@iastreamnow.com"
-    from_password = "Testing@1#test"  # App Password recommandé pour Gmail
+    from_email = "fiacrekpanou@fiacrekpanoutrade.com"
+    from_password = "Assistant@#1"  # App Password recommandé pour Gmail
 
     # --- Création du message ---
     msg = MIMEMultipart()
