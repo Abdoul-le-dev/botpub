@@ -41,6 +41,8 @@ async def choose_format(update, context):
 
 
     choix = update.message.text[0]
+
+    print(choix)
     #user = update.effective_user.first_name or "toi"
     if choix not in {'1','2','3','4','5','6'}:
         await update.message.reply_text(f"❌ , ton choix n'est pas valide. Merci de choisir parmi les options.")
