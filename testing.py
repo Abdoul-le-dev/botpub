@@ -29,7 +29,7 @@ async def handle_who(update, context):
         return ConversationHandler.END
 
     await update.message.reply_text(
-        f"Choice : \n 1-Challenge_V100_round_1 \n\n 2- Challenge_V100_round_2 \n\n 3-Ebook_formation \n\n 4- TEAMS 1 MOIS \n\n 5- All 6- RMI VIP",
+        f"Choice : \n\n 1-Challenge_V100_round_1 \n\n 2- Challenge_V100_round_2 \n\n 3-Ebook_formation \n\n 4- TEAMS 1 MOIS \n\n 5- All \n\n 6- RMI VIP",
         reply_markup=ReplyKeyboardRemove()
     )
 
