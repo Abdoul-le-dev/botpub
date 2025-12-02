@@ -29,7 +29,7 @@ async def handle_who(update, context):
         return ConversationHandler.END
 
     await update.message.reply_text(
-        f"Choice : \n 1-Challenge_V100_round_1 \n\n 2- Challenge_V100_round_2 \n\n 3-Ebook_formation \n\n 4- TEAMS 1 MOIS \n\n 5- All ",
+        f"Choice : \n 1-Challenge_V100_round_1 \n\n 2- Challenge_V100_round_2 \n\n 3-Ebook_formation \n\n 4- TEAMS 1 MOIS \n\n 5- All 6- RMI VIP",
         reply_markup=ReplyKeyboardRemove()
     )
 
@@ -332,6 +332,8 @@ async def broadcast_messages(bot, admin_id, context_user_data):
 
     elif whos == "3": 
         cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("Conf_1",)) 
+    elif whos == "6": 
+        cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("vipmenonly",))     
     elif whos == "4": 
         cursor.execute("SELECT id_user FROM categories WHERE name_categorie =?", ("1_MOIS_Offre",))       
     elif whos == "1":   
@@ -341,7 +343,7 @@ async def broadcast_messages(bot, admin_id, context_user_data):
         await bot.send_message(admin_id, "❌ Error contact l'administrateur technique.")
         return    
     
-    if whos =='1' or whos =="3" or whos =="5" or whos =="4":
+    if whos =='1' or whos =="3" or whos =="5" or whos =="4" or whos=="6" :
 
         rows = cursor.fetchall()    
         conn.close()

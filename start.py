@@ -285,11 +285,7 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
                     parse_mode="Markdown"  
                 )
                 return ConversationHandler.END
-        
-        
-   
-            
-
+                 
     if args and args[0] == name:
         
         #le user a fini son process
