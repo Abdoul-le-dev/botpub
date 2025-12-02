@@ -109,13 +109,24 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
 
 
 
-    if args and args[0] == 'MonExamen':
+    if args and args[0] == 'vipmenonly':
 
-        
-        await update.message.reply_text(
-            "🎓, **Clique sur :** /CommencerMonExamen  pour démarrer ton examen",
+        if (user_has_categorie(user_id,"vipmenonly") ):
+
+            await update.message.reply_text(
+            "✅ Vous avez bien été ajouté. Veuillez patienter pour de nouvelles informations.",
             parse_mode='Markdown'
-        )
+                )
+                 
+        else :
+
+            asyncio.create_task(add_categorie(user_id, "vipmenonly"))
+            await update.message.reply_text(
+                "🎓 **Félicitations ! Vous avez été intégré avec succès à l’extension VIP de la RMI.**",
+                parse_mode='Markdown'
+            )
+            
+
 
 
 
