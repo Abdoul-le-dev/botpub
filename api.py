@@ -19,7 +19,7 @@ class RequestBody(BaseModel):
 
     text : str
 
-@app.post('/all')
+@app.post('/process')
 def getdata(body: RequestBody):
 
     return 'yes'
