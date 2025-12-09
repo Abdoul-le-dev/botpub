@@ -322,7 +322,7 @@ async def broadcast_messages(bot, admin_id, context_user_data):
 
         cursor.execute("SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL")
 
-    if whos == "2": 
+    elif whos == "2": 
 
         start_date = "2025-10-20 00:00:00"
 
