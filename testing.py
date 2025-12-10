@@ -403,7 +403,9 @@ async def broadcast_messages(bot, admin_id, context_user_data):
                 await bot.send_message(chat_id=user_id, text=texte)
 
             elif format_choisi == "2":  # Image + texte
-                await bot.send_photo(chat_id=user_id, photo=media_file_id, caption=texte)
+                await bot.send_message(chat_id=user_id, text=texte)
+                #await bot.send_photo(chat_id=user_id, photo=media_file_id, caption=texte)
+                await bot.send_photo(chat_id=user_id, photo=media_file_id)
 
             elif format_choisi == "3":  # Vidéo + texte
 
