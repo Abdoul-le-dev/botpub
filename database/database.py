@@ -1,6 +1,7 @@
 import sqlite3
 from datetime import datetime
 import asyncio
+import json
 
 def init_db():
     conn = sqlite3.connect('preinscriptions.db')
@@ -88,6 +89,47 @@ async def save_message(user_id, message_id, message_text, answer=None, message_t
         
         conn.commit()
         conn.close()
+
+async def get_data():
+    conn = sqlite3.connect('preinscriptions.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT user_id, message_id,message_text, answer, message_type, created_at 
+            FROM messages 
+            ORDER BY created_at DESC
+            LIMIT 50 ''')
+    
+    rows = cursor.fetchall()
+
+    conversations = {}
+    for row in rows:
+        user_id, message_id, message_text, answer, message_type, created_at= row
+    
+        # Initialiser la conversation si pas encore faite
+        if user_id not in conversations:
+            conversations[user_id] = {
+                "id": user_id,
+                "name": f"User {user_id}",
+                "userId": str(user_id),
+                "lastMessage": message_text,
+                "time": created_at.split(" ")[1][:5],
+                "unread": 0,
+                "messages": []
+            }
+      
+      
+
+       
+       
+
+    # Convertir en liste triée ↓
+    conversations_list = list(conversations.values())
+
+    # JSON final
+    return  json.dumps(conversations_list, indent=4, ensure_ascii=False)
+
+        
+
 
 def save_messages(user_id, message_id, message_text, answer = None, message_type ="text"):
     conn = sqlite3.connect('preinscriptions.db')

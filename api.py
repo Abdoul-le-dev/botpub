@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from database.database import get_data
 
 app = FastAPI()
 
@@ -22,4 +23,6 @@ class RequestBody(BaseModel):
 @app.post('/process')
 def getdata(body: RequestBody):
 
-    return 'yes'
+    
+
+    return get_data()
