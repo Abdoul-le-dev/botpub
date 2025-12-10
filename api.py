@@ -21,8 +21,5 @@ class RequestBody(BaseModel):
     text : str
 
 @app.post('/process')
-def getdata(body: RequestBody):
-
-    
-
+def getdata():
     return get_data()
