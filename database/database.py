@@ -114,7 +114,7 @@ async def get_data():
 
                 conversations[user_id] = {
                     "id": user_id,
-                    "name": f"User {user_data["name"]}",
+                    "name": f"User {user_data["Nom"]}",
                     "userId": str(user_id),
                     "lastMessage": message_text,
                     "time": created_at.split(" ")[1][:5],
