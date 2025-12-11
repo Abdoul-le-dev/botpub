@@ -24,4 +24,6 @@ class RequestBody(BaseModel):
 async def getdata():
     data = await get_data()
 
+    print(data)
+
     return data
