@@ -108,7 +108,7 @@ async def get_data():
         # Initialiser la conversation si pas encore faite
         if user_id not in conversations:
 
-            user_data  = get_user_info(user_id)
+            user_data  = await get_user_info(user_id)
             if user_data :
 
                 conversations[user_id] = {
