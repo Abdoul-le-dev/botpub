@@ -107,15 +107,30 @@ async def get_data():
     
         # Initialiser la conversation si pas encore faite
         if user_id not in conversations:
-            conversations[user_id] = {
-                "id": user_id,
-                "name": f"User {user_id}",
-                "userId": str(user_id),
-                "lastMessage": message_text,
-                "time": created_at.split(" ")[1][:5],
-                "unread": 0,
-                "messages": []
-            }
+
+            user_data  = get_user_info(user_id)
+            if user_data :
+
+                conversations[user_id] = {
+                    "id": user_id,
+                    "name": f"User {user_data["name"]}",
+                    "userId": str(user_id),
+                    "lastMessage": message_text,
+                    "time": created_at.split(" ")[1][:5],
+                    "unread": 0,
+                    "messages": []
+                }
+            else :
+                 conversations[user_id] = {
+                    "id": user_id,
+                    "name": f"User {user_id}",
+                    "userId": str(user_id),
+                    "lastMessage": message_text,
+                    "time": created_at.split(" ")[1][:5],
+                    "unread": 0,
+                    "messages": []
+                }
+
       
       
 
