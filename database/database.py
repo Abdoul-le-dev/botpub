@@ -147,10 +147,14 @@ async def get_data_users(id) :
     cursor = sqlite3.connect('preinscriptions.db').cursor()
     cursor.execute('''
 
-        SELECT message_id, message_text,answer, message_type, created_at FROM messages WHERE user_id = ?
+        SELECT message_id, message_text,answer, message_type, created_at 
+            FROM messages 
+            WHERE user_id = ?
         ''', (id,))    
     
     rows = cursor.fetchall()
+
+    print(rows)
 
     rows = cursor.fetchall()
     conn.close()
