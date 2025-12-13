@@ -97,7 +97,7 @@ async def get_data():
         SELECT user_id, message_id,message_text, answer, message_type, created_at 
             FROM messages 
             ORDER BY created_at DESC
-            LIMIT 50 ''')
+            LIMIT 500 ''')
     
     rows = cursor.fetchall()
 
