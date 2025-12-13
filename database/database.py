@@ -134,17 +134,77 @@ async def get_data():
                     "messages": []
                 }
 
-      
-      
+    
+    # Convertir en liste triée ↓
+    conversations_list = list(conversations.values())
 
-       
-       
+    # JSON final
+    return  json.dumps(conversations_list, indent=4, ensure_ascii=False)
+
+      
+async def get_data_users(id) :
+
+    cursor = sqlite3.connect('preinscriptions.db').cursor()
+    cursor.execute('''
+
+        SELECT message_id, message_text,answer, message_type, created_at FROM messages WHERE user_id = ?
+        ''', (id))    
+    
+    rows = cursor.fetchall()
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return []
+
+    user_data = get_user_info(id)
+
+    messages = []
+    last_message_text = ""
+    last_message_time = ""
+
+    for row in rows:
+        message_id, message_text, answer, message_type, created_at = row
+
+        # Heure format HH:MM
+        time = created_at.split(" ")[1][:5]
+
+        text = message_text if message_type == "received" else answer
+
+        messages.append({
+            "id": message_id,
+            "text": text,
+            "type": message_type,  # "received" ou "sent"
+            "time": time
+        })
+
+        last_message_text = text
+        last_message_time = time
+
+    conversations = [
+        {
+            "id": id,
+            "name": user_data["Nom"],
+            "userId": str(id),
+            "lastMessage": last_message_text,
+            "time": last_message_time,
+            "unread": 0,
+            "messages": messages
+        }
+    ]
+
 
     # Convertir en liste triée ↓
     conversations_list = list(conversations.values())
 
     # JSON final
     return  json.dumps(conversations_list, indent=4, ensure_ascii=False)
+
+    #return conversations
+
+       
+       
 
         
 

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from database.database import get_data
+from database.database import get_data , get_data_users
 
 app = FastAPI()
 
@@ -20,6 +20,9 @@ class RequestBody(BaseModel):
 
     text : str
 
+class RequestData(BaseModel):
+    userId: int
+
 @app.post('/process')
 async def getdata():
     data = await get_data()
@@ -27,3 +30,11 @@ async def getdata():
     print(data)
 
     return data
+
+@app.post('/user')
+async def get_data_user(data:RequestData):
+
+    data_user = await get_data_users(data.userId)
+    print(data_user)
+
+    return data_user
