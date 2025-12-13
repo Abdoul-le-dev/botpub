@@ -197,7 +197,7 @@ async def get_data_users(id) :
 
 
     # Convertir en liste triée ↓
-    conversations_list = list(conversations.values())
+    #conversations_list = list(conversations.values())
 
     # JSON final
     return  json.dumps(conversations, indent=4, ensure_ascii=False)
