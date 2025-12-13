@@ -101,6 +101,8 @@ async def get_data():
     
     rows = cursor.fetchall()
 
+    print(rows)
+
     conversations = {}
     for row in rows:
         user_id, message_id, message_text, answer, message_type, created_at= row
