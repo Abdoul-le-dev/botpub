@@ -156,11 +156,8 @@ async def get_data_users(id) :
 
     print(rows)
 
-    rows = cursor.fetchall()
-    conn.close()
-
     if not rows:
-        return []
+        return ['a']
 
     user_data = get_user_info(id)
 
