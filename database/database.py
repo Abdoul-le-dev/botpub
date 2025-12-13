@@ -109,12 +109,12 @@ async def get_data():
         if user_id not in conversations:
 
             user_data  = get_user_info(user_id)
-            print(user_data)
+            #print(user_data)
             if user_data :
 
                 conversations[user_id] = {
                     "id": user_id,
-                    "name": f"User {user_data["Nom"]}",
+                    "name": user_data["Nom"],
                     "userId": str(user_id),
                     "lastMessage": message_text,
                     "time": created_at.split(" ")[1][:5],
