@@ -200,7 +200,7 @@ async def get_data_users(id) :
     conversations_list = list(conversations.values())
 
     # JSON final
-    return  json.dumps(conversations_list, indent=4, ensure_ascii=False)
+    return  json.dumps(conversations, indent=4, ensure_ascii=False)
 
     #return conversations
 
