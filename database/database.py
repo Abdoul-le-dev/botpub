@@ -148,7 +148,7 @@ async def get_data_users(id) :
     cursor.execute('''
 
         SELECT message_id, message_text,answer, message_type, created_at FROM messages WHERE user_id = ?
-        ''', (id))    
+        ''', (id,))    
     
     rows = cursor.fetchall()
 
