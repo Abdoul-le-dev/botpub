@@ -33,8 +33,9 @@ async def getdata():
 
 @app.post('/user')
 async def get_data_user(data:RequestData):
-
+    print(data.userId)
     data_user = await get_data_users(data.userId)
+
     print(data_user)
 
     return data_user
