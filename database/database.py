@@ -175,7 +175,7 @@ async def get_data_users(id) :
 
         messages.append({
             "id": message_id,
-            "text": text,
+            "text": message_text,
             "type": message_type,  # "received" ou "sent"
             "time": time
         })
