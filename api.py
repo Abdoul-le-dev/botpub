@@ -5,10 +5,7 @@ from database.database import get_data , get_data_users
 
 app = FastAPI()
 
-origins = [
-    "https://fiacrekpanoutrade.com",
-    "http://127.0.0.1:8000"
-]
+origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,          # ou ["*"] en dev
