@@ -412,7 +412,7 @@ async def broadcast_messages(bot, admin_id, context_user_data):
                 if sent and sent> 89:
 
                     try:
-                        video_name = "2"
+                        video_name = "3"
 
                         file_id = get_file_id(video_name)
 
@@ -425,12 +425,10 @@ async def broadcast_messages(bot, admin_id, context_user_data):
                         
                         else:
                             # Envoyer depuis fichier local, puis sauvegarder le file_id
-                            video_path = "2.mp4"
-                            msg = await bot.send_video(chat_id='6992809421' , video=video_path, caption=texte)
+                            video_path = "3.mp4"
+                            msg = await bot.send_video(chat_id=user_id , video=video_path, caption=texte)
                             new_file_id = msg.video.file_id
                             save_file_id(video_name, new_file_id)
-                            print('go')
-                            return
 
                     except Exception as e:
                         print(f"Impossible d’envoyer un message à {user_id} : {e}")   
