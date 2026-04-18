@@ -33,7 +33,7 @@ def health():
 
 @app.post('/process')
 async def getdata(data: RequestBody):
-    return await get_data(data.text)
+    return await get_data()
 
 
 @app.post('/user')
