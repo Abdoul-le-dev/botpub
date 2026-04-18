@@ -305,13 +305,14 @@ async def get_user_id_to_delete(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 def scheduler_thread():
+    print('yes')
     # Envoi immédiat
-    envoyer_base_par_email()
+    #envoyer_base_par_email()
     #reset_all_mail_counts()
-    while True:
-        time.sleep(12 * 3600)  # 12 heures
+    #while True:
+       # time.sleep(12 * 3600)  # 12 heures
        # envoyer_base_par_email()
-        reset_all_mail_counts()
+        #reset_all_mail_counts()
 
 
 async def save_mail(update: Update, context: ContextTypes.DEFAULT_TYPE):
