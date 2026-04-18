@@ -80,6 +80,8 @@ async def start(update: Update, Context: ContextTypes.DEFAULT_TYPE, chat_id=None
     user = update.effective_user
     user_id = user.id
 
+    print('present ')
+
     args = Context.args
     print(args)
     #PromoV100
