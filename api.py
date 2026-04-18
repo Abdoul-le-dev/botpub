@@ -1,39 +1,40 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from database.database import get_data , get_data_users
+from database.database import get_data, get_data_users
 
 app = FastAPI()
 
-origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,          # ou ["*"] en dev
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],            # GET, POST, OPTIONS, etc.
-    allow_headers=["*"],            # Autoriser tous les headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 class RequestBody(BaseModel):
-
-    text : str
+    text: str
 
 class RequestData(BaseModel):
     userId: int
 
+
+@app.get("/")
+def health():
+    return {"status": "ok"}
+
+
 @app.post('/process')
-async def getdata():
-    data = await get_data()
+async def getdata(data: RequestBody):
+    return await get_data(data.text)
 
-    print(data)
-
-    return data
 
 @app.post('/user')
-async def get_data_user(data:RequestData):
-    print(data.userId)
-    data_user = await get_data_users(data.userId)
+async def get_data_user(data: RequestData):
+    return await get_data_users(data.userId)
 
-    print(data_user)
 
-    return data_user
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
