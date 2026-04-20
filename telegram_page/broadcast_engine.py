@@ -112,9 +112,11 @@ def _get_prenom(telegram_id: int) -> str:
         row = conn.execute(
             "SELECT name FROM users WHERE telegram_id = ?", (telegram_id,)
         ).fetchone()
-    if row and row["prenom"]:
-        p = row["prenom"].strip()
+    if row and row["name"]:
+        p = row["name"].strip()
         if 1 <= len(p) <= 15:
+
+            print(p)
             return p
     return "l'ami"
 
