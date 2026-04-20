@@ -6,7 +6,7 @@ import os
 from dotenv import load_dotenv
 from telegram import Bot
 
-from telegram_page import broadcast_engine
+from telegram_page.broadcast_engine import broadcast_engine
 
 app = FastAPI()
 
@@ -50,6 +50,7 @@ async def get_data_user(data: RequestData):
 
 @app.post("/broadcast")
 async def api_broadcast(payload: dict):
+    print('yes')
     report = await broadcast_engine(bot, payload)
     return report
 
