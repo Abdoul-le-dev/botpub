@@ -110,7 +110,7 @@ def _get_prenom(telegram_id: int) -> str:
     """Retourne le prénom depuis la DB, ou 'l'ami' si absent/trop long."""
     with _conn() as conn:
         row = conn.execute(
-            "SELECT prenom FROM users WHERE telegram_id = ?", (telegram_id,)
+            "SELECT name FROM users WHERE telegram_id = ?", (telegram_id,)
         ).fetchone()
     if row and row["prenom"]:
         p = row["prenom"].strip()
