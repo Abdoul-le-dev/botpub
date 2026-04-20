@@ -147,33 +147,35 @@ async def _send_one(bot, user_id: int, fmt: str, text: str, media_url: Optional[
     Envoie un message à un seul utilisateur selon le format.
     Retourne True si succès, False si échec.
     """
-    try:
-        if fmt == "text":
-            await bot.send_message(chat_id=user_id, text=text)
 
-        elif fmt == "image":
-            await bot.send_photo(chat_id=user_id, photo=media_url)
+    print('yes')
+    # try:
+    #     if fmt == "text":
+    #         await bot.send_message(chat_id=user_id, text=text)
 
-        elif fmt == "video":
-            await bot.send_video(chat_id=user_id, video=media_url)
+    #     elif fmt == "image":
+    #         await bot.send_photo(chat_id=user_id, photo=media_url)
 
-        elif fmt == "image+text":
-            await bot.send_message(chat_id=user_id, text=text)
-            await bot.send_photo(chat_id=user_id, photo=media_url)
+    #     elif fmt == "video":
+    #         await bot.send_video(chat_id=user_id, video=media_url)
 
-        elif fmt == "video+text":
-            await bot.send_message(chat_id=user_id, text=text)
-            await bot.send_video(chat_id=user_id, video=media_url)
+    #     elif fmt == "image+text":
+    #         await bot.send_message(chat_id=user_id, text=text)
+    #         await bot.send_photo(chat_id=user_id, photo=media_url)
 
-        else:
-            # Format inconnu → texte seul par sécurité
-            await bot.send_message(chat_id=user_id, text=text)
+    #     elif fmt == "video+text":
+    #         await bot.send_message(chat_id=user_id, text=text)
+    #         await bot.send_video(chat_id=user_id, video=media_url)
 
-        return True
+    #     else:
+    #         # Format inconnu → texte seul par sécurité
+    #         await bot.send_message(chat_id=user_id, text=text)
 
-    except Exception as e:
-        logger.warning(f"Échec envoi uid={user_id} : {e}")
-        return False
+    #     return True
+
+    # except Exception as e:
+    #     logger.warning(f"Échec envoi uid={user_id} : {e}")
+    #     return False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -273,6 +275,7 @@ async def broadcast_engine(bot, payload: dict) -> dict:
             target_dt = datetime.strptime(scheduled_at, "%Y-%m-%d %H:%M:%S")
             now       = datetime.now()
             wait_sec  = (target_dt - now).total_seconds()
+            print(wait_sec)
 
             if wait_sec > 0:
                 tag_label = f"[{tag}] " if tag else ""
@@ -308,6 +311,8 @@ async def broadcast_engine(bot, payload: dict) -> dict:
         f"Durée estimée : {est_min} min"
     )
 
+    print(f"📤 {tag_label}Diffusion démarrée\n")
+
     # ── 6. Boucle d'envoi ─────────────────────────────────────────────────────
     sent   = 0
     errors = 0
@@ -316,6 +321,8 @@ async def broadcast_engine(bot, payload: dict) -> dict:
 
         # Injection des variables personnalisées pour ce user
         personalized_text = _inject_variables(message, user_id, variables)
+
+        print(personalized_text)
 
         # Tentative d'envoi
         success = await _send_one(bot, user_id, fmt, personalized_text, media_url)
