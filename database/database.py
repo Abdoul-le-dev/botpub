@@ -1144,8 +1144,7 @@ def delete_user_duplicates(user_id: int,
 
 def get_categories_user():
     # On se connecte à la base SQLite
-    conn = sqlite3.connect("preinscriptions.db")
-    conn.row_factory = sqlite3.Row
+    conn = get_conn()
     cursor = conn.cursor()
 
     # DISTINCT récupère chaque catégorie une seule fois
