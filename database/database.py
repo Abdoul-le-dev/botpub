@@ -1141,3 +1141,30 @@ def delete_user_duplicates(user_id: int,
         return (0, None)
     finally:
         conn.close()
+
+def get_categories_user():
+    # On se connecte à la base SQLite
+    conn = sqlite3.connect("preinscriptions.db")
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    # DISTINCT récupère chaque catégorie une seule fois
+    # COUNT compte combien de users sont dans chaque catégorie
+    cursor.execute("""
+        SELECT 
+            c.name_categorie,
+            COUNT(c.id_user) as total
+        FROM categories c
+        -- On vérifie que le user existe bien et a un telegram_id
+        INNER JOIN users u ON u.id = c.id_user
+        WHERE u.telegram_id IS NOT NULL
+        GROUP BY c.name_categorie
+        ORDER BY c.name_categorie ASC
+    """)
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    # On retourne une liste de dicts
+    # [{"name": "clients", "total": 847}, {"name": "prospects", "total": 643}]
+    return [{"name": row["name_categorie"], "total": row["total"]} for row in rows]

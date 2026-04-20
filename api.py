@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from database.database import get_data, get_data_users
+from database.database import get_data, get_data_users, get_categories_user
 import os
 from dotenv import load_dotenv
 from telegram import Bot
@@ -54,6 +54,12 @@ async def api_broadcast(payload: dict):
     report = await broadcast_engine(bot, payload)
     return report
 
+@app.get("/categories")
+async def api_get_categorie():
+
+    return get_categories_user()
+
+   
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
