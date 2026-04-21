@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from database.database import get_data, get_data_users, get_categories_user, init_broadcast_history
+from database.database import get_data, get_data_users, get_categories_user, init_broadcast_history,  get_broadcast_history
 import os
 from dotenv import load_dotenv
 from telegram import Bot
@@ -62,20 +62,10 @@ async def api_get_categorie():
     return categorie
 
 @app.get("/broadcast/history")
-def get_broadcast_history():
-    """
-    Retourne les 50 dernières campagnes, de la plus récente à la plus ancienne.
-    Le front utilisera ça pour remplir la vue Historique.
-    """
-    with sqlite3.connect("preinscriptions.db") as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute("""
-            SELECT * FROM broadcast_history
-            ORDER BY id DESC
-            LIMIT 50
-        """).fetchall()
+def api_get_broadcast_history():
 
-    return [dict(row) for row in rows]
+    return  get_broadcast_history()
+    
    
 if __name__ == "__main__":
     import uvicorn
