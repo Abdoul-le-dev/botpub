@@ -1162,4 +1162,4 @@ async def get_categories_user():
 
     # On retourne une liste de dicts
     # [{"name": "clients", "total": 847}, {"name": "prospects", "total": 643}]
-    return [{"name": row["name_categorie"], "total": row["total"]} for row in rows]
+    return [{"name": row[0], "total": row[1]} for row in rows]
