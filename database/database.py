@@ -1142,7 +1142,7 @@ def delete_user_duplicates(user_id: int,
     finally:
         conn.close()
 
-def get_categories_user():
+async def get_categories_user():
     # On se connecte à la base SQLite
     conn = get_conn()
     cursor = conn.cursor()
