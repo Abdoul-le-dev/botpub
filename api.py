@@ -57,7 +57,9 @@ async def api_broadcast(payload: dict):
 @app.get("/categories")
 async def api_get_categorie():
 
-    return get_categories_user()
+    categorie = await  get_categories_user()
+
+    return categorie
 
    
 if __name__ == "__main__":
