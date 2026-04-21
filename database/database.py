@@ -1149,13 +1149,7 @@ async def get_categories_user():
 
     # DISTINCT récupère chaque catégorie une seule fois
     # COUNT compte combien de users sont dans chaque catégorie
-    cursor.execute("""
-        SELECT 
-            c.name_categorie,
-            COUNT(c.id_user) as total
-        FROM categories c
-        ORDER BY c.name_categorie ASC
-    """)
+    cursor.execute(""" SELECT name_categorie, COUNT(*) as total FROM categories GROUP BY name_categorie;""")
 
     rows = cursor.fetchall()
     conn.close()
