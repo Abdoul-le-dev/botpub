@@ -184,6 +184,25 @@ async def _send_one(bot, user_id: int, fmt: str, text: str, media_url: Optional[
 # ── RAPPORT & WEBHOOK ─────────────────────────────────────────────────────────
 # ══════════════════════════════════════════════════════════════════════════════
 
+
+def _save_report(report: dict, category: str, fmt: str, message: str):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            INSERT INTO broadcast_history 
+                (tag, category, format, message, total, sent, errors, started_at, finished_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            report["tag"],
+            category,
+            fmt,
+            message,
+            report["total"],
+            report["sent"],
+            report["errors"],
+            report["started_at"],
+            report["finished_at"]
+        ))
+        conn.commit()
 async def _notify_admin(bot, admin_id: int, message: str):
     """Envoie un message de suivi à l'admin Telegram."""
     try:
@@ -375,6 +394,7 @@ async def broadcast_engine(bot, payload: dict) -> dict:
     if callback_url:
         await _call_webhook(callback_url, report)
 
+    _save_report(report, category, fmt, message)
     return report
 
 

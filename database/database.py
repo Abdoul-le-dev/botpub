@@ -15,11 +15,34 @@ def init_db():
             created_at TEXT NOT NULL
         )
     ''')
+
+    
     conn.commit()
     conn.close()
 
 
 
+def init_broadcast_history():
+    """
+    Crée la table broadcast_history si elle n'existe pas.
+    À appeler une seule fois au démarrage — comme ton init_db().
+    """
+    with sqlite3.connect("preinscriptions.db") as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS broadcast_history (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                tag         TEXT,
+                category    TEXT,
+                format      TEXT,
+                message     TEXT,
+                total       INTEGER,
+                sent        INTEGER,
+                errors      INTEGER,
+                started_at  TEXT,
+                finished_at TEXT
+            )
+        """)
+        conn.commit()
 
 
 def get_conn():
@@ -1157,3 +1180,19 @@ async def get_categories_user():
     # On retourne une liste de dicts
     # [{"name": "clients", "total": 847}, {"name": "prospects", "total": 643}]
     return [{"name": row[0], "total": row[1]} for row in rows]
+
+
+def get_broadcast_history():
+    """
+    Retourne les 50 dernières campagnes, de la plus récente à la plus ancienne.
+    Le front utilisera ça pour remplir la vue Historique.
+    """
+    conn = get_conn()
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute("""
+        SELECT * FROM broadcast_history
+        ORDER BY id DESC
+        LIMIT 50
+        """).fetchall()
+
+    return [dict(row) for row in rows]
