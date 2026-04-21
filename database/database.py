@@ -1154,10 +1154,6 @@ async def get_categories_user():
             c.name_categorie,
             COUNT(c.id_user) as total
         FROM categories c
-        -- On vérifie que le user existe bien et a un telegram_id
-        INNER JOIN users u ON u.id = c.id_user
-        WHERE u.telegram_id IS NOT NULL
-        GROUP BY c.name_categorie
         ORDER BY c.name_categorie ASC
     """)
 
