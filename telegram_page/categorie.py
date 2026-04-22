@@ -49,7 +49,7 @@ async def get_categories_stats():
     - membres tagués (distincts)
     - tags / membre moyen
     """
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor(dictionary=True)
 
     cursor.execute("SELECT COUNT(*) AS total_categories FROM categories_meta")
@@ -85,7 +85,7 @@ async def get_categories():
     - variation ce mois (nouveaux membres dans les 30 derniers jours)
     - règles actives
     """
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor(dictionary=True)
 
     month_ago = (datetime.now() - timedelta(days=30)).isoformat()
@@ -126,7 +126,7 @@ async def get_category_by_name(name_categorie: str):
     Retourne une catégorie complète :
     - meta + règles + stats
     """
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor(dictionary=True)
 
     cursor.execute("""
@@ -166,7 +166,7 @@ async def create_category(payload: dict):
         member_ids?: [123, 456, ...]
     }
     """
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor()
 
     # Créer la meta
@@ -219,7 +219,7 @@ async def update_category(name_categorie: str, payload: dict):
     Si name_categorie change → ON UPDATE CASCADE met à jour
     categories et category_rules automatiquement.
     """
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor()
 
     fields = []
@@ -261,7 +261,7 @@ async def get_category_members(name_categorie: str, filters: dict = None):
     Retourne les membres d'une catégorie avec leurs infos users.
     filters: { search?, active_only?, inactive_only?, limit?, offset? }
     """
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor(dictionary=True)
 
     query = """
@@ -325,7 +325,7 @@ async def add_members_to_category(name_categorie: str, user_ids: list, added_by:
     Crée la meta si elle n'existe pas encore.
     Retourne : ajoutés / ignorés (doublons).
     """
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor()
 
     _ensure_meta_exists(cursor, name_categorie)
@@ -345,7 +345,7 @@ async def add_members_to_category(name_categorie: str, user_ids: list, added_by:
 
 async def remove_member_from_category(name_categorie: str, telegram_id: int):
     """Retire un membre d'une catégorie sans le supprimer."""
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -369,7 +369,7 @@ async def move_members(payload: dict):
         action:      'move' | 'copy'
     }
     """
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor(dictionary=True)
 
     source      = payload["source"]
@@ -419,7 +419,7 @@ async def merge_categories(target: str, sources: list):
     Les catégories sources sont supprimées après fusion.
     payload: { target: str, sources: [str, str, ...] }
     """
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor(dictionary=True)
 
     total_added = 0
@@ -471,7 +471,7 @@ async def import_members_csv(name_categorie: str, user_ids: list):
 # ────────────────────────────────────────────────────────────────────────
 
 async def get_category_rules(name_categorie: str):
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor(dictionary=True)
 
     cursor.execute("""
@@ -494,7 +494,7 @@ async def add_category_rule(name_categorie: str, rule: dict):
         trigger_value: str  (ex: 'forex-pro', '21', 'intéressé', '3')
     }
     """
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor()
 
     cursor.execute("""
@@ -514,7 +514,7 @@ async def add_category_rule(name_categorie: str, rule: dict):
 
 
 async def delete_category_rule(rule_id: int):
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor()
 
     cursor.execute("DELETE FROM category_rules WHERE id = %s", (rule_id,))
@@ -539,7 +539,7 @@ async def get_category_stats(name_categorie: str):
     - win_rate          (depuis trade_journal — None si pas encore de données)
     - open_rate         (None — non disponible sur Telegram)
     """
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor(dictionary=True)
 
     # Total membres
@@ -628,7 +628,7 @@ async def get_category_intersections(name_categorie: str):
     Retourne les autres catégories qui partagent des membres
     avec name_categorie, triées par nombre de membres communs.
     """
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor(dictionary=True)
 
     cursor.execute("""
@@ -666,7 +666,7 @@ async def get_member_profile(telegram_id: int):
     - dernière activité
     - stats trading si disponibles
     """
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor(dictionary=True)
 
     # Infos de base
@@ -726,7 +726,7 @@ async def get_member_profile(telegram_id: int):
 
 async def get_member_categories(telegram_id: int):
     """Retourne uniquement les catégories actives d'un membre."""
-    conn = get_db_connection()
+    conn = get_conn()
     cursor = conn.cursor(dictionary=True)
 
     cursor.execute("""
