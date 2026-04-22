@@ -151,33 +151,33 @@ async def _send_one(bot, user_id: int, fmt: str, text: str, media_url: Optional[
     """
 
     print('yes')
-    # try:
-    #     if fmt == "text":
-    #         await bot.send_message(chat_id=user_id, text=text)
+    try:
+        if fmt == "text":
+           await bot.send_message(chat_id=user_id, text=text)
 
-    #     elif fmt == "image":
-    #         await bot.send_photo(chat_id=user_id, photo=media_url)
+        elif fmt == "image":
+            await bot.send_photo(chat_id=user_id, photo=media_url)
 
-    #     elif fmt == "video":
-    #         await bot.send_video(chat_id=user_id, video=media_url)
+        elif fmt == "video":
+            await bot.send_video(chat_id=user_id, video=media_url)
 
-    #     elif fmt == "image+text":
-    #         await bot.send_message(chat_id=user_id, text=text)
-    #         await bot.send_photo(chat_id=user_id, photo=media_url)
+        elif fmt == "image+text":
+            await bot.send_message(chat_id=user_id, text=text)
+            await bot.send_photo(chat_id=user_id, photo=media_url)
 
-    #     elif fmt == "video+text":
-    #         await bot.send_message(chat_id=user_id, text=text)
-    #         await bot.send_video(chat_id=user_id, video=media_url)
+        elif fmt == "video+text":
+            await bot.send_message(chat_id=user_id, text=text)
+            await bot.send_video(chat_id=user_id, video=media_url)
 
-    #     else:
-    #         # Format inconnu → texte seul par sécurité
-    #         await bot.send_message(chat_id=user_id, text=text)
+        else:
+            # Format inconnu → texte seul par sécurité
+           await bot.send_message(chat_id=user_id, text=text)
 
-    #     return True
+        return True
 
-    # except Exception as e:
-    #     logger.warning(f"Échec envoi uid={user_id} : {e}")
-    #     return False
+    except Exception as e:
+        logger.warning(f"Échec envoi uid={user_id} : {e}")
+        return False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
