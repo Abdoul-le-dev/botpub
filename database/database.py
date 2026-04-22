@@ -24,10 +24,12 @@ def init_db():
 
 def init_broadcast_history():
     """
-    Crée la table broadcast_history si elle n'existe pas.
-    À appeler une seule fois au démarrage — comme ton init_db().
+    Crée toutes les tables nécessaires si elles n'existent pas.
+    Compatible SQLite — utilise PRAGMA table_info() au lieu de SHOW COLUMNS.
     """
     with sqlite3.connect("preinscriptions.db") as conn:
+ 
+        # ── broadcast_history ────────────────────────────────────────────
         conn.execute("""
             CREATE TABLE IF NOT EXISTS broadcast_history (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -42,76 +44,130 @@ def init_broadcast_history():
                 finished_at TEXT
             )
         """)
-        
-
-        # ── categories_meta ─────────────────────────────────────────────────
-    # Stocke les métadonnées de chaque catégorie (nom unique, couleur, description)
-    # Jointure avec categories sur name_categorie
+ 
+        # ── categories_meta ──────────────────────────────────────────────
         conn.execute("""
             CREATE TABLE IF NOT EXISTS categories_meta (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                name_categorie  VARCHAR(255) NOT NULL UNIQUE,
-                color           VARCHAR(20)  DEFAULT '#38bdf8',
+                name_categorie  TEXT NOT NULL UNIQUE,
+                color           TEXT DEFAULT '#38bdf8',
                 description     TEXT,
-                created_at      DATETIME     DEFAULT CURRENT_TIMESTAMP
+                created_at      TEXT DEFAULT (datetime('now'))
             )
         """)
  
-    # ── category_rules ───────────────────────────────────────────────────
-    # Règles d'attribution automatique liées à une catégorie
-    # Suppression en cascade si la categories_meta est supprimée
+        # ── category_rules ───────────────────────────────────────────────
         conn.execute("""
             CREATE TABLE IF NOT EXISTS category_rules (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                name_categorie  VARCHAR(255) NOT NULL,
-                trigger_type    VARCHAR(30)  NOT NULL,
-                -- 'link' | 'inactivity' | 'survey' | 'subscription' | 'trade_perf' | 'keyword' | 'no_open'
+                name_categorie  TEXT NOT NULL,
+                trigger_type    TEXT NOT NULL,
                 trigger_value   TEXT,
-                is_active       BOOLEAN      DEFAULT TRUE,
-                created_at      DATETIME     DEFAULT CURRENT_TIMESTAMP,
+                is_active       INTEGER DEFAULT 1,
+                created_at      TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY (name_categorie)
                     REFERENCES categories_meta(name_categorie)
                     ON DELETE CASCADE
                     ON UPDATE CASCADE
             )
         """)
-
-        conn.execute("SHOW COLUMNS FROM messages")
-        existing_columns = {row[0] for row in conn.fetchall()}
-    
+ 
+        # ── signals ──────────────────────────────────────────────────────
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS signals (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                pair            TEXT    NOT NULL,
+                direction       TEXT    NOT NULL,
+                entry_price     REAL    NOT NULL,
+                stop_loss       REAL    NOT NULL,
+                take_profit_1   REAL    NOT NULL,
+                take_profit_2   REAL,
+                take_profit_3   REAL,
+                result_pips     REAL    DEFAULT NULL,
+                result_percent  REAL    DEFAULT NULL,
+                status          TEXT    DEFAULT 'active',
+                message_id      INTEGER DEFAULT NULL,
+                note            TEXT,
+                created_at      TEXT    DEFAULT (datetime('now')),
+                closed_at       TEXT    DEFAULT NULL
+            )
+        """)
+ 
+        # ── trade_journal ────────────────────────────────────────────────
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS trade_journal (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                signal_id       INTEGER NOT NULL,
+                user_id         INTEGER NOT NULL,
+                entry_price     REAL    NOT NULL,
+                exit_price      REAL    DEFAULT NULL,
+                lot_size        REAL    DEFAULT NULL,
+                result_pips     REAL    DEFAULT NULL,
+                result_percent  REAL    DEFAULT NULL,
+                screenshot_url  TEXT    DEFAULT NULL,
+                status          TEXT    DEFAULT 'open',
+                note            TEXT,
+                created_at      TEXT    DEFAULT (datetime('now')),
+                closed_at       TEXT    DEFAULT NULL,
+                FOREIGN KEY (signal_id) REFERENCES signals(id) ON DELETE CASCADE
+            )
+        """)
+ 
+        # ── trade_comments ───────────────────────────────────────────────
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS trade_comments (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                trade_id    INTEGER NOT NULL,
+                user_id     INTEGER NOT NULL,
+                comment     TEXT    NOT NULL,
+                created_at  TEXT    DEFAULT (datetime('now')),
+                FOREIGN KEY (trade_id) REFERENCES trade_journal(id) ON DELETE CASCADE
+            )
+        """)
+ 
+        # ────────────────────────────────────────────────────────────────
+        # Migration table messages
+        # SQLite : PRAGMA table_info() au lieu de SHOW COLUMNS
+        # ────────────────────────────────────────────────────────────────
+        cursor = conn.execute("PRAGMA table_info(messages)")
+        existing_columns = {row[1] for row in cursor.fetchall()}  # row[1] = nom de la colonne
+ 
         columns_to_add = {
             "broadcast_id":  "INTEGER DEFAULT NULL",
-            "media_url":     "TEXT DEFAULT NULL",
-            "status":        "VARCHAR(20) DEFAULT 'received'",
-            "error_message": "TEXT DEFAULT NULL",
+            "media_url":     "TEXT    DEFAULT NULL",
+            "status":        "TEXT    DEFAULT 'received'",
+            "error_message": "TEXT    DEFAULT NULL",
         }
-    
+ 
         for col, definition in columns_to_add.items():
             if col not in existing_columns:
                 conn.execute(f"ALTER TABLE messages ADD COLUMN {col} {definition}")
                 print(f"[DB] ✅ Colonne ajoutée : messages.{col}")
             else:
                 print(f"[DB] ⏭️  Colonne déjà présente : messages.{col}")
-    
-        # Supprimer message_type si elle existe encore
+ 
+        # SQLite ne supporte pas DROP COLUMN avant la version 3.35
+        # On vérifie la version avant d'essayer
         if "message_type" in existing_columns:
-            conn.execute("ALTER TABLE messages DROP COLUMN message_type")
-            print("[DB] ✅ Colonne supprimée : messages.message_type")
+            import sqlite3 as _sq
+            version = tuple(int(x) for x in _sq.sqlite_version.split("."))
+            if version >= (3, 35, 0):
+                conn.execute("ALTER TABLE messages DROP COLUMN message_type")
+                print("[DB] ✅ Colonne supprimée : messages.message_type")
+            else:
+                print(f"[DB] ⚠️  SQLite {_sq.sqlite_version} — DROP COLUMN non supporté, message_type conservée")
         else:
             print("[DB] ⏭️  messages.message_type déjà absente")
-    
-        # ────────────────────────────────────────────────────────────────────
-        # 4. Mettre à jour les lignes existantes sans status
-        # ────────────────────────────────────────────────────────────────────
+ 
+        # Migrer les lignes existantes sans status
         if "status" not in existing_columns:
-            conn.execute("""
-                UPDATE messages SET status = 'received' WHERE status IS NULL
-            """)
-            print(f"[DB] ✅ {conn.rowcount} lignes migrées → status='received'")
-
+            conn.execute("UPDATE messages SET status = 'received' WHERE status IS NULL")
+            print(f"[DB] ✅ Lignes migrées → status='received'")
+ 
         conn.commit()
-        conn.close()
+        print("[DB] ✅ init_broadcast_history terminé")
 
+        
 def get_conn():
     return sqlite3.connect('preinscriptions.db')
 
