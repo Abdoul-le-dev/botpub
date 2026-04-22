@@ -49,7 +49,7 @@ def init_broadcast_history():
     # Jointure avec categories sur name_categorie
         conn.execute("""
             CREATE TABLE IF NOT EXISTS categories_meta (
-                id              INTEGER PRIMARY KEY AUTO_INCREMENT,
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 name_categorie  VARCHAR(255) NOT NULL UNIQUE,
                 color           VARCHAR(20)  DEFAULT '#38bdf8',
                 description     TEXT,
@@ -62,7 +62,7 @@ def init_broadcast_history():
     # Suppression en cascade si la categories_meta est supprimée
         conn.execute("""
             CREATE TABLE IF NOT EXISTS category_rules (
-                id              INTEGER PRIMARY KEY AUTO_INCREMENT,
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
                 name_categorie  VARCHAR(255) NOT NULL,
                 trigger_type    VARCHAR(30)  NOT NULL,
                 -- 'link' | 'inactivity' | 'survey' | 'subscription' | 'trade_perf' | 'keyword' | 'no_open'
@@ -1309,7 +1309,7 @@ async def init_trading_tables():
     # Les signaux envoyés par l'admin à la communauté
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS signals (
-            id              INTEGER PRIMARY KEY AUTO_INCREMENT,
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
             pair            VARCHAR(20)  NOT NULL,          -- EURUSD, GBPJPY...
             direction       VARCHAR(10)  NOT NULL,          -- buy | sell
             entry_price     DECIMAL(10,5) NOT NULL,
@@ -1331,7 +1331,7 @@ async def init_trading_tables():
     # Journal personnel de chaque membre pour chaque signal
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS trade_journal (
-            id              INTEGER PRIMARY KEY AUTO_INCREMENT,
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
             signal_id       INTEGER       NOT NULL,
             user_id         BIGINT        NOT NULL,         -- telegram_id du membre
             entry_price     DECIMAL(10,5) NOT NULL,         -- prix réel du membre
@@ -1352,7 +1352,7 @@ async def init_trading_tables():
     # Commentaires des membres sur un trade journalisé
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS trade_comments (
-            id          INTEGER PRIMARY KEY AUTO_INCREMENT,
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
             trade_id    INTEGER  NOT NULL,                  -- trade_journal.id
             user_id     BIGINT   NOT NULL,                  -- telegram_id
             comment     TEXT     NOT NULL,
