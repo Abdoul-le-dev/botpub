@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from database.database import get_data, get_data_users, get_categories_user, init_broadcast_history,  get_broadcast_history,  init_trading_tables
+from database.database import migrate_categories_to_meta, get_data, get_data_users, get_categories_user, init_broadcast_history,  get_broadcast_history,  init_trading_tables
 import os
 from dotenv import load_dotenv
 from telegram import Bot
@@ -295,6 +295,7 @@ async def api_member_categories(telegram_id: int):
    
 if __name__ == "__main__":
     import uvicorn
-    init_broadcast_history()
-    init_trading_tables()
+    #init_broadcast_history()
+    #init_trading_tables()
+    migrate_categories_to_meta()
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -22,13 +22,15 @@ def init_db():
 
 
 
+
+
 def init_broadcast_history():
     """
     Crée toutes les tables nécessaires si elles n'existent pas.
     Compatible SQLite — utilise PRAGMA table_info() au lieu de SHOW COLUMNS.
     """
     with sqlite3.connect("preinscriptions.db") as conn:
- 
+
         # ── broadcast_history ────────────────────────────────────────────
         conn.execute("""
             CREATE TABLE IF NOT EXISTS broadcast_history (
@@ -44,7 +46,7 @@ def init_broadcast_history():
                 finished_at TEXT
             )
         """)
- 
+
         # ── categories_meta ──────────────────────────────────────────────
         conn.execute("""
             CREATE TABLE IF NOT EXISTS categories_meta (
@@ -55,7 +57,7 @@ def init_broadcast_history():
                 created_at      TEXT DEFAULT (datetime('now'))
             )
         """)
- 
+
         # ── category_rules ───────────────────────────────────────────────
         conn.execute("""
             CREATE TABLE IF NOT EXISTS category_rules (
@@ -71,7 +73,7 @@ def init_broadcast_history():
                     ON UPDATE CASCADE
             )
         """)
- 
+
         # ── signals ──────────────────────────────────────────────────────
         conn.execute("""
             CREATE TABLE IF NOT EXISTS signals (
@@ -92,7 +94,7 @@ def init_broadcast_history():
                 closed_at       TEXT    DEFAULT NULL
             )
         """)
- 
+
         # ── trade_journal ────────────────────────────────────────────────
         conn.execute("""
             CREATE TABLE IF NOT EXISTS trade_journal (
@@ -112,7 +114,7 @@ def init_broadcast_history():
                 FOREIGN KEY (signal_id) REFERENCES signals(id) ON DELETE CASCADE
             )
         """)
- 
+
         # ── trade_comments ───────────────────────────────────────────────
         conn.execute("""
             CREATE TABLE IF NOT EXISTS trade_comments (
@@ -124,28 +126,28 @@ def init_broadcast_history():
                 FOREIGN KEY (trade_id) REFERENCES trade_journal(id) ON DELETE CASCADE
             )
         """)
- 
+
         # ────────────────────────────────────────────────────────────────
         # Migration table messages
         # SQLite : PRAGMA table_info() au lieu de SHOW COLUMNS
         # ────────────────────────────────────────────────────────────────
         cursor = conn.execute("PRAGMA table_info(messages)")
         existing_columns = {row[1] for row in cursor.fetchall()}  # row[1] = nom de la colonne
- 
+
         columns_to_add = {
             "broadcast_id":  "INTEGER DEFAULT NULL",
             "media_url":     "TEXT    DEFAULT NULL",
             "status":        "TEXT    DEFAULT 'received'",
             "error_message": "TEXT    DEFAULT NULL",
         }
- 
+
         for col, definition in columns_to_add.items():
             if col not in existing_columns:
                 conn.execute(f"ALTER TABLE messages ADD COLUMN {col} {definition}")
                 print(f"[DB] ✅ Colonne ajoutée : messages.{col}")
             else:
                 print(f"[DB] ⏭️  Colonne déjà présente : messages.{col}")
- 
+
         # SQLite ne supporte pas DROP COLUMN avant la version 3.35
         # On vérifie la version avant d'essayer
         if "message_type" in existing_columns:
@@ -158,16 +160,43 @@ def init_broadcast_history():
                 print(f"[DB] ⚠️  SQLite {_sq.sqlite_version} — DROP COLUMN non supporté, message_type conservée")
         else:
             print("[DB] ⏭️  messages.message_type déjà absente")
- 
+
         # Migrer les lignes existantes sans status
         if "status" not in existing_columns:
             conn.execute("UPDATE messages SET status = 'received' WHERE status IS NULL")
             print(f"[DB] ✅ Lignes migrées → status='received'")
- 
+
         conn.commit()
         print("[DB] ✅ init_broadcast_history terminé")
 
-        
+def migrate_categories_to_meta():
+    """
+    Migration one-shot : lit tous les name_categorie distincts
+    dans la table categories et les insère dans categories_meta
+    si absents. Idempotent — peut tourner plusieurs fois sans risque.
+    """
+    with sqlite3.connect("preinscriptions.db") as conn:
+        conn.execute("PRAGMA foreign_keys = ON")
+
+        existing_cats = conn.execute(
+            "SELECT DISTINCT name_categorie FROM categories"
+        ).fetchall()
+
+        migrated = 0
+        for row in existing_cats:
+            conn.execute(
+                "INSERT OR IGNORE INTO categories_meta (name_categorie) VALUES (?)",
+                (row[0],)
+            )
+            migrated += conn.execute("SELECT changes()").fetchone()[0]
+
+        conn.commit()
+
+    if migrated:
+        print(f"[DB] ✅ {migrated} catégorie(s) migrée(s) vers categories_meta")
+    else:
+        print("[DB] ⏭️  categories_meta déjà à jour")
+
 def get_conn():
     return sqlite3.connect('preinscriptions.db')
 
