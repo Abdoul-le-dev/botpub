@@ -103,7 +103,7 @@ async def api_categories_stats():
 # CRUD CATÉGORIES
 # ────────────────────────────────────────────────────────────────────────
  
-@app.get("/categories")
+@app.get("/categorie")
 async def api_get_categories():
     return await get_categories()
  
@@ -297,5 +297,5 @@ if __name__ == "__main__":
     import uvicorn
     #init_broadcast_history()
     #init_trading_tables()
-    migrate_categories_to_meta()
+    #migrate_categories_to_meta()
     uvicorn.run(app, host="0.0.0.0", port=8000)
