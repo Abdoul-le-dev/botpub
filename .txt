@@ -1,13 +1,419 @@
-[Unit]
-Description=Bot Python BotPub
-After=network.target
-
-[Service]
-User=ubuntu
-WorkingDirectory=/home/ubuntu/botpub
-ExecStart=/home/ubuntu/botpub/env/bin/python script.py
-Restart=always
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
+async def init_trading_tables():
+    """
+    Crée les 3 tables trading si elles n'existent pas.
+    Appelé depuis init_db() au boot.
+    """
+    conn = get_conn()
+    cursor = conn.cursor()
+ 
+    # ── signals ─────────────────────────────────────────────────────────
+    # Les signaux envoyés par l'admin à la communauté
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS signals (
+            id              INTEGER PRIMARY KEY AUTO_INCREMENT,
+            pair            VARCHAR(20)  NOT NULL,          -- EURUSD, GBPJPY...
+            direction       VARCHAR(10)  NOT NULL,          -- buy | sell
+            entry_price     DECIMAL(10,5) NOT NULL,
+            stop_loss       DECIMAL(10,5) NOT NULL,
+            take_profit_1   DECIMAL(10,5) NOT NULL,
+            take_profit_2   DECIMAL(10,5),                  -- optionnel
+            take_profit_3   DECIMAL(10,5),                  -- optionnel
+            result_pips     DECIMAL(8,1)  DEFAULT NULL,     -- rempli à la clôture
+            result_percent  DECIMAL(6,2)  DEFAULT NULL,     -- rempli à la clôture
+            status          VARCHAR(20)   DEFAULT 'active', -- active | closed | cancelled
+            message_id      BIGINT        DEFAULT NULL,     -- message Telegram lié
+            note            TEXT,                           -- commentaire admin
+            created_at      DATETIME      DEFAULT CURRENT_TIMESTAMP,
+            closed_at       DATETIME      DEFAULT NULL
+        )
+    """)
+ 
+    # ── trade_journal ────────────────────────────────────────────────────
+    # Journal personnel de chaque membre pour chaque signal
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS trade_journal (
+            id              INTEGER PRIMARY KEY AUTO_INCREMENT,
+            signal_id       INTEGER       NOT NULL,
+            user_id         BIGINT        NOT NULL,         -- telegram_id du membre
+            entry_price     DECIMAL(10,5) NOT NULL,         -- prix réel du membre
+            exit_price      DECIMAL(10,5) DEFAULT NULL,     -- rempli à la clôture
+            lot_size        DECIMAL(6,2)  DEFAULT NULL,     -- taille de position
+            result_pips     DECIMAL(8,1)  DEFAULT NULL,
+            result_percent  DECIMAL(6,2)  DEFAULT NULL,
+            screenshot_url  TEXT          DEFAULT NULL,     -- URL serveur externe
+            status          VARCHAR(20)   DEFAULT 'open',   -- open | closed | cancelled
+            note            TEXT,                           -- note personnelle du membre
+            created_at      DATETIME      DEFAULT CURRENT_TIMESTAMP,
+            closed_at       DATETIME      DEFAULT NULL,
+            FOREIGN KEY (signal_id) REFERENCES signals(id) ON DELETE CASCADE
+        )
+    """)
+ 
+    # ── trade_comments ───────────────────────────────────────────────────
+    # Commentaires des membres sur un trade journalisé
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS trade_comments (
+            id          INTEGER PRIMARY KEY AUTO_INCREMENT,
+            trade_id    INTEGER  NOT NULL,                  -- trade_journal.id
+            user_id     BIGINT   NOT NULL,                  -- telegram_id
+            comment     TEXT     NOT NULL,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (trade_id) REFERENCES trade_journal(id) ON DELETE CASCADE
+        )
+    """)
+ 
+    conn.commit()
+    cursor.close()
+    conn.close()
+    print("[DB] ✅ Tables trading vérifiées (signals, trade_journal, trade_comments)")
+ 
+ 
+# ────────────────────────────────────────────────────────────────────────
+# SIGNALS
+# ────────────────────────────────────────────────────────────────────────
+ 
+async def create_signal(payload: dict):
+    """
+    payload: {
+        pair, direction, entry_price, stop_loss,
+        take_profit_1, take_profit_2?, take_profit_3?,
+        note?, message_id?
+    }
+    """
+    conn = get_conn()
+    cursor = conn.cursor()
+ 
+    cursor.execute("""
+        INSERT INTO signals (
+            pair, direction, entry_price, stop_loss,
+            take_profit_1, take_profit_2, take_profit_3,
+            note, message_id
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (
+        payload["pair"],
+        payload["direction"],
+        payload["entry_price"],
+        payload["stop_loss"],
+        payload["take_profit_1"],
+        payload.get("take_profit_2"),
+        payload.get("take_profit_3"),
+        payload.get("note"),
+        payload.get("message_id")
+    ))
+ 
+    signal_id = cursor.lastrowid
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"id": signal_id, "status": "created"}
+ 
+ 
+async def get_signals(status: str = None, limit: int = 50, offset: int = 0):
+    """
+    Retourne les signaux avec le nombre de membres qui ont journalisé.
+    status: 'active' | 'closed' | 'cancelled' | None (tous)
+    """
+    conn = get_conn()
+    cursor = conn.cursor(dictionary=True)
+ 
+    query = """
+        SELECT
+            s.*,
+            COUNT(tj.id)                        AS journal_count,
+            AVG(tj.result_percent)              AS avg_member_result,
+            SUM(CASE WHEN tj.status = 'closed'  AND tj.result_pips > 0 THEN 1 ELSE 0 END) AS winners,
+            SUM(CASE WHEN tj.status = 'closed'  AND tj.result_pips < 0 THEN 1 ELSE 0 END) AS losers
+        FROM signals s
+        LEFT JOIN trade_journal tj ON tj.signal_id = s.id
+    """
+    params = []
+    if status:
+        query += " WHERE s.status = %s"
+        params.append(status)
+ 
+    query += " GROUP BY s.id ORDER BY s.created_at DESC LIMIT %s OFFSET %s"
+    params += [limit, offset]
+ 
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
+ 
+ 
+async def get_signal_by_id(signal_id: int):
+    """Retourne un signal + tous les trades journalisés dessus."""
+    conn = get_conn()
+    cursor = conn.cursor(dictionary=True)
+ 
+    cursor.execute("SELECT * FROM signals WHERE id = %s", (signal_id,))
+    signal = cursor.fetchone()
+ 
+    if not signal:
+        cursor.close()
+        conn.close()
+        return None
+ 
+    cursor.execute("""
+        SELECT tj.*, u.name
+        FROM trade_journal tj
+        LEFT JOIN users u ON u.telegram_id = tj.user_id
+        WHERE tj.signal_id = %s
+        ORDER BY tj.created_at DESC
+    """, (signal_id,))
+    signal["journals"] = cursor.fetchall()
+ 
+    cursor.close()
+    conn.close()
+    return signal
+ 
+ 
+async def close_signal(signal_id: int, result_pips: float, result_percent: float):
+    """Clôture un signal avec ses résultats finaux."""
+    conn = get_conn()
+    cursor = conn.cursor()
+ 
+    cursor.execute("""
+        UPDATE signals
+        SET status         = 'closed',
+            result_pips    = %s,
+            result_percent = %s,
+            closed_at      = %s
+        WHERE id = %s
+    """, (result_pips, result_percent, datetime.now(), signal_id))
+ 
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"status": "closed", "signal_id": signal_id}
+ 
+ 
+async def cancel_signal(signal_id: int):
+    """Annule un signal."""
+    conn = get_conn()
+    cursor = conn.cursor()
+ 
+    cursor.execute("""
+        UPDATE signals SET status = 'cancelled' WHERE id = %s
+    """, (signal_id,))
+ 
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"status": "cancelled", "signal_id": signal_id}
+ 
+ 
+# ────────────────────────────────────────────────────────────────────────
+# TRADE JOURNAL
+# ────────────────────────────────────────────────────────────────────────
+ 
+async def create_trade_journal(payload: dict):
+    """
+    Un membre journalise sa prise de trade sur un signal.
+    payload: {
+        signal_id, user_id, entry_price,
+        lot_size?, note?, screenshot_url?
+    }
+    """
+    conn = get_conn()
+    cursor = conn.cursor()
+ 
+    cursor.execute("""
+        INSERT INTO trade_journal (
+            signal_id, user_id, entry_price,
+            lot_size, note, screenshot_url
+        ) VALUES (%s, %s, %s, %s, %s, %s)
+    """, (
+        payload["signal_id"],
+        payload["user_id"],
+        payload["entry_price"],
+        payload.get("lot_size"),
+        payload.get("note"),
+        payload.get("screenshot_url")
+    ))
+ 
+    trade_id = cursor.lastrowid
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"id": trade_id, "status": "created"}
+ 
+ 
+async def close_trade_journal(trade_id: int, payload: dict):
+    """
+    Clôture le trade d'un membre.
+    payload: { exit_price, result_pips, result_percent, screenshot_url? }
+    """
+    conn = get_conn()
+    cursor = conn.cursor()
+ 
+    cursor.execute("""
+        UPDATE trade_journal
+        SET status         = 'closed',
+            exit_price     = %s,
+            result_pips    = %s,
+            result_percent = %s,
+            screenshot_url = COALESCE(%s, screenshot_url),
+            closed_at      = %s
+        WHERE id = %s
+    """, (
+        payload["exit_price"],
+        payload["result_pips"],
+        payload["result_percent"],
+        payload.get("screenshot_url"),
+        datetime.now(),
+        trade_id
+    ))
+ 
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"status": "closed", "trade_id": trade_id}
+ 
+ 
+async def get_member_journal(user_id: int, status: str = None, limit: int = 50, offset: int = 0):
+    """
+    Retourne tous les trades journalisés d'un membre.
+    status: 'open' | 'closed' | 'cancelled' | None (tous)
+    """
+    conn = get_conn()
+    cursor = conn.cursor(dictionary=True)
+ 
+    query = """
+        SELECT
+            tj.*,
+            s.pair, s.direction,
+            s.entry_price   AS signal_entry,
+            s.stop_loss, s.take_profit_1, s.take_profit_2, s.take_profit_3
+        FROM trade_journal tj
+        JOIN signals s ON s.id = tj.signal_id
+        WHERE tj.user_id = %s
+    """
+    params = [user_id]
+ 
+    if status:
+        query += " AND tj.status = %s"
+        params.append(status)
+ 
+    query += " ORDER BY tj.created_at DESC LIMIT %s OFFSET %s"
+    params += [limit, offset]
+ 
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
+ 
+ 
+async def get_member_stats(user_id: int):
+    """
+    Stats globales d'un membre pour le profil / leaderboard.
+    Retourne : total trades, win rate, avg result %, best trade, worst trade
+    """
+    conn = get_conn()
+    cursor = conn.cursor(dictionary=True)
+ 
+    cursor.execute("""
+        SELECT
+            COUNT(*)                                                        AS total_trades,
+            SUM(CASE WHEN result_pips > 0 THEN 1 ELSE 0 END)               AS wins,
+            SUM(CASE WHEN result_pips < 0 THEN 1 ELSE 0 END)               AS losses,
+            ROUND(
+                SUM(CASE WHEN result_pips > 0 THEN 1 ELSE 0 END)
+                / NULLIF(COUNT(*), 0) * 100, 1
+            )                                                               AS win_rate,
+            ROUND(AVG(result_percent), 2)                                   AS avg_result_percent,
+            ROUND(SUM(result_percent), 2)                                   AS total_result_percent,
+            MAX(result_pips)                                                AS best_trade_pips,
+            MIN(result_pips)                                                AS worst_trade_pips
+        FROM trade_journal
+        WHERE user_id = %s AND status = 'closed'
+    """, (user_id,))
+ 
+    stats = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return stats
+ 
+ 
+async def get_leaderboard(limit: int = 20):
+    """
+    Classement des membres par performance (win rate + résultat total).
+    """
+    conn = get_conn()
+    cursor = conn.cursor(dictionary=True)
+ 
+    cursor.execute("""
+        SELECT
+            tj.user_id,
+            u.name,
+            COUNT(*)                                                        AS total_trades,
+            ROUND(
+                SUM(CASE WHEN tj.result_pips > 0 THEN 1 ELSE 0 END)
+                / NULLIF(COUNT(*), 0) * 100, 1
+            )                                                               AS win_rate,
+            ROUND(SUM(tj.result_percent), 2)                               AS total_percent,
+            ROUND(AVG(tj.result_percent), 2)                               AS avg_percent
+        FROM trade_journal tj
+        LEFT JOIN users u ON u.telegram_id = tj.user_id
+        WHERE tj.status = 'closed'
+        GROUP BY tj.user_id
+        HAVING total_trades >= 3
+        ORDER BY total_percent DESC
+        LIMIT %s
+    """, (limit,))
+ 
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
+ 
+ 
+# ────────────────────────────────────────────────────────────────────────
+# COMMENTS
+# ────────────────────────────────────────────────────────────────────────
+ 
+async def add_comment(trade_id: int, user_id: int, comment: str):
+    conn = get_conn()
+    cursor = conn.cursor()
+ 
+    cursor.execute("""
+        INSERT INTO trade_comments (trade_id, user_id, comment)
+        VALUES (%s, %s, %s)
+    """, (trade_id, user_id, comment))
+ 
+    comment_id = cursor.lastrowid
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"id": comment_id, "status": "created"}
+ 
+ 
+async def get_comments(trade_id: int):
+    conn = get_conn()
+    cursor = conn.cursor(dictionary=True)
+ 
+    cursor.execute("""
+        SELECT
+            tc.*,
+            u.name
+        FROM trade_comments tc
+        LEFT JOIN users u ON u.telegram_id = tc.user_id
+        WHERE tc.trade_id = %s
+        ORDER BY tc.created_at ASC
+    """, (trade_id,))
+ 
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
+ 
+ 
+async def delete_comment(comment_id: int):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM trade_comments WHERE id = %s", (comment_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"status": "deleted"}
