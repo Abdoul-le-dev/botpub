@@ -1,9 +1,7 @@
-# categories.py
 
-from db import get_db_connection
 from datetime import datetime, timedelta
 
-
+from database.database import get_conn
 # ────────────────────────────────────────────────────────────────────────
 # HELPERS PRIVÉS
 # ────────────────────────────────────────────────────────────────────────
