@@ -75,8 +75,8 @@ async def get_categories():
                 cm.color,
                 cm.description,
                 cm.created_at,
-                COUNT(c.id)                                         AS member_count,
-                SUM(CASE WHEN c.created_at >= ? THEN 1 ELSE 0 END) AS new_this_month
+                COALESCE(COUNT(c.id), 0)                                         AS member_count,
+                COALESCE(SUM(CASE WHEN c.created_at >= ? THEN 1 ELSE 0 END), 0) AS new_this_month
             FROM categories_meta cm
             LEFT JOIN categories c ON c.name_categorie = cm.name_categorie
             GROUP BY cm.id
@@ -181,6 +181,9 @@ async def update_category(name_categorie: str, payload: dict):
             values
         )
         conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return {"status": "error", "detail": "Ce nom de catégorie existe déjà"}
     finally:
         conn.close()
 

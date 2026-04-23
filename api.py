@@ -30,7 +30,22 @@ from telegram_page.categorie import (
 )
 from telegram_page.broadcast_engine import broadcast_engine
 
-app = FastAPI()
+from telegram_page.chat_route import router as chat_router
+from telegram_page.chat import init_chat_tables
+
+from contextlib import asynccontextmanager
+ 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_chat_tables() 
+    #init_broadcast_history()
+    #init_trading_tables()
+    #migrate_categories_to_meta()      # crée conversations, subscriptions, migre messages
+    # init_broadcast_history()  # si tu l'as déjà ailleurs, garde-le ici aussi
+    yield
+ 
+app = FastAPI(lifespan=lifespan)
+app.include_router(chat_router)
 
 load_dotenv()
 bot = Bot(token=os.getenv("token"))
@@ -48,6 +63,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(chat_router)
 
 class RequestBody(BaseModel):
     text: str
@@ -295,7 +311,5 @@ async def api_member_categories(telegram_id: int):
    
 if __name__ == "__main__":
     import uvicorn
-    #init_broadcast_history()
-    #init_trading_tables()
-    #migrate_categories_to_meta()
+    
     uvicorn.run(app, host="0.0.0.0", port=8000)
