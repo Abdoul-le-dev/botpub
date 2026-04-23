@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
 from typing import Optional
 
-from chat import (
+from telegram_page.chat import (
     # Abonnements
     create_subscription, get_subscriptions, get_subscription_summary,
     cancel_subscription, expire_subscriptions, get_subscriptions_stats,
