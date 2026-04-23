@@ -19,7 +19,6 @@ def get_conn():
 # ════════════════════════════════════════════════════════════════════════
 # SAVE MESSAGE — insertion en base
 # ════════════════════════════════════════════════════════════════════════
-
 def save_message(
     user_id:      int,
     message_id:   int,
@@ -45,8 +44,8 @@ def save_message(
         """, (
             user_id,
             message_id,
-            message_text,
-            answer,
+            message_text or "",   # NOT NULL — chaîne vide si pas de texte
+            answer or "",
             message_type,
             media_url,
             direction,
@@ -56,12 +55,12 @@ def save_message(
         conn.commit()
     finally:
         conn.close()
-
-
+ 
+ 
 # ════════════════════════════════════════════════════════════════════════
 # TÉLÉCHARGEMENT MÉDIA DEPUIS TELEGRAM
 # ════════════════════════════════════════════════════════════════════════
-
+ 
 async def _download_media(bot, file_id: str, extension: str) -> str | None:
     """
     Télécharge un fichier depuis Telegram et le stocke dans /media/.
@@ -70,54 +69,54 @@ async def _download_media(bot, file_id: str, extension: str) -> str | None:
     try:
         import uuid
         MEDIA_DIR.mkdir(parents=True, exist_ok=True)
-
+ 
         tg_file  = await bot.get_file(file_id)
         fname    = f"{uuid.uuid4()}{extension}"
         dest     = MEDIA_DIR / fname
-
+ 
         await tg_file.download_to_drive(str(dest))
         return f"/media/{fname}"
-
+ 
     except Exception as e:
         print(f"⚠️ Erreur téléchargement média : {e}")
         return None
-
-
+ 
+ 
 # ════════════════════════════════════════════════════════════════════════
 # HANDLER PRINCIPAL — tous les messages entrants
 # ════════════════════════════════════════════════════════════════════════
-
+ 
 async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     msg  = update.message
-
+ 
     if not user or not msg:
         return
-
+ 
     user_id    = user.id
     message_id = msg.message_id
     text       = msg.text or msg.caption or None  # caption = texte sur une photo/vidéo
     media_url  = None
     message_type = "text"
-
+ 
     # ── Image ────────────────────────────────────────────────────────────
     if msg.photo:
         message_type = "image"
         # Prendre la photo en meilleure résolution (dernière dans la liste)
         file_id  = msg.photo[-1].file_id
         media_url = await _download_media(context.bot, file_id, ".jpg")
-
+ 
     # ── Vidéo ────────────────────────────────────────────────────────────
     elif msg.video:
         message_type = "video"
         media_url = await _download_media(context.bot, msg.video.file_id, ".mp4")
-
+ 
     # ── Document (PDF, Word, Excel, etc.) ────────────────────────────────
     elif msg.document:
         # Déterminer l'extension depuis le nom original
         fname = msg.document.file_name or ""
         ext   = Path(fname).suffix.lower() if fname else ".bin"
-
+ 
         # Mapper le mime_type vers notre message_type
         mime = msg.document.mime_type or ""
         if mime == "application/pdf":
@@ -134,37 +133,37 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
             message_type = "archive"
         else:
             message_type = "document"
-
+ 
         media_url = await _download_media(context.bot, msg.document.file_id, ext or ".bin")
-
+ 
     # ── Audio ─────────────────────────────────────────────────────────────
     elif msg.audio:
         message_type = "audio"
         ext = Path(msg.audio.file_name or "").suffix.lower() or ".mp3"
         media_url = await _download_media(context.bot, msg.audio.file_id, ext)
-
+ 
     # ── Note vocale ───────────────────────────────────────────────────────
     elif msg.voice:
         message_type = "voice"
         media_url = await _download_media(context.bot, msg.voice.file_id, ".ogg")
-
+ 
     # ── Sticker ───────────────────────────────────────────────────────────
     elif msg.sticker:
         message_type = "sticker"
         # Pas de téléchargement — juste noter le type
-
+ 
     # ── Texte pur ─────────────────────────────────────────────────────────
     elif msg.text:
         message_type = "text"
-
+ 
     # ── Autres ────────────────────────────────────────────────────────────
     else:
         message_type = "other"
-
+ 
     # ── Log si média non téléchargé ───────────────────────────────────────
     if message_type not in ("text", "sticker", "other") and media_url is None:
         print(f"⚠️ Média {message_type} non téléchargé pour user {user_id}")
-
+ 
     # ── Enregistrement en base ────────────────────────────────────────────
     save_message(
         user_id      = user_id,
@@ -176,7 +175,8 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
         direction    = "inbound",
         answered_by  = None,
     )
-
+ 
     print(f"✓ Message {message_type} enregistré — user {user_id}")
-
+ 
+ 
 
