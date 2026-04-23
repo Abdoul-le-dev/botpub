@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from database.database import migrate_categories_to_meta, get_data, get_data_users, get_categories_user, init_broadcast_history,  get_broadcast_history,  init_trading_tables
 import os
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from telegram import Bot
 from fastapi import HTTPException, UploadFile, File
@@ -64,6 +65,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(chat_router)
+app.mount("/media", StaticFiles(directory="media"), name="media")
+
 
 class RequestBody(BaseModel):
     text: str
