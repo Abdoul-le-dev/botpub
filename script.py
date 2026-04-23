@@ -227,6 +227,8 @@ async def log_unhandled_message(update: Update, Context: ContextTypes.DEFAULT_TY
     user = update.effective_user
     msg = update.message
 
+    print('message');
+
     if not user:
         return
     user_id = user.id
