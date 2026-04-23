@@ -1,30 +1,10 @@
 """
-broadcast_engine.py — Moteur d'envoi de messages de masse.
+broadcast_engine.py — Moteur d'envoi de messages.
 
-Fonction principale : broadcast_engine(bot, payload)
-
-Payload attendu :
-{
-    "message":          "Bonjour +prenom, profite de +offre !",
-    "format":           "text" | "image" | "video" | "image+text" | "video+text",
-    "media_url":        "file_id_telegram_ou_path_local" | None,
-    "category":         "nom_categorie" | None,
-    "user_ids":         [123, 456] | None,
-    "scheduled_at":     "2026-04-20 14:30:00" | None,
-    "delay":            0.1,
-    "retry":            True,
-    "exclude_user_ids": [789],
-    "variables":        {"+offre": "50%", "+lien": "https://..."},
-    "filters":          {"created_after": "2025-01-01", "created_before": "2026-01-01"},
-    "tag":              "promo_avril",
-    "callback_url":     "https://monsite.com/webhook" | None
-}
-
-Usage depuis le bot Telegram :
-    asyncio.create_task(broadcast_engine(context.bot, payload))
-
-Usage depuis FastAPI :
-    await broadcast_engine(bot, payload)
+Gestion médias optimisée :
+  - Fichier local (/media/uuid.jpg) → upload au premier envoi → file_id Telegram récupéré
+  - Envois suivants (broadcast) → file_id réutilisé directement, pas de re-upload
+  - Chat direct (1 user) → fichier local envoyé directement
 """
 
 import asyncio
@@ -33,20 +13,19 @@ import logging
 import httpx
 
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
-# ── Configuration ─────────────────────────────────────────────────────────────
+# ── Configuration ──────────────────────────────────────────────────────────────
 
 DB_PATH  = "preinscriptions.db"
 ADMIN_ID = 571718066
-
-
 
 logger = logging.getLogger(__name__)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ── BASE DE DONNÉES ───────────────────────────────────────────────────────────
+# BASE DE DONNÉES
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _conn() -> sqlite3.Connection:
@@ -60,30 +39,19 @@ def _resolve_user_ids(
     user_ids: Optional[list],
     exclude_user_ids: Optional[list],
     filters: Optional[dict]
-) -> list[int]:
-    """
-    Résout la liste finale des destinataires selon :
-    - category  → tous les users de cette catégorie (avec filtres optionnels)
-    - user_ids  → liste directe fournie
-    - exclude   → soustrait les IDs exclus
-    - filters   → created_after / created_before appliqués sur la catégorie
-    """
+) -> list:
     exclude = set(exclude_user_ids or [])
 
     with _conn() as conn:
-
-        # ── Cas 1 : liste directe ────────────────────────────────────────────
         if user_ids:
             return [uid for uid in user_ids if uid not in exclude]
 
-        # ── Cas 2 : tous les users ───────────────────────────────────────────
         if category == "all":
             rows = conn.execute(
                 "SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL"
             ).fetchall()
             return [r["telegram_id"] for r in rows if r["telegram_id"] not in exclude]
 
-        # ── Cas 3 : par catégorie avec filtres optionnels ────────────────────
         if category:
             query  = "SELECT id_user FROM categories WHERE name_categorie = ?"
             params = [category]
@@ -103,11 +71,10 @@ def _resolve_user_ids(
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ── PERSONNALISATION ──────────────────────────────────────────────────────────
+# PERSONNALISATION
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _get_prenom(telegram_id: int) -> str:
-    """Retourne le prénom depuis la DB, ou 'l'ami' si absent/trop long."""
     with _conn() as conn:
         row = conn.execute(
             "SELECT name FROM users WHERE telegram_id = ?", (telegram_id,)
@@ -115,96 +82,166 @@ def _get_prenom(telegram_id: int) -> str:
     if row and row["name"]:
         p = row["name"].strip()
         if 1 <= len(p) <= 15:
-
-            print(p)
             return p
     return "l'ami"
 
 
 def _inject_variables(text: str, telegram_id: int, variables: Optional[dict]) -> str:
-    """
-    Injecte dans le texte :
-    - +prenom  → prénom du user
-    - toutes les clés du dict variables (ex: {"+offre": "50%"})
-    """
     if not text:
         return text
-
-    prenom = _get_prenom(telegram_id)
-    text   = text.replace("+prenom", prenom)
-
+    text = text.replace("+prenom", _get_prenom(telegram_id))
     if variables:
         for key, value in variables.items():
             text = text.replace(key, str(value))
-
     return text
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ── ENVOI UNITAIRE ────────────────────────────────────────────════════════════
+# GESTION MÉDIA — résolution fichier local → media Telegram
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def _send_one(bot, user_id: int, fmt: str, text: str, media_url: Optional[str]) -> bool:
-    """
-    Envoie un message à un seul utilisateur selon le format.
-    Retourne True si succès, False si échec.
-    """
+def _is_local_file(media_url: str) -> bool:
+    """Retourne True si media_url est un chemin local (/media/...) et non un file_id Telegram."""
+    if not media_url:
+        return False
+    return media_url.startswith("/") or media_url.startswith("./") or Path(media_url).exists()
 
-    print('yes')
+
+def _open_local_file(media_url: str):
+    """Ouvre un fichier local et retourne le file-like object."""
+    path = Path(media_url.lstrip("/"))
+    if path.exists():
+        return open(path, "rb")
+    # Essai chemin absolu
+    abs_path = Path(media_url)
+    if abs_path.exists():
+        return open(abs_path, "rb")
+    return None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ENVOI UNITAIRE — retourne (success, file_id_telegram)
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def _send_one(
+    bot,
+    user_id:   int,
+    fmt:       str,
+    text:      str,
+    media_url: Optional[str] = None,
+) -> tuple:
+    """
+    Envoie un message à un seul utilisateur.
+
+    Retourne : (success: bool, telegram_file_id: str | None)
+
+    telegram_file_id est retourné après le premier envoi d'un fichier local.
+    Le broadcast_engine le réutilise pour tous les envois suivants (pas de re-upload).
+
+    Formats gérés :
+      text         → send_message
+      image        → send_photo
+      video        → send_video
+      document     → send_document  (PDF, Word, Excel, etc.)
+      image+text   → send_message + send_photo
+      video+text   → send_message + send_video
+      document+text→ send_message + send_document
+    """
+    telegram_file_id = None
+
     try:
+        # ── Résoudre le média : fichier local ou file_id Telegram ────────────
+        media = None
+        if media_url:
+            if _is_local_file(media_url):
+                media = _open_local_file(media_url)
+                if media is None:
+                    logger.warning(f"Fichier local introuvable : {media_url}")
+                    # Fallback : envoyer le texte seul
+                    if text:
+                        await bot.send_message(chat_id=user_id, text=text)
+                    return True, None
+            else:
+                # file_id Telegram ou URL publique
+                media = media_url
+
+        # ── Envoi selon le format ────────────────────────────────────────────
         if fmt == "text":
-           await bot.send_message(chat_id=user_id, text=text)
+            await bot.send_message(chat_id=user_id, text=text)
 
         elif fmt == "image":
-            await bot.send_photo(chat_id=user_id, photo=media_url)
+            msg = await bot.send_photo(chat_id=user_id, photo=media)
+            # Récupérer le file_id Telegram pour les envois suivants
+            if hasattr(media, 'read'):  # c'était un fichier local
+                telegram_file_id = msg.photo[-1].file_id
 
         elif fmt == "video":
-            await bot.send_video(chat_id=user_id, video=media_url)
+            msg = await bot.send_video(chat_id=user_id, video=media)
+            if hasattr(media, 'read'):
+                telegram_file_id = msg.video.file_id
+
+        elif fmt == "document":
+            msg = await bot.send_document(chat_id=user_id, document=media)
+            if hasattr(media, 'read'):
+                telegram_file_id = msg.document.file_id
 
         elif fmt == "image+text":
             await bot.send_message(chat_id=user_id, text=text)
-            await bot.send_photo(chat_id=user_id, photo=media_url)
+            msg = await bot.send_photo(chat_id=user_id, photo=media)
+            if hasattr(media, 'read'):
+                telegram_file_id = msg.photo[-1].file_id
 
         elif fmt == "video+text":
             await bot.send_message(chat_id=user_id, text=text)
-            await bot.send_video(chat_id=user_id, video=media_url)
+            msg = await bot.send_video(chat_id=user_id, video=media)
+            if hasattr(media, 'read'):
+                telegram_file_id = msg.video.file_id
+
+        elif fmt == "document+text":
+            await bot.send_message(chat_id=user_id, text=text)
+            msg = await bot.send_document(chat_id=user_id, document=media)
+            if hasattr(media, 'read'):
+                telegram_file_id = msg.document.file_id
 
         else:
-            # Format inconnu → texte seul par sécurité
-           await bot.send_message(chat_id=user_id, text=text)
+            # Format inconnu → texte seul
+            await bot.send_message(chat_id=user_id, text=text)
 
-        return True
+        # Fermer le fichier si c'était un objet local
+        if hasattr(media, 'read'):
+            media.close()
+
+        return True, telegram_file_id
 
     except Exception as e:
         logger.warning(f"Échec envoi uid={user_id} : {e}")
-        return False
+        if hasattr(media, 'read'):
+            try:
+                media.close()
+            except Exception:
+                pass
+        return False, None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ── RAPPORT & WEBHOOK ─────────────────────────────────────────────────────────
+# RAPPORT & WEBHOOK
 # ══════════════════════════════════════════════════════════════════════════════
-
 
 def _save_report(report: dict, category: str, fmt: str, message: str):
     with sqlite3.connect(DB_PATH) as conn:
         conn.execute("""
-            INSERT INTO broadcast_history 
+            INSERT INTO broadcast_history
                 (tag, category, format, message, total, sent, errors, started_at, finished_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            report["tag"],
-            category,
-            fmt,
-            message,
-            report["total"],
-            report["sent"],
-            report["errors"],
-            report["started_at"],
-            report["finished_at"]
+            report["tag"], category, fmt, message,
+            report["total"], report["sent"], report["errors"],
+            report["started_at"], report["finished_at"]
         ))
         conn.commit()
+
+
 async def _notify_admin(bot, admin_id: int, message: str):
-    """Envoie un message de suivi à l'admin Telegram."""
     try:
         await bot.send_message(chat_id=admin_id, text=message)
     except Exception as e:
@@ -212,57 +249,33 @@ async def _notify_admin(bot, admin_id: int, message: str):
 
 
 async def _call_webhook(callback_url: str, report: dict):
-    """Appelle le webhook avec le rapport final en JSON."""
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(callback_url, json=report)
-        logger.info(f"Webhook appelé : {callback_url}")
     except Exception as e:
         logger.error(f"Webhook échoué ({callback_url}) : {e}")
 
 
 def _limit_text(text: str, max_length: int = 4096) -> str:
-    """Coupe le texte à max_length caractères si nécessaire."""
     if len(text) > max_length:
         return text[:max_length - 1] + "…"
     return text
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ── MOTEUR PRINCIPAL ──────────────────────────────────────────────────────────
+# MOTEUR PRINCIPAL
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def broadcast_engine(bot, payload: dict) -> dict:
     """
-    Moteur central d'envoi de messages de masse.
+    Moteur central d'envoi de messages.
 
-    Paramètres (via payload dict) :
-        message          : str             — texte du message (supporte +prenom et variables)
-        format           : str             — "text"|"image"|"video"|"image+text"|"video+text"
-        media_url        : str | None      — file_id Telegram ou chemin local
-        category         : str | None      — nom de la catégorie en DB (ou "all")
-        user_ids         : list | None     — liste directe d'IDs Telegram
-        scheduled_at     : str | None      — "YYYY-MM-DD HH:MM:SS" ou None pour envoi immédiat
-        delay            : float           — délai en secondes entre chaque envoi (défaut 0.1)
-        retry            : bool            — retenter une fois en cas d'échec (défaut True)
-        exclude_user_ids : list | None     — IDs à exclure de l'envoi
-        variables        : dict | None     — variables à injecter ex: {"+offre": "50%"}
-        filters          : dict | None     — {"created_after": "...", "created_before": "..."}
-        tag              : str | None      — label de la campagne pour le suivi
-        callback_url     : str | None      — URL webhook appelée à la fin de l'envoi
-
-    Retourne un dict rapport :
-        {
-            "tag":      "promo_avril",
-            "total":    2000,
-            "sent":     1980,
-            "errors":   20,
-            "started_at":  "...",
-            "finished_at": "..."
-        }
+    Optimisation médias :
+      - Si media_url est un fichier local → upload au premier envoi
+      - file_id Telegram récupéré → réutilisé pour tous les envois suivants
+      - Pas de re-upload pour chaque destinataire
     """
-
-    # ── 1. Extraction du payload ──────────────────────────────────────────────
+    # ── 1. Extraction payload ─────────────────────────────────────────────────
     message          = _limit_text(payload.get("message", ""))
     fmt              = payload.get("format", "text")
     media_url        = payload.get("media_url")
@@ -277,41 +290,30 @@ async def broadcast_engine(bot, payload: dict) -> dict:
     tag              = payload.get("tag", "")
     callback_url     = payload.get("callback_url")
 
-    # ── 2. Validation de base ─────────────────────────────────────────────────
+    # ── 2. Validation ─────────────────────────────────────────────────────────
     if not message and fmt == "text":
-        logger.error("broadcast_engine : message vide pour format texte.")
         return {"error": "message vide"}
 
-    if fmt in {"image", "video", "image+text", "video+text"} and not media_url:
-        logger.error("broadcast_engine : media_url manquant pour format média.")
+    if fmt in {"image", "video", "document", "image+text", "video+text", "document+text"} and not media_url:
         return {"error": "media_url manquant"}
 
     if not category and not user_ids:
-        logger.error("broadcast_engine : ni category ni user_ids fournis.")
         return {"error": "aucun destinataire défini"}
 
-    # ── 3. Envoi différé si scheduled_at ─────────────────────────────────────
+    # ── 3. Envoi différé ──────────────────────────────────────────────────────
     if scheduled_at:
         try:
             target_dt = datetime.strptime(scheduled_at, "%Y-%m-%d %H:%M:%S")
-            now       = datetime.now()
-            wait_sec  = (target_dt - now).total_seconds()
-            print(wait_sec)
-
+            wait_sec  = (target_dt - datetime.now()).total_seconds()
             if wait_sec > 0:
                 tag_label = f"[{tag}] " if tag else ""
-                await _notify_admin(
-                    bot, ADMIN_ID,
-                    f"⏳ {tag_label}Envoi planifié dans {round(wait_sec/60, 1)} min "
-                    f"({scheduled_at})"
-                )
+                await _notify_admin(bot, ADMIN_ID,
+                    f"⏳ {tag_label}Envoi planifié dans {round(wait_sec/60, 1)} min ({scheduled_at})")
                 await asyncio.sleep(wait_sec)
-
         except ValueError:
-            logger.error(f"broadcast_engine : format scheduled_at invalide → {scheduled_at}")
             return {"error": "format scheduled_at invalide, utilise YYYY-MM-DD HH:MM:SS"}
 
-    # ── 4. Résolution des destinataires ───────────────────────────────────────
+    # ── 4. Résolution destinataires ───────────────────────────────────────────
     final_ids = _resolve_user_ids(category, user_ids, exclude_user_ids, filters)
     total     = len(final_ids)
 
@@ -319,39 +321,44 @@ async def broadcast_engine(bot, payload: dict) -> dict:
         await _notify_admin(bot, ADMIN_ID, "❌ Aucun destinataire trouvé. Diffusion annulée.")
         return {"error": "aucun destinataire trouvé", "tag": tag}
 
-    # ── 5. Rapport de démarrage ───────────────────────────────────────────────
+    # ── 5. Démarrage ──────────────────────────────────────────────────────────
     started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    est_min    = round(total * delay / 60, 2)
     tag_label  = f"[{tag}] " if tag else ""
+    est_min    = round(total * delay / 60, 2)
 
-    await _notify_admin(
-        bot, ADMIN_ID,
+    await _notify_admin(bot, ADMIN_ID,
         f"📤 {tag_label}Diffusion démarrée\n"
-        f"Destinataires : {total}\n"
-        f"Format : {fmt}\n"
-        f"Durée estimée : {est_min} min"
-    )
-
-    print(f"📤 {tag_label}Diffusion démarrée\n")
+        f"Destinataires : {total}\nFormat : {fmt}\nDurée estimée : {est_min} min")
 
     # ── 6. Boucle d'envoi ─────────────────────────────────────────────────────
-    sent   = 0
-    errors = 0
+    sent             = 0
+    errors           = 0
+    cached_file_id   = None   # file_id Telegram récupéré après le 1er envoi
 
     for idx, user_id in enumerate(final_ids, start=1):
 
-        # Injection des variables personnalisées pour ce user
         personalized_text = _inject_variables(message, user_id, variables)
 
-        print(personalized_text)
+        # Après le 1er envoi d'un fichier local, utiliser le file_id mis en cache
+        effective_media = cached_file_id if cached_file_id else media_url
 
-        # Tentative d'envoi
-        success = await _send_one(bot, user_id, fmt, personalized_text, media_url)
+        success, new_file_id = await _send_one(
+            bot, user_id, fmt, personalized_text, effective_media
+        )
 
-        # Retry si échec et retry activé
+        # Mettre en cache le file_id Telegram récupéré au 1er envoi
+        if new_file_id and not cached_file_id:
+            cached_file_id = new_file_id
+            logger.info(f"[{tag}] file_id Telegram mis en cache : {cached_file_id}")
+
+        # Retry si échec
         if not success and retry:
             await asyncio.sleep(1)
-            success = await _send_one(bot, user_id, fmt, personalized_text, media_url)
+            success, new_file_id = await _send_one(
+                bot, user_id, fmt, personalized_text, effective_media
+            )
+            if new_file_id and not cached_file_id:
+                cached_file_id = new_file_id
 
         if success:
             sent += 1
@@ -360,13 +367,11 @@ async def broadcast_engine(bot, payload: dict) -> dict:
 
         logger.debug(f"[{tag}] {idx}/{total} — uid={user_id} — {'✓' if success else '✗'}")
 
-        # Notifications de progression (1/3, 2/3, fin)
+        # Notifications progression
         if idx == total // 3:
             await _notify_admin(bot, ADMIN_ID, f"📊 {tag_label}1/3 envoyé ({sent}/{total})")
         elif idx == (2 * total) // 3:
             await _notify_admin(bot, ADMIN_ID, f"📊 {tag_label}2/3 envoyé ({sent}/{total})")
-        elif idx == total:
-            pass  # rapport final juste après la boucle
 
         await asyncio.sleep(delay)
 
@@ -382,91 +387,13 @@ async def broadcast_engine(bot, payload: dict) -> dict:
         "finished_at": finished_at,
     }
 
-    await _notify_admin(
-        bot, ADMIN_ID,
+    await _notify_admin(bot, ADMIN_ID,
         f"✅ {tag_label}Diffusion terminée\n"
-        f"Envoyés  : {sent}/{total}\n"
-        f"Erreurs  : {errors}\n"
-        f"Durée    : {started_at} → {finished_at}"
-    )
+        f"Envoyés : {sent}/{total}\nErreurs : {errors}\n"
+        f"Durée : {started_at} → {finished_at}")
 
-    # ── 8. Webhook callback ───────────────────────────────────────────────────
     if callback_url:
         await _call_webhook(callback_url, report)
 
     _save_report(report, category, fmt, message)
     return report
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# ── EXEMPLES D'UTILISATION ────────────────────────────────────────────────────
-# ══════════════════════════════════════════════════════════════════════════════
-
-"""
-# ── Depuis le ConversationHandler Telegram ────────────────────────────────────
-
-async def get_text(update, context):
-    context.user_data["text_content"] = update.message.text
-
-    payload = {
-        "message":      context.user_data["text_content"],
-        "format":       context.user_data["format"],
-        "media_url":    context.user_data.get("media_file_id"),
-        "category":     context.user_data["who"],
-        "user_ids":     None,
-        "scheduled_at": None,
-        "delay":        0.1,
-        "retry":        True,
-        "tag":          "envoi_manuel",
-        "callback_url": None,
-    }
-
-    asyncio.create_task(broadcast_engine(context.bot, payload))
-    await update.message.reply_text("✅ Diffusion lancée !")
-    return ConversationHandler.END
-
-
-# ── Depuis FastAPI ─────────────────────────────────────────────────────────────
-
-from fastapi import FastAPI
-from broadcast_engine import broadcast_engine
-
-app = FastAPI()
-
-@app.post("/broadcast")
-async def api_broadcast(payload: dict):
-    report = await broadcast_engine(bot, payload)
-    return report
-
-
-# ── Envoi planifié ─────────────────────────────────────────────────────────────
-
-payload = {
-    "message":      "Bonjour +prenom, ton accès expire bientôt !",
-    "format":       "text",
-    "category":     "challenge10000usd",
-    "scheduled_at": "2026-04-21 09:00:00",
-    "tag":          "rappel_expiration",
-    "retry":        True,
-    "delay":        0.15,
-}
-asyncio.create_task(broadcast_engine(bot, payload))
-
-
-# ── Envoi avec variables et exclusions ────────────────────────────────────────
-
-payload = {
-    "message":          "Bonjour +prenom ! Profite de +offre avec le code +code",
-    "format":           "image+text",
-    "media_url":        "AgACAgIAAxk...",   # file_id Telegram
-    "category":         "challenge10000usd",
-    "exclude_user_ids": [123456, 789012],
-    "variables":        {"+offre": "50% de réduction", "+code": "PROMO50"},
-    "filters":          {"created_after": "2025-01-01"},
-    "delay":            0.2,
-    "retry":            True,
-    "tag":              "promo_avril",
-    "callback_url":     "https://monsite.com/webhook/broadcast",
-}
-asyncio.create_task(broadcast_engine(bot, payload))
-"""

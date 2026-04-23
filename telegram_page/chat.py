@@ -11,9 +11,18 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 DB_PATH    = "preinscriptions.db"
-BOT_SECRET = os.getenv("BOT_SECRET", "changeme")
-BOT_URL    = os.getenv("BOT_URL",    "http://localhost:8001")
 MEDIA_DIR  = Path("media")
+
+# Instance du bot Telegram — injectée depuis api.py via set_bot()
+_bot = None
+
+def set_bot(bot_instance):
+    """Appelé depuis api.py pour injecter l'instance bot au démarrage."""
+    global _bot
+    _bot = bot_instance
+
+# Import _send_one depuis broadcast_engine pour réutiliser la logique d'envoi
+from telegram_page.broadcast_engine import _send_one
 
 PLANS = {
     "mensuel":     30,
@@ -80,8 +89,7 @@ def init_chat_tables():
                 archived         INTEGER  DEFAULT 0,
                 note_admin       TEXT     DEFAULT NULL,
                 created_at       TEXT     DEFAULT (datetime('now')),
-                updated_at       TEXT     DEFAULT (datetime('now')),
-                FOREIGN KEY (user_id) REFERENCES users(telegram_id) ON DELETE CASCADE
+                updated_at       TEXT     DEFAULT (datetime('now'))
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_conv_user     ON conversations(user_id)")
@@ -101,7 +109,6 @@ def init_chat_tables():
                 note          TEXT     DEFAULT NULL,
                 created_at    TEXT     DEFAULT (datetime('now')),
                 updated_at    TEXT     DEFAULT (datetime('now')),
-                FOREIGN KEY (user_id) REFERENCES users(telegram_id) ON DELETE CASCADE
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sub_user    ON subscriptions(user_id)")
@@ -715,58 +722,44 @@ async def send_message(payload: dict) -> dict:
     finally:
         conn.close()
 
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=30) as client:
+    # Envoi Telegram via _send_one du broadcast engine
+    if _bot:
+        try:
+            # Déterminer le format pour _send_one
+            # Si média présent : lire le fichier et utiliser open()
+            # Si texte seul : format "text"
+            fmt      = "text"
+            tg_media = None
 
-            if media_url and message_type != "text":
-                # Lire les bytes depuis le disque local
-                # media_url est de la forme "/media/uuid.jpg"
+            if media_url and message_type not in ("text", "TEXT"):
                 file_path = Path(media_url.lstrip("/"))
 
                 if file_path.exists():
-                    file_bytes = file_path.read_bytes()
-                    filename   = file_path.name
+                    # Ouvrir le fichier pour l'envoyer — Telegram accepte un file-like object
+                    if message_type == "image":
+                        fmt      = "image+text" if message_text else "image"
+                        tg_media = open(file_path, "rb")
+                    elif message_type == "video":
+                        fmt      = "video+text" if message_text else "video"
+                        tg_media = open(file_path, "rb")
+                    else:
+                        # PDF, Word, Excel, etc. → send_document
+                        fmt      = "document"
+                        tg_media = open(file_path, "rb")
 
-                    # Envoyer en multipart — le bot lit les bytes directement
-                    # et choisit send_photo / send_video / send_document
-                    await client.post(
-                        f"{BOT_URL}/send",
-                        data={
-                            "user_id":      str(user_id),
-                            "message_text": message_text or "",
-                            "message_type": message_type,
-                        },
-                        files={
-                            "media_file": (filename, file_bytes),
-                        },
-                        headers={"X-Bot-Secret": BOT_SECRET}
-                    )
-                else:
-                    # Fichier introuvable sur disque — envoyer le texte seul
-                    await client.post(
-                        f"{BOT_URL}/send",
-                        json={
-                            "user_id":      user_id,
-                            "message_text": message_text,
-                            "message_type": "text",
-                        },
-                        headers={"X-Bot-Secret": BOT_SECRET}
-                    )
-            else:
-                # Message texte simple — pas de fichier
-                await client.post(
-                    f"{BOT_URL}/send",
-                    json={
-                        "user_id":      user_id,
-                        "message_text": message_text,
-                        "message_type": "text",
-                    },
-                    headers={"X-Bot-Secret": BOT_SECRET}
-                )
+            await _send_one(
+                bot      = _bot,
+                user_id  = user_id,
+                fmt      = fmt,
+                text     = message_text or "",
+                media_url = tg_media,
+            )
 
-    except Exception:
-        pass
+            if tg_media:
+                tg_media.close()
+
+        except Exception as e:
+            print(f"⚠️ Erreur envoi Telegram chat : {e}")
 
     return message
 

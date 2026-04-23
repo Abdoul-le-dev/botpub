@@ -32,13 +32,14 @@ from telegram_page.categorie import (
 from telegram_page.broadcast_engine import broadcast_engine
 
 from telegram_page.chat_route import router as chat_router
-from telegram_page.chat import init_chat_tables
+from telegram_page.chat import init_chat_tables, set_bot 
 
 from contextlib import asynccontextmanager
  
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_chat_tables() 
+    set_bot(bot)
     #init_broadcast_history()
     #init_trading_tables()
     #migrate_categories_to_meta()      # crée conversations, subscriptions, migre messages
@@ -64,7 +65,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.include_router(chat_router)
+
 app.mount("/media", StaticFiles(directory="media"), name="media")
 
 
