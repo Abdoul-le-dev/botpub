@@ -394,9 +394,9 @@ async def get_conversations(filters: dict = None) -> dict:
             where_clauses.append("c.is_blocked = 1")
 
         if search:
-            where_clauses.append("(u.name LIKE ? OR u.username LIKE ?)")
+            where_clauses.append("u.name LIKE ?")
             term    = f"%{search}%"
-            params += [term, term]
+            params += [term]
 
         where_sql = " AND ".join(where_clauses)
 
@@ -411,7 +411,6 @@ async def get_conversations(filters: dict = None) -> dict:
                 c.pinned,
                 c.note_admin,
                 u.name,
-                u.username,
                 m.message_text  AS last_message,
                 m.direction     AS last_direction,
                 m.answered_by   AS last_answered_by,
@@ -461,7 +460,6 @@ async def get_conversation(user_id: int) -> dict | None:
             SELECT
                 c.*,
                 u.name,
-                u.username,
                 GROUP_CONCAT(cat.name_categorie) AS categories_raw
             FROM conversations c
             JOIN users u ON u.telegram_id = c.user_id
@@ -583,7 +581,6 @@ async def search_conversations(query: str) -> list:
             SELECT DISTINCT
                 c.user_id,
                 u.name,
-                u.username,
                 c.last_activity,
                 c.unread_count,
                 c.ia_enabled,
@@ -591,8 +588,7 @@ async def search_conversations(query: str) -> list:
             FROM conversations c
             JOIN users u ON u.telegram_id = c.user_id
             LEFT JOIN messages m ON m.user_id = c.user_id
-            WHERE u.name       LIKE ?
-               OR u.username     LIKE ?
+            WHERE u.name LIKE ?
                OR m.message_text LIKE ?
             ORDER BY c.last_activity DESC
             LIMIT 20
@@ -1104,7 +1100,6 @@ async def get_chat_profile(user_id: int) -> dict | None:
             SELECT
                 u.telegram_id,
                 u.name,
-                u.username,
                 u.created_at                AS registered_at,
                 c.ia_enabled,
                 c.is_blocked,
