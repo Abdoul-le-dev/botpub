@@ -394,7 +394,7 @@ async def get_conversations(filters: dict = None) -> dict:
             where_clauses.append("c.is_blocked = 1")
 
         if search:
-            where_clauses.append("(u.prenom LIKE ? OR u.username LIKE ?)")
+            where_clauses.append("(u.name LIKE ? OR u.username LIKE ?)")
             term    = f"%{search}%"
             params += [term, term]
 
@@ -410,7 +410,7 @@ async def get_conversations(filters: dict = None) -> dict:
                 c.last_activity,
                 c.pinned,
                 c.note_admin,
-                u.prenom,
+                u.name,
                 u.username,
                 m.message_text  AS last_message,
                 m.direction     AS last_direction,
@@ -460,7 +460,7 @@ async def get_conversation(user_id: int) -> dict | None:
         row = conn.execute("""
             SELECT
                 c.*,
-                u.prenom,
+                u.name,
                 u.username,
                 GROUP_CONCAT(cat.name_categorie) AS categories_raw
             FROM conversations c
@@ -582,7 +582,7 @@ async def search_conversations(query: str) -> list:
         rows = conn.execute("""
             SELECT DISTINCT
                 c.user_id,
-                u.prenom,
+                u.name,
                 u.username,
                 c.last_activity,
                 c.unread_count,
@@ -591,7 +591,7 @@ async def search_conversations(query: str) -> list:
             FROM conversations c
             JOIN users u ON u.telegram_id = c.user_id
             LEFT JOIN messages m ON m.user_id = c.user_id
-            WHERE u.prenom       LIKE ?
+            WHERE u.name       LIKE ?
                OR u.username     LIKE ?
                OR m.message_text LIKE ?
             ORDER BY c.last_activity DESC
@@ -1103,7 +1103,7 @@ async def get_chat_profile(user_id: int) -> dict | None:
         row = conn.execute("""
             SELECT
                 u.telegram_id,
-                u.prenom,
+                u.name,
                 u.username,
                 u.created_at                AS registered_at,
                 c.ia_enabled,
