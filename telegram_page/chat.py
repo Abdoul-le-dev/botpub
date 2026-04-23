@@ -114,6 +114,26 @@ def init_chat_tables():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_msg_type    ON messages(message_type)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_msg_bcast   ON messages(broadcast_id)")
 
+        # ── Trigger : mise à jour automatique de conversations ───────────
+        # À chaque INSERT dans messages, conversations est mis à jour
+        # sans aucune modification du bot Python.
+        conn.execute("""
+            CREATE TRIGGER IF NOT EXISTS trg_upsert_conv
+            AFTER INSERT ON messages
+            BEGIN
+                INSERT INTO conversations (user_id, last_message_id, last_activity, unread_count, updated_at)
+                VALUES (NEW.user_id, NEW.id, NEW.created_at, 1, NEW.created_at)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    last_message_id = NEW.id,
+                    last_activity   = NEW.created_at,
+                    unread_count    = CASE
+                                        WHEN NEW.direction = 'inbound' THEN unread_count + 1
+                                        ELSE unread_count
+                                      END,
+                    updated_at      = NEW.created_at;
+            END
+        """)
+
         conn.commit()
     finally:
         conn.close()
