@@ -28,14 +28,8 @@ USER,PWD = range(2)
 #from mail_fonction import save_mail_id,save_mail_pwd, save_mail
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
-import sqlite3
-import pandas as pd
-import random
+
 from testing import user_list_in_categorie, user_list_in_categories,user_list_in_categorie_2, user_list_in_categorie_1, choose_format,handle_format_choice,handle_who, get_media, get_text,user_list_in_categorie
-import string
-from message_de_masse import broadcast_message
-from stats import last_message
-from telegram import Update
 
 from challenge1000usd import check_user_doublon, delete_user_doublon
 from qcmsemainaire import start_exam,start_exams, verification_email, receive_answer_exam, try_mail
@@ -48,11 +42,6 @@ from telegram.ext import filters
 
 
 import asyncio
-
-import time
-
-import json
-
 from fonction_rapide import qr_code_generate
 
 from start import button_callback_waiting_1, button_callback_waiting_2
@@ -66,6 +55,9 @@ from constance import QUESTION, ANSWER, EXPLANATION, CATEGORIE,  NOM_CATEGORIE, 
 from exercice import start_add_exam,get_ars_1 , get_ars_2, get_ars_3, recevoir_categorie,start_rapport,start_add_exercice, get_question, get_answer, get_explanation, get_categorie, cmd_verify_categorie,start_exercice,receive_answer,start_add_categorie, get_nom_categorie
 
 from seminaire import get_level_welcome,get_why_welcome,get_numero_whatsapp_welcome,get_mail_welcome,get_name_welcome,last_step_welcome
+
+#new 
+from message.save_message import log_unhandled_message
 type =""
 load_dotenv()
 
@@ -73,6 +65,7 @@ ADMIN_ID = 571718066  # Remplace par ton ID Telegram
 
 CANAL_B_ID = -1002705005402
 ASK_BROADCAST = 99
+token = os.getenv("token")
 
 
 CHOOSE_TYPES =range(1)
@@ -223,38 +216,8 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
 async def user_imformation(update: Update, Context: ContextTypes.DEFAULT_TYPE):
     user = update.message.from_user
 
-async def log_unhandled_message(update: Update, Context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    msg = update.message
 
-    print('message');
 
-    if not user:
-        return
-    user_id = user.id
-
-    if not msg:
-        print("⚠️ Mise à jour sans message TEXTe. Ignorée.")
-        return
-    message_id = msg.message_id
-    message_text = msg.text or "<non-TEXT>"
-    if msg.text:
-        message_type = "TEXT"
-    elif msg.photo:
-        message_type = "photo"
-    elif msg.document:
-        message_type = "document"
-    elif msg.video:
-        message_type = "video"
-    elif msg.audio:
-        message_type = "audio"
-    else:
-        message_type = "other"
-    
-
-    await save_message(user_id, message_id, message_text, None, message_type)
-
-token = os.getenv("token")
 
 async def cancel(update: Update, Context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("❌ Annulé.")
@@ -633,11 +596,6 @@ if __name__ == '__main__':
 
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, log_unhandled_message))
 
-    
-
-    
-
-    
 
     #app.add_handler(conv_handler_mail_user)
     threading.Thread(target=scheduler_thread, daemon=True).start()

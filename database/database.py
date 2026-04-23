@@ -250,20 +250,44 @@ def user_exists(telegram_id):
 
 db_lock = asyncio.Lock()
 
-async def save_message(user_id, message_id, message_text, answer=None, message_type="text"):
-    async with db_lock:  # empêche l'accès concurrent
-        conn = sqlite3.connect('preinscriptions.db', timeout=30)  # attend jusqu'à 30s si verrouillé
-        conn.execute("PRAGMA journal_mode=WAL;")  # Active Write-Ahead Logging
-        cursor = conn.cursor()
-        
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        cursor.execute('''
-            INSERT INTO messages (user_id, message_id, message_text, answer, message_type, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (user_id, message_id, message_text, answer, message_type, now))
-        
+def save_message(
+    user_id:      int,
+    message_id:   int,
+    message_text: str  = None,
+    answer:       str  = None,
+    message_type: str  = "text",
+    media_url:    str  = None,
+    direction:    str  = "inbound",
+    answered_by:  str  = None,
+):
+    """
+    Insère un message dans la table messages.
+    Le trigger trg_upsert_conv met à jour conversations automatiquement.
+    """
+    conn = get_conn()
+    try:
+        conn.execute("""
+            INSERT INTO messages
+                (user_id, message_id, message_text, answer,
+                 message_type, media_url, direction, answered_by,
+                 status, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'received', ?)
+        """, (
+            user_id,
+            message_id,
+            message_text,
+            answer,
+            message_type,
+            media_url,
+            direction,
+            answered_by,
+            datetime.now().isoformat(),
+        ))
         conn.commit()
+    finally:
         conn.close()
+ 
+ 
 
 async def get_data():
     conn = sqlite3.connect('preinscriptions.db')
