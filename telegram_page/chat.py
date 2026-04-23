@@ -108,7 +108,7 @@ def init_chat_tables():
                 status        TEXT     DEFAULT 'active',
                 note          TEXT     DEFAULT NULL,
                 created_at    TEXT     DEFAULT (datetime('now')),
-                updated_at    TEXT     DEFAULT (datetime('now')),
+                updated_at    TEXT     DEFAULT (datetime('now'))
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_sub_user    ON subscriptions(user_id)")
