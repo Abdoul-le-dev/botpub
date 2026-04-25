@@ -2,7 +2,7 @@
 # Même pattern que routes_categories.py
 # À intégrer dans main.py : app.include_router(chat_router)
 
-import io
+import io, os
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
 from typing import Optional
@@ -203,6 +203,12 @@ async def api_get_messages(
     })
 
 
+def get_extension(media_url):
+    if not media_url:
+        return ""
+    ext = os.path.splitext(media_url)[1]
+    return ext if ext else ""
+
 @router.post("/conversations/{user_id}/messages")
 async def api_send_message(user_id: int, payload: dict):
     """
@@ -215,9 +221,16 @@ async def api_send_message(user_id: int, payload: dict):
     }
     Le fichier est lu depuis le disque et envoyé en bytes au bot Python.
     """
+    
+
     if not payload.get("message_type"):
         raise HTTPException(status_code=400, detail="message_type requis")
     payload["user_id"] = user_id
+
+    ext = get_extension(payload.get("media_url"))
+
+    if ext != "":
+        payload["media_url"] = ext
 
     print(payload)
     return await send_message(payload)

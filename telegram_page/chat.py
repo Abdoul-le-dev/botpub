@@ -122,8 +122,6 @@ def init_chat_tables():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_msg_bcast   ON messages(broadcast_id)")
 
         # ── Trigger : mise à jour automatique de conversations ───────────
-        # À chaque INSERT dans messages, conversations est mis à jour
-        # sans aucune modification du bot Python.
         conn.execute("""
             CREATE TRIGGER IF NOT EXISTS trg_upsert_conv
             AFTER INSERT ON messages
@@ -151,10 +149,6 @@ def init_chat_tables():
 # ════════════════════════════════════════════════════════════════════════
 
 def _upsert_conversation(conn, user_id: int, new_message_id: int = None, increment_unread: bool = False):
-    """
-    Crée ou met à jour la ligne conversations pour un membre.
-    Appelé automatiquement à chaque envoi / réception de message.
-    """
     now      = _now()
     existing = conn.execute(
         "SELECT id FROM conversations WHERE user_id = ?", (user_id,)
@@ -187,10 +181,6 @@ def _upsert_conversation(conn, user_id: int, new_message_id: int = None, increme
 
 
 def _get_latest_expiry(conn, user_id: int):
-    """
-    Retourne la date d'expiration la plus lointaine parmi les abonnements
-    actifs du membre. Retourne None si aucun abonnement actif.
-    """
     row = conn.execute("""
         SELECT MAX(expires_at) AS max_expiry
         FROM subscriptions
@@ -203,12 +193,6 @@ def _get_latest_expiry(conn, user_id: int):
 
 
 def _compute_subscription_dates(conn, user_id: int, duration_days: int) -> tuple:
-    """
-    Calcule started_at et expires_at pour un nouvel abonnement.
-    Si le membre a déjà un abonnement actif, repart de la fin du dernier.
-    Sinon repart d'aujourd'hui.
-    Garantit que les durées s'additionnent sans interruption.
-    """
     latest = _get_latest_expiry(conn, user_id)
     base   = latest if (latest and latest > datetime.now()) else datetime.now()
     started_at = base.isoformat()
@@ -217,9 +201,6 @@ def _compute_subscription_dates(conn, user_id: int, duration_days: int) -> tuple
 
 
 def _enrich_subscription(row: dict) -> dict:
-    """
-    Ajoute days_remaining et is_active calculés à la volée sur chaque abonnement.
-    """
     now = datetime.now()
     try:
         expires            = _parse_dt(row["expires_at"])
@@ -237,14 +218,6 @@ def _enrich_subscription(row: dict) -> dict:
 # ════════════════════════════════════════════════════════════════════════
 
 async def create_subscription(payload: dict) -> dict:
-    """
-    Crée un abonnement pour un membre.
-    Les durées s'additionnent : si un abonnement actif existe,
-    le nouveau repart de sa date d'expiration.
-
-    payload: { user_id, plan, note? }
-    plan: mensuel | trimestriel | semestriel | annuel
-    """
     user_id = payload["user_id"]
     plan    = payload["plan"]
 
@@ -275,10 +248,6 @@ async def create_subscription(payload: dict) -> dict:
 
 
 async def get_subscriptions(user_id: int) -> list:
-    """
-    Retourne tous les abonnements d'un membre (actifs + historique),
-    du plus récent au plus ancien, avec jours restants calculés.
-    """
     conn = get_conn()
     try:
         rows = conn.execute("""
@@ -293,10 +262,6 @@ async def get_subscriptions(user_id: int) -> list:
 
 
 async def get_subscription_summary(user_id: int) -> dict:
-    """
-    Résumé de la situation abonnement d'un membre.
-    Utilisé dans le panneau profil du chat.
-    """
     conn = get_conn()
     try:
         rows = conn.execute("""
@@ -329,7 +294,6 @@ async def get_subscription_summary(user_id: int) -> dict:
 
 
 async def cancel_subscription(sub_id: int) -> dict:
-    """Annule un abonnement (status → cancelled)."""
     conn = get_conn()
     try:
         row = conn.execute(
@@ -352,10 +316,6 @@ async def cancel_subscription(sub_id: int) -> dict:
 
 
 async def expire_subscriptions() -> dict:
-    """
-    Passe les abonnements expirés à status='expired'.
-    À appeler via cron quotidien.
-    """
     conn = get_conn()
     try:
         cur = conn.execute("""
@@ -372,7 +332,6 @@ async def expire_subscriptions() -> dict:
 
 
 async def get_subscriptions_stats() -> dict:
-    """Stats globales sur les abonnements — pour le dashboard."""
     conn = get_conn()
     try:
         row = conn.execute("""
@@ -397,11 +356,6 @@ async def get_subscriptions_stats() -> dict:
 # ════════════════════════════════════════════════════════════════════════
 
 async def get_conversations(filters: dict = None) -> dict:
-    """
-    Liste paginée des conversations avec preview du dernier message.
-    filters: { tab, search, limit, offset }
-    tab: all | unread | ia | blocked
-    """
     f      = filters or {}
     tab    = f.get("tab",    "all")
     search = f.get("search", "").strip()
@@ -480,7 +434,6 @@ async def get_conversations(filters: dict = None) -> dict:
 
 
 async def get_conversation(user_id: int) -> dict | None:
-    """État complet d'une seule conversation (header du chat)."""
     conn = get_conn()
     try:
         row = conn.execute("""
@@ -508,7 +461,6 @@ async def get_conversation(user_id: int) -> dict | None:
 
 
 async def get_conversation_stats() -> dict:
-    """Stats globales pour le header de la page Chat Direct."""
     conn = get_conn()
     try:
         row = conn.execute("""
@@ -541,7 +493,6 @@ async def set_ia_enabled(user_id: int, enabled: bool) -> dict:
 
 
 async def set_conversation_blocked(user_id: int, blocked: bool) -> dict:
-    """Synchronisé depuis le bot Python via webhook."""
     conn = get_conn()
     try:
         _upsert_conversation(conn, user_id)
@@ -557,7 +508,6 @@ async def set_conversation_blocked(user_id: int, blocked: bool) -> dict:
 
 
 async def mark_as_read(user_id: int) -> dict:
-    """Remet unread_count à 0 quand l'admin ouvre la conversation."""
     conn = get_conn()
     try:
         conn.execute("""
@@ -600,7 +550,6 @@ async def set_admin_note(user_id: int, note: str) -> dict:
 
 
 async def search_conversations(query: str) -> list:
-    """Recherche fulltext sur nom, username et contenu des messages."""
     conn = get_conn()
     term = f"%{query}%"
     try:
@@ -619,7 +568,7 @@ async def search_conversations(query: str) -> list:
                OR m.message_text LIKE ?
             ORDER BY c.last_activity DESC
             LIMIT 20
-        """, (term, term, term)).fetchall()
+        """, (term, term)).fetchall()
     finally:
         conn.close()
     return [dict(r) for r in rows]
@@ -630,10 +579,6 @@ async def search_conversations(query: str) -> list:
 # ════════════════════════════════════════════════════════════════════════
 
 async def get_messages(user_id: int, options: dict = None) -> dict:
-    """
-    Fil de messages paginé avec métadonnées enrichies.
-    options: { limit, before_id, after_id }
-    """
     o         = options or {}
     limit     = int(o.get("limit", 50))
     before_id = o.get("before_id")
@@ -686,91 +631,125 @@ async def get_messages(user_id: int, options: dict = None) -> dict:
     return {"messages": messages, "count": len(messages)}
 
 
+# ── Mapping mime_type → type simplifié (pour déduire depuis l'URL si besoin) ──
+_EXT_TO_TYPE = {
+    ".jpg": "image", ".jpeg": "image", ".png": "image", ".gif": "image", ".webp": "image",
+    ".mp4": "video", ".mov": "video", ".avi": "video", ".mkv": "video", ".webm": "video",
+    ".pdf": "pdf",
+    ".doc": "word",  ".docx": "word",
+    ".xls": "excel", ".xlsx": "excel",
+    ".ppt": "powerpoint", ".pptx": "powerpoint",
+    ".txt": "text",
+    ".zip": "archive", ".rar": "archive",
+}
+
+
+def _type_from_path(path: str) -> str:
+    """Déduit le type simplifié depuis l'extension du fichier."""
+    ext = Path(path).suffix.lower()
+    return _EXT_TO_TYPE.get(ext, "document")
+
+
 async def send_message(payload: dict) -> dict:
     """
     Enregistre un message sortant admin et l'envoie via le bot Python.
     payload: { user_id, message_text?, message_type, media_url?, replied_to_id? }
+
+    Retourne toujours un dict avec :
+      - le message enregistré en base si l'envoi a réussi
+      - { "error": "...", "send_failed": True } si l'envoi Telegram a échoué
+        (le message N'EST PAS enregistré en base en cas d'échec)
     """
     user_id       = payload["user_id"]
-    message_text  = payload.get("message_text", "")
-    message_type  = payload.get("message_type", "")
+    message_text  = payload.get("message_text", "") or ""
     media_url     = payload.get("media_url")
     replied_to_id = payload.get("replied_to_id")
 
-   
+    # ── Déduire le message_type réel depuis l'extension si un fichier est joint ──
+    # Le frontend peut envoyer "text" par défaut même quand il y a un fichier.
+    if media_url:
+        message_type = _type_from_path(media_url)
+    else:
+        message_type = "text"
 
-    # Envoi Telegram via _send_one du broadcast engine
-    if _bot:
-        try:
-            # Déterminer le format pour _send_one
-            # Si média présent : lire le fichier et utiliser open()
-            # Si texte seul : format "text"
-            fmt      = "text"
-            tg_media = None
+    if not _bot:
+        return {"error": "Bot non initialisé", "send_failed": True}
 
-            if media_url and message_type not in ("text", "TEXT"):
-                file_path = Path(media_url.lstrip("/"))
+    # ── Construire les paramètres d'envoi Telegram ──────────────────────
+    fmt      = "text"
+    tg_media = None
 
-                if file_path.exists():
-                    # Ouvrir le fichier pour l'envoyer — Telegram accepte un file-like object
-                    if message_type == "image":
-                        fmt      = "image+text" if message_text else "image"
-                        tg_media = open(file_path, "rb")
-                    elif message_type == "video":
-                        fmt      = "video+text" if message_text else "video"
-                        tg_media = open(file_path, "rb")
-                    else:
-                        # PDF, Word, Excel, etc. → send_document
-                        fmt      = "document"
-                        tg_media = open(file_path, "rb")
+    if media_url:
+        file_path = Path(media_url.lstrip("/"))
 
-            await _send_one(
-                bot      = _bot,
-                user_id  = user_id,
-                fmt      = fmt,
-                text     = message_text or "",
-                media_url = tg_media,
-            )
+        if not file_path.exists():
+            return {
+                "error": f"Fichier introuvable sur le serveur : {media_url}",
+                "send_failed": True,
+            }
 
-            if tg_media:
-                tg_media.close()
+        tg_media = open(file_path, "rb")   # fermé dans le finally ci-dessous
 
-            conn = get_conn()
-            try:
-                conv        = conn.execute(
-                    "SELECT ia_enabled FROM conversations WHERE user_id = ?", (user_id,)
-                ).fetchone()
-                ia_snapshot = conv["ia_enabled"] if conv else 0
+        if message_type == "image":
+            fmt = "image+text" if message_text else "image"
+        elif message_type == "video":
+            fmt = "video+text" if message_text else "video"
+        else:
+            # pdf, word, excel, powerpoint, archive, text → send_document
+            # Telegram exige un caption non-vide OU pas de caption du tout.
+            # On passe le texte tel quel ; s'il est vide on ne le passe pas.
+            fmt = "document"
 
-                cur = conn.execute("""
-                    INSERT INTO messages
-                        (user_id, message_text, direction, answered_by, message_type,
-                        media_url, replied_to_id, ia_enabled, status, created_at)
-                    VALUES (?, ?, 'outbound', 'admin', ?, ?, ?, ?, 'sent', ?)
-                """, (user_id, message_text, message_type,
-                    media_url, replied_to_id, ia_snapshot, _now()))
+    # ── Envoi Telegram ──────────────────────────────────────────────────
+    try:
+        await _send_one(
+            bot       = _bot,
+            user_id   = user_id,
+            fmt       = fmt,
+            text      = message_text,          # chaîne vide acceptée pour les documents
+            media_url = tg_media,              # file object ou None
+        )
+    except Exception as e:
+        error_msg = str(e)
+        print(f"⚠️ Échec envoi Telegram uid={user_id} : {error_msg}")
+        return {
+            "error":       f"Échec envoi Telegram : {error_msg}",
+            "send_failed": True,
+        }
+    finally:
+        if tg_media:
+            tg_media.close()
 
-                message_id = cur.lastrowid
-                _upsert_conversation(conn, user_id, new_message_id=message_id, increment_unread=False)
-                conn.commit()
+    # ── Enregistrement en base UNIQUEMENT si l'envoi a réussi ───────────
+    conn = get_conn()
+    try:
+        conv        = conn.execute(
+            "SELECT ia_enabled FROM conversations WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        ia_snapshot = conv["ia_enabled"] if conv else 0
 
-                message = dict(conn.execute(
-                    "SELECT * FROM messages WHERE id = ?", (message_id,)
-                ).fetchone())
-            finally:
-                conn.close()
+        cur = conn.execute("""
+            INSERT INTO messages
+                (user_id, message_text, direction, answered_by, message_type,
+                 media_url, replied_to_id, ia_enabled, status, created_at)
+            VALUES (?, ?, 'outbound', 'admin', ?, ?, ?, ?, 'sent', ?)
+        """, (user_id, message_text, message_type,
+              media_url, replied_to_id, ia_snapshot, _now()))
 
-        except Exception as e:
-            print(f"⚠️ Erreur envoi Telegram chat : {e}")
+        message_id = cur.lastrowid
+        _upsert_conversation(conn, user_id, new_message_id=message_id, increment_unread=False)
+        conn.commit()
+
+        message = dict(conn.execute(
+            "SELECT * FROM messages WHERE id = ?", (message_id,)
+        ).fetchone())
+    finally:
+        conn.close()
 
     return message
 
 
 async def receive_message(payload: dict) -> dict:
-    """
-    Enregistre un message entrant depuis le bot Python (webhook).
-    payload: { user_id, message_id, message_text, message_type, media_url? }
-    """
     user_id      = payload["user_id"]
     message_text = payload.get("message_text", "")
     message_type = payload.get("message_type", "text")
@@ -810,10 +789,6 @@ async def receive_message(payload: dict) -> dict:
 
 
 async def receive_ia_message(payload: dict) -> dict:
-    """
-    Enregistre un message envoyé par l'agent IA (appelé par le bot Python).
-    payload: { user_id, message_text, message_type? }
-    """
     user_id      = payload["user_id"]
     message_text = payload.get("message_text", "")
     message_type = payload.get("message_type", "text")
@@ -841,11 +816,6 @@ async def receive_ia_message(payload: dict) -> dict:
 
 
 async def update_message_status(message_id: int, status: str, timestamp: str = None) -> dict:
-    """
-    Met à jour le statut de livraison Telegram.
-    status: sent | delivered | read | error
-    Appelé par le bot via webhook Telegram.
-    """
     ts   = timestamp or _now()
     conn = get_conn()
     try:
@@ -863,7 +833,6 @@ async def update_message_status(message_id: int, status: str, timestamp: str = N
 
 
 async def delete_message(message_id: int, user_id: int) -> dict:
-    """Suppression logique — admin seulement."""
     conn = get_conn()
     try:
         conn.execute("""
@@ -878,7 +847,6 @@ async def delete_message(message_id: int, user_id: int) -> dict:
 
 
 async def get_conversation_timeline(user_id: int) -> list:
-    """Fil unifié groupé par date — messages + broadcasts."""
     conn = get_conn()
     try:
         rows = conn.execute("""
@@ -921,11 +889,6 @@ async def get_conversation_timeline(user_id: int) -> list:
 # ════════════════════════════════════════════════════════════════════════
 
 async def trigger_ia_response(user_id: int, incoming_message_id: int) -> None:
-    """
-    Déclenche la génération d'une réponse par l'agent IA.
-    Appel HTTP au bot Python qui gère le LLM.
-    Appelé automatiquement par receive_message() si ia_enabled=1.
-    """
     conn = get_conn()
     try:
         context_rows = conn.execute("""
@@ -955,7 +918,6 @@ async def trigger_ia_response(user_id: int, incoming_message_id: int) -> None:
 
 
 async def get_ia_stats(user_id: int) -> dict:
-    """Stats sur l'activité de l'IA sur cette conversation."""
     conn = get_conn()
     try:
         row = conn.execute("""
@@ -978,21 +940,16 @@ async def get_ia_stats(user_id: int) -> dict:
 # UPLOAD MÉDIAS
 # ════════════════════════════════════════════════════════════════════════
 
-# Catalogue complet des types autorisés
-# { mime_type: (type_simplifié, extension, taille_max_en_MB) }
 ALLOWED_MEDIA = {
-    # ── Images ──────────────────────────────────────────────────────────
     "image/jpeg":                                                    ("image",    ".jpg",  10),
     "image/png":                                                     ("image",    ".png",  10),
     "image/gif":                                                     ("image",    ".gif",  10),
     "image/webp":                                                    ("image",    ".webp", 10),
-    # ── Vidéos ──────────────────────────────────────────────────────────
     "video/mp4":                                                     ("video",    ".mp4",  50),
     "video/quicktime":                                               ("video",    ".mov",  50),
     "video/x-msvideo":                                               ("video",    ".avi",  50),
     "video/x-matroska":                                              ("video",    ".mkv",  50),
     "video/webm":                                                    ("video",    ".webm", 50),
-    # ── Documents ───────────────────────────────────────────────────────
     "application/pdf":                                               ("pdf",      ".pdf",  20),
     "application/msword":                                            ("word",     ".doc",  20),
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
@@ -1010,7 +967,6 @@ ALLOWED_MEDIA = {
 
 
 def _make_image_thumbnail(src: Path, stem: str, ext: str) -> str | None:
-    """Génère une miniature 300x300 pour une image. Retourne l'URL ou None."""
     try:
         from PIL import Image
         thumb_name = f"{stem}_thumb{ext}"
@@ -1024,10 +980,6 @@ def _make_image_thumbnail(src: Path, stem: str, ext: str) -> str | None:
 
 
 def _make_video_thumbnail(src: Path, stem: str) -> str | None:
-    """
-    Extrait la première frame de la vidéo via ffmpeg.
-    Retourne l'URL de la miniature ou None si ffmpeg absent.
-    """
     try:
         import subprocess
         thumb_name = f"{stem}_thumb.jpg"
@@ -1036,9 +988,9 @@ def _make_video_thumbnail(src: Path, stem: str) -> str | None:
             [
                 "ffmpeg", "-y",
                 "-i", str(src),
-                "-ss", "00:00:01",       # frame à 1 seconde
+                "-ss", "00:00:01",
                 "-vframes", "1",
-                "-vf", "scale=300:-1",   # largeur 300px, hauteur proportionnelle
+                "-vf", "scale=300:-1",
                 str(thumb_path),
             ],
             capture_output=True,
@@ -1052,12 +1004,6 @@ def _make_video_thumbnail(src: Path, stem: str) -> str | None:
 
 
 async def upload_media(file_bytes: bytes, filename: str, mime_type: str, user_id: int) -> dict:
-    """
-    Stocke un fichier média envoyé depuis le chat admin ou reçu via le bot.
-    Gère : images, vidéos, PDF, Word, Excel, PowerPoint, texte, archives.
-    Génère une miniature pour les images (Pillow) et les vidéos (ffmpeg).
-    Stocke dans /media/{uuid}{ext} — nom unique garanti.
-    """
     if mime_type not in ALLOWED_MEDIA:
         return {"error": f"Type de fichier non autorisé ({mime_type})"}
 
@@ -1067,7 +1013,6 @@ async def upload_media(file_bytes: bytes, filename: str, mime_type: str, user_id
     if len(file_bytes) > max_bytes:
         return {"error": f"Fichier trop volumineux (max {max_mb} MB pour ce type)"}
 
-    # Conserver l'extension originale si elle est connue, sinon utiliser celle du catalogue
     original_ext = Path(filename).suffix.lower()
     final_ext    = original_ext if original_ext else ext
 
@@ -1081,34 +1026,27 @@ async def upload_media(file_bytes: bytes, filename: str, mime_type: str, user_id
     file_url  = f"/media/{fname}"
     thumb_url = None
 
-    # Miniature selon le type
     if ftype == "image":
         thumb_url = _make_image_thumbnail(dest, stem, final_ext)
     elif ftype == "video":
         thumb_url = _make_video_thumbnail(dest, stem)
-    # Documents, archives, texte → pas de miniature (icône côté frontend)
 
     return {
         "filename":   fname,
         "url":        file_url,
         "thumbnail":  thumb_url,
         "mime_type":  mime_type,
-        "type":       ftype,       # image | video | pdf | word | excel | powerpoint | text | archive
+        "type":       ftype,
         "size_bytes": len(file_bytes),
         "size_mb":    round(len(file_bytes) / 1024 / 1024, 2),
     }
 
 
 # ════════════════════════════════════════════════════════════════════════
-# PROFIL MEMBRE (panneau droit du chat)
+# PROFIL MEMBRE
 # ════════════════════════════════════════════════════════════════════════
 
 async def get_chat_profile(user_id: int) -> dict | None:
-    """
-    Vue enrichie du panneau profil — tout en un seul appel.
-    Inclut : infos user, état conv, catégories, abonnements actifs,
-             stats trading, derniers broadcasts reçus.
-    """
     conn = get_conn()
     try:
         row = conn.execute("""
@@ -1140,7 +1078,6 @@ async def get_chat_profile(user_id: int) -> dict | None:
         raw         = profile.pop("categories_raw", "") or ""
         profile["categories"] = [c.strip() for c in raw.split(",") if c.strip()]
 
-        # Stats trading
         try:
             ts = conn.execute("""
                 SELECT
@@ -1169,7 +1106,6 @@ async def get_chat_profile(user_id: int) -> dict | None:
 
 
 async def get_received_broadcasts(user_id: int, limit: int = 5) -> list:
-    """Liste des campagnes broadcast reçues par un membre."""
     conn = get_conn()
     try:
         rows = conn.execute("""
@@ -1196,10 +1132,6 @@ async def get_received_broadcasts(user_id: int, limit: int = 5) -> list:
 # ════════════════════════════════════════════════════════════════════════
 
 async def export_conversation(user_id: int, fmt: str = "json") -> dict:
-    """
-    Exporte l'intégralité d'une conversation.
-    fmt: json | csv | txt
-    """
     conn = get_conn()
     try:
         rows = conn.execute("""
