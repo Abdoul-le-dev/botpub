@@ -665,14 +665,6 @@ async def send_message(payload: dict) -> dict:
     media_url     = payload.get("media_url")
     replied_to_id = payload.get("replied_to_id")
 
-    # ── Déduire le message_type réel depuis l'extension si un fichier est joint ──
-    # Le frontend peut envoyer "text" par défaut même quand il y a un fichier.
-    # if media_url:
-
-    #     message_type = payload.get("message_type")
-    # else:
-    #     message_type = "text"
-
     if not _bot:
         return {"error": "Bot non initialisé", "send_failed": True}
 
@@ -706,13 +698,26 @@ async def send_message(payload: dict) -> dict:
 
     # ── Envoi Telegram ──────────────────────────────────────────────────
     try:
-        await _send_one(
-            bot       = _bot,
-            user_id   = user_id,
-            fmt       = fmt,
-            text      = message_text,          # chaîne vide acceptée pour les documents
-            media_url = tg_media,              # file object ou None
-        )
+
+        if fmt =="text" :
+
+            await _bot.send_message(chat_id=user_id, text=payload.get("message_text"))
+        
+        elif fmt =="image+text" :
+
+            await _bot.send_message(chat_id=user_id, text=payload.get("message_text"))
+                #await bot.send_photo(chat_id=user_id, photo=media_file_id, caption=texte)
+            await _bot.send_photo(chat_id=user_id, photo= media_url )
+
+
+
+        # await _send_one(
+        #     bot       = _bot,
+        #     user_id   = user_id,
+        #     fmt       = fmt,
+        #     text      = message_text,          # chaîne vide acceptée pour les documents
+        #     media_url = tg_media,              # file object ou None
+        # )
     except Exception as e:
         error_msg = str(e)
         print(f"⚠️ Échec envoi Telegram uid={user_id} : {error_msg}")
