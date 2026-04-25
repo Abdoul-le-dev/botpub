@@ -696,7 +696,7 @@ async def send_message(payload: dict) -> dict:
             # On passe le texte tel quel ; s'il est vide on ne le passe pas.
             fmt = "document"
 
-    # ── Envoi Telegram ──────────────────────────────────────────────────
+    # ── Envoi Telegram ─────────────────────────────────────────────────
     try:
         print(fmt)
 
@@ -708,11 +708,11 @@ async def send_message(payload: dict) -> dict:
 
             await _bot.send_message(chat_id=user_id, text=payload.get("message_text"))
                 #await bot.send_photo(chat_id=user_id, photo=media_file_id, caption=texte)
-            await _bot.send_photo(chat_id=user_id, photo= media_url )
+            await _bot.send_photo(chat_id=user_id, photo= media_url.lstrip("/") )
         
         elif fmt =="image" :
 
-            await _bot.send_photo(chat_id=user_id, photo= media_url )
+            await _bot.send_photo(chat_id=user_id, photo= media_url.lstrip("/") )
 
 
 
