@@ -667,10 +667,11 @@ async def send_message(payload: dict) -> dict:
 
     # ── Déduire le message_type réel depuis l'extension si un fichier est joint ──
     # Le frontend peut envoyer "text" par défaut même quand il y a un fichier.
-    if media_url:
-        message_type = _type_from_path(media_url)
-    else:
-        message_type = "text"
+    # if media_url:
+
+    #     message_type = payload.get("message_type")
+    # else:
+    #     message_type = "text"
 
     if not _bot:
         return {"error": "Bot non initialisé", "send_failed": True}
@@ -678,6 +679,7 @@ async def send_message(payload: dict) -> dict:
     # ── Construire les paramètres d'envoi Telegram ──────────────────────
     fmt      = "text"
     tg_media = None
+    message_type = payload.get("message_type")
 
     if media_url:
         file_path = Path(media_url.lstrip("/"))

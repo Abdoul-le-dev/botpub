@@ -187,13 +187,15 @@ async def _send_one(
                 telegram_file_id = msg.document.file_id
 
         elif fmt == "image+text":
-            await bot.send_message(chat_id=user_id, text=text)
+            if text:
+                await bot.send_message(chat_id=user_id, text=text)
             msg = await bot.send_photo(chat_id=user_id, photo=media)
             if hasattr(media, 'read'):
                 telegram_file_id = msg.photo[-1].file_id
 
         elif fmt == "video+text":
-            await bot.send_message(chat_id=user_id, text=text)
+            if text : 
+                await bot.send_message(chat_id=user_id, text=text)
             msg = await bot.send_video(chat_id=user_id, video=media)
             if hasattr(media, 'read'):
                 telegram_file_id = msg.video.file_id

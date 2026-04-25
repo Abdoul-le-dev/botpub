@@ -205,9 +205,24 @@ async def api_get_messages(
 
 def get_extension(media_url):
     if not media_url:
-        return ""
-    ext = os.path.splitext(media_url)[1]
-    return ext if ext else ""
+        return "text"
+    
+    ext = os.path.splitext(media_url)[1].lower()
+
+    IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
+    VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv"}
+    DOC_EXTS   = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+                  ".zip", ".rar", ".7z", ".txt", ".csv", ".json", ".xml"}
+
+    if ext in IMAGE_EXTS:
+        return "image"
+    elif ext in VIDEO_EXTS:
+        return "video"
+    elif ext in DOC_EXTS:
+        return "doc"
+    else:
+        return "text"
+    
 
 @router.post("/conversations/{user_id}/messages")
 async def api_send_message(user_id: int, payload: dict):
@@ -229,8 +244,13 @@ async def api_send_message(user_id: int, payload: dict):
 
     ext = get_extension(payload.get("media_url"))
 
-    if ext != "":
-        payload["media_url"] = ext
+    if ext == "text" and payload.get("message_text") =="":
+
+        raise HTTPException(status_code=400, detail="rien a envoyer")
+
+
+    if ext != "text":
+        payload["message_type"] = ext
 
     print(payload)
     return await send_message(payload)
