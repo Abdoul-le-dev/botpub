@@ -698,6 +698,7 @@ async def send_message(payload: dict) -> dict:
 
     # ── Envoi Telegram ──────────────────────────────────────────────────
     try:
+        print(fmt)
 
         if fmt =="text" :
 
