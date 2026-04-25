@@ -714,6 +714,21 @@ async def send_message(payload: dict) -> dict:
 
             await _bot.send_photo(chat_id=user_id, photo= media_url.lstrip("/") )
 
+        elif fmt =="video" :
+
+            await _bot.send_video(chat_id=user_id, video=media_url.lstrip("/") )
+
+        elif fmt =="video+text" :
+
+            if payload.get("message_text") !="":
+                await _bot.send_message(chat_id=user_id, text=payload.get("message_text"))
+
+            await _bot.send_video(chat_id=user_id, video=media_url.lstrip("/") )
+
+        elif fmt =="document" :
+         
+            await _bot.send_document(chat_id=user_id, document=media_url.lstrip("/") )
+
 
 
         # await _send_one(
