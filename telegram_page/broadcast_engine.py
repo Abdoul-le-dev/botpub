@@ -152,6 +152,7 @@ async def _send_one(
     try:
         # ── Résoudre le média : fichier local ou file_id Telegram ────────────
         media = None
+        print
         if media_url:
             if _is_local_file(media_url):
                 media = _open_local_file(media_url)

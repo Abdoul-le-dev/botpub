@@ -218,6 +218,8 @@ async def api_send_message(user_id: int, payload: dict):
     if not payload.get("message_type"):
         raise HTTPException(status_code=400, detail="message_type requis")
     payload["user_id"] = user_id
+
+    print(payload)
     return await send_message(payload)
 
 

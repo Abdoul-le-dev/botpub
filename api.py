@@ -46,11 +46,13 @@ async def lifespan(app: FastAPI):
     # init_broadcast_history()  # si tu l'as déjà ailleurs, garde-le ici aussi
     yield
  
-app = FastAPI(lifespan=lifespan)
-app.include_router(chat_router)
 
 load_dotenv()
 bot = Bot(token=os.getenv("token"))
+
+app = FastAPI(lifespan=lifespan)
+app.include_router(chat_router)
+
 
 origins = [
     "http://127.0.0.1:8000",

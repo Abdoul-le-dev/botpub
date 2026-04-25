@@ -693,34 +693,11 @@ async def send_message(payload: dict) -> dict:
     """
     user_id       = payload["user_id"]
     message_text  = payload.get("message_text", "")
-    message_type  = payload.get("message_type", "text")
+    message_type  = payload.get("message_type", "")
     media_url     = payload.get("media_url")
     replied_to_id = payload.get("replied_to_id")
 
-    conn = get_conn()
-    try:
-        conv        = conn.execute(
-            "SELECT ia_enabled FROM conversations WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        ia_snapshot = conv["ia_enabled"] if conv else 0
-
-        cur = conn.execute("""
-            INSERT INTO messages
-                (user_id, message_text, direction, answered_by, message_type,
-                 media_url, replied_to_id, ia_enabled, status, created_at)
-            VALUES (?, ?, 'outbound', 'admin', ?, ?, ?, ?, 'sent', ?)
-        """, (user_id, message_text, message_type,
-              media_url, replied_to_id, ia_snapshot, _now()))
-
-        message_id = cur.lastrowid
-        _upsert_conversation(conn, user_id, new_message_id=message_id, increment_unread=False)
-        conn.commit()
-
-        message = dict(conn.execute(
-            "SELECT * FROM messages WHERE id = ?", (message_id,)
-        ).fetchone())
-    finally:
-        conn.close()
+   
 
     # Envoi Telegram via _send_one du broadcast engine
     if _bot:
@@ -757,6 +734,31 @@ async def send_message(payload: dict) -> dict:
 
             if tg_media:
                 tg_media.close()
+
+            conn = get_conn()
+            try:
+                conv        = conn.execute(
+                    "SELECT ia_enabled FROM conversations WHERE user_id = ?", (user_id,)
+                ).fetchone()
+                ia_snapshot = conv["ia_enabled"] if conv else 0
+
+                cur = conn.execute("""
+                    INSERT INTO messages
+                        (user_id, message_text, direction, answered_by, message_type,
+                        media_url, replied_to_id, ia_enabled, status, created_at)
+                    VALUES (?, ?, 'outbound', 'admin', ?, ?, ?, ?, 'sent', ?)
+                """, (user_id, message_text, message_type,
+                    media_url, replied_to_id, ia_snapshot, _now()))
+
+                message_id = cur.lastrowid
+                _upsert_conversation(conn, user_id, new_message_id=message_id, increment_unread=False)
+                conn.commit()
+
+                message = dict(conn.execute(
+                    "SELECT * FROM messages WHERE id = ?", (message_id,)
+                ).fetchone())
+            finally:
+                conn.close()
 
         except Exception as e:
             print(f"⚠️ Erreur envoi Telegram chat : {e}")
