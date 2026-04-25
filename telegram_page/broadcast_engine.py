@@ -168,57 +168,42 @@ async def _send_one(
 
         elif fmt == "image":
             msg = await bot.send_photo(chat_id=user_id, photo=media)
-            # Récupérer le file_id Telegram pour les envois suivants
-            if isinstance(media, bytes):  # c'était un fichier local
-                telegram_file_id = msg.photo[-1].file_id
+            
 
         elif fmt == "video":
             msg = await bot.send_video(chat_id=user_id, video=media)
-            if isinstance(media, bytes):
-                telegram_file_id = msg.video.file_id
+            
 
         elif fmt == "document":
             msg = await bot.send_document(chat_id=user_id, document=media)
-            if hasattr(media, 'read'):
-                telegram_file_id = msg.document.file_id
+            
 
         elif fmt == "image+text":
             if text:
                 await bot.send_message(chat_id=user_id, text=text)
             msg = await bot.send_photo(chat_id=user_id, photo=media)
-            if isinstance(media, bytes):
-                telegram_file_id = msg.photo[-1].file_id
+            
 
         elif fmt == "video+text":
             if text : 
                 await bot.send_message(chat_id=user_id, text=text)
             msg = await bot.send_video(chat_id=user_id, video=media)
-            if isinstance(media, bytes):
-                telegram_file_id = msg.video.file_id
+            
 
         elif fmt == "document+text":
             await bot.send_message(chat_id=user_id, text=text)
             msg = await bot.send_document(chat_id=user_id, document=media)
-            if isinstance(media, bytes):
-                telegram_file_id = msg.document.file_id
+            
 
         else:
             # Format inconnu → texte seul
             await bot.send_message(chat_id=user_id, text=text)
 
-        # Fermer le fichier si c'était un objet local
-        if isinstance(media, bytes):
-            media.close()
-
+      
         return True, telegram_file_id
 
     except Exception as e:
         logger.warning(f"Échec envoi uid={user_id} : {e}")
-        if isinstance(media, bytes):
-            try:
-                media.close()
-            except Exception:
-                pass
         return False, None
 
 
