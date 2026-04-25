@@ -107,16 +107,12 @@ def _is_local_file(media_url: str) -> bool:
     return media_url.startswith("/") or media_url.startswith("./") or Path(media_url).exists()
 
 
-def _open_local_file(media_url: str):
-    """Ouvre un fichier local et retourne le file-like object."""
-    path = Path(media_url.lstrip("/"))
-    if path.exists():
-        return open(path, "rb")
-    # Essai chemin absolu
-    abs_path = Path(media_url)
-    if abs_path.exists():
-        return open(abs_path, "rb")
-    return None
+def _open_local_file(path: str) -> Optional[bytes]:
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        return None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -173,12 +169,12 @@ async def _send_one(
         elif fmt == "image":
             msg = await bot.send_photo(chat_id=user_id, photo=media)
             # Récupérer le file_id Telegram pour les envois suivants
-            if hasattr(media, 'read'):  # c'était un fichier local
+            if isinstance(media, bytes):  # c'était un fichier local
                 telegram_file_id = msg.photo[-1].file_id
 
         elif fmt == "video":
             msg = await bot.send_video(chat_id=user_id, video=media)
-            if hasattr(media, 'read'):
+            if isinstance(media, bytes):
                 telegram_file_id = msg.video.file_id
 
         elif fmt == "document":
@@ -190,20 +186,20 @@ async def _send_one(
             if text:
                 await bot.send_message(chat_id=user_id, text=text)
             msg = await bot.send_photo(chat_id=user_id, photo=media)
-            if hasattr(media, 'read'):
+            if isinstance(media, bytes):
                 telegram_file_id = msg.photo[-1].file_id
 
         elif fmt == "video+text":
             if text : 
                 await bot.send_message(chat_id=user_id, text=text)
             msg = await bot.send_video(chat_id=user_id, video=media)
-            if hasattr(media, 'read'):
+            if isinstance(media, bytes):
                 telegram_file_id = msg.video.file_id
 
         elif fmt == "document+text":
             await bot.send_message(chat_id=user_id, text=text)
             msg = await bot.send_document(chat_id=user_id, document=media)
-            if hasattr(media, 'read'):
+            if isinstance(media, bytes):
                 telegram_file_id = msg.document.file_id
 
         else:
@@ -211,14 +207,14 @@ async def _send_one(
             await bot.send_message(chat_id=user_id, text=text)
 
         # Fermer le fichier si c'était un objet local
-        if hasattr(media, 'read'):
+        if isinstance(media, bytes):
             media.close()
 
         return True, telegram_file_id
 
     except Exception as e:
         logger.warning(f"Échec envoi uid={user_id} : {e}")
-        if hasattr(media, 'read'):
+        if isinstance(media, bytes):
             try:
                 media.close()
             except Exception:
