@@ -681,6 +681,8 @@ async def send_message(payload: dict) -> dict:
     tg_media = None
     message_type = payload.get("message_type")
 
+    print(media_url)
+
     if media_url:
         file_path = Path(media_url.lstrip("/"))
 
