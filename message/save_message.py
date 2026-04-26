@@ -28,6 +28,8 @@ def save_message(
     media_url:    str  = None,
     direction:    str  = "inbound",
     answered_by:  str  = None,
+    requires_admin: int  = 0,      # ← ajouter
+    is_testimonial: int  = 0,      
 ):
     """
     Insère un message dans la table messages.
@@ -38,9 +40,9 @@ def save_message(
         conn.execute("""
             INSERT INTO messages
                 (user_id, message_id, message_text, answer,
-                 message_type, media_url, direction, answered_by,
+                 message_type, media_url, direction, answered_by,requires_admin,is_testimonial
                  status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'received', ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?,?,?, 'received', ?)
         """, (
             user_id,
             message_id,
@@ -50,6 +52,8 @@ def save_message(
             media_url,
             direction,
             answered_by,
+            requires_admin,
+            is_testimonial,
             datetime.now().isoformat(),
         ))
         conn.commit()
