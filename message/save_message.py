@@ -28,8 +28,8 @@ def save_message(
     media_url:    str  = None,
     direction:    str  = "inbound",
     answered_by:  str  = None,
-    requires_admin: int  = 0,      # ← ajouter
-    is_testimonial: int  = 0,      
+    requires_admin: int  = 1,      # ← ajouter
+    is_testimonial: int  = 1,      
 ):
     """
     Insère un message dans la table messages.
