@@ -9,7 +9,9 @@ from dotenv import load_dotenv
 from telegram import Bot
 from fastapi import HTTPException, UploadFile, File
 import csv  
-
+from form.form_route import router as forms_router
+from form.form import init_forms_db
+from form.form_scheduler import start_scheduler, stop_scheduler
 from telegram_page.categorie import (
     get_categories_stats,
     get_categories,
@@ -41,11 +43,14 @@ from contextlib import asynccontextmanager
 async def lifespan(app: FastAPI):
     init_chat_tables() 
     set_bot(bot)
+    init_forms_db()                          
+    start_scheduler(bot, admin_id=571718066)
     #init_broadcast_history()
     #init_trading_tables()
     #migrate_categories_to_meta()      # crée conversations, subscriptions, migre messages
     # init_broadcast_history()  # si tu l'as déjà ailleurs, garde-le ici aussi
     yield
+    stop_scheduler() 
  
 
 load_dotenv()
@@ -53,6 +58,7 @@ bot = Bot(token=os.getenv("token"))
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(chat_router)
+app.include_router(forms_router) 
 
 
 origins = [

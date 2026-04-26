@@ -61,6 +61,7 @@ def init_chat_tables():
     try:
         # ── Nouvelles colonnes sur messages ──────────────────────────────
         migrations = [
+            "ALTER TABLE messages ADD COLUMN requires_admin INTEGER DEFAULT 0",
             "ALTER TABLE messages ADD COLUMN direction      TEXT    DEFAULT 'inbound'",
             "ALTER TABLE messages ADD COLUMN answered_by    TEXT    DEFAULT NULL",
             "ALTER TABLE messages ADD COLUMN replied_to_id  INTEGER DEFAULT NULL",
@@ -120,6 +121,7 @@ def init_chat_tables():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_msg_created ON messages(created_at DESC)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_msg_type    ON messages(message_type)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_msg_bcast   ON messages(broadcast_id)")
+        
 
         # ── Trigger : mise à jour automatique de conversations ───────────
         conn.execute("""

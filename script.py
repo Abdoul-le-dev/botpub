@@ -21,7 +21,8 @@ from user_data import start_delete
 from qcmprocess import start_qcm_creation,validate_bad_reason,set_categorie,set_nb_questions,set_question,set_nb_choix
 
 from qcmprocess import add_choix,set_nb_choix,validate_choix, set_categorie,set_question
-
+from form.form import init_forms_db
+from form.form_engine import register_form_handlers
 from challenge1000usd import send_short_link,send_mail_admin
 from constance import WAITING_ANSWER_EXAM,LEVEL_WELCOME, WHY_WELCOME, NUMERO_WHATSAPP_WELCOME, MAIL_WELCOME, NOM_WELCOME
 USER,PWD = range(2) 
@@ -604,6 +605,7 @@ if __name__ == '__main__':
     
     
     
-
+    init_forms_db()
+    register_form_handlers(app, app.bot, ADMIN_ID)
     
     app.run_polling(poll_interval=1)
