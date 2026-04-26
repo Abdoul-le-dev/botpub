@@ -480,7 +480,7 @@ async def get_conversation_stats() -> dict:
                 SUM(unread_count)                                              AS total_unread,
                 COUNT(CASE WHEN ia_enabled = 1 AND is_blocked = 0 THEN 1 END) AS ia_active_count,
                 COUNT(CASE WHEN is_blocked = 1 THEN 1 END)                    AS blocked_count,
-                COUNT(CASE WHEN last_activity >= ? THEN 1 END)                AS active_today
+                COUNT(CASE WHEN last_activity >= ? THEN 1 END)                AS active_today,
                 COUNT(CASE WHEN c.user_id IN (
                 SELECT DISTINCT user_id FROM messages WHERE requires_admin = 1
                 ) THEN 1 END) AS requires_admin_count
