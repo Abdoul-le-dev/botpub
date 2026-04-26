@@ -593,7 +593,7 @@ if __name__ == '__main__':
 
     app.add_handler(conv_handler_delete_user)
 
-    
+    register_form_handlers(app, app.bot, ADMIN_ID)
 
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, log_unhandled_message))
 
@@ -606,6 +606,6 @@ if __name__ == '__main__':
     
     
     init_forms_db()
-    register_form_handlers(app, app.bot, ADMIN_ID)
+   
     
     app.run_polling(poll_interval=1)
