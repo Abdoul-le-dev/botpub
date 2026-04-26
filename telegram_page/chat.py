@@ -61,7 +61,7 @@ def init_chat_tables():
     try:
         # ── Nouvelles colonnes sur messages ──────────────────────────────
         migrations = [
-            "ALTER TABLE messages ADD COLUMN is_testimonial INTEGER DEFAULT 0"
+            "ALTER TABLE messages ADD COLUMN is_testimonial INTEGER DEFAULT 0",
             "ALTER TABLE messages ADD COLUMN requires_admin INTEGER DEFAULT 0",
             "ALTER TABLE messages ADD COLUMN direction      TEXT    DEFAULT 'inbound'",
             "ALTER TABLE messages ADD COLUMN answered_by    TEXT    DEFAULT NULL",
