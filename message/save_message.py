@@ -85,6 +85,49 @@ async def _download_media(bot, file_id: str, extension: str) -> str | None:
 # ════════════════════════════════════════════════════════════════════════
 # HANDLER PRINCIPAL — tous les messages entrants
 # ════════════════════════════════════════════════════════════════════════
+def ensure_user_and_conversation(user_id: int):
+    """
+    Garantit qu'un user et sa conversation existent en base.
+    Appelée à chaque message entrant avant save_message().
+ 
+    - Si le user n'existe pas dans users
+      → INSERT avec telegram_id uniquement (name="" phone="" en attendant le profil)
+    - Si la conversation n'existe pas dans conversations
+      → INSERT avec ia_enabled=1 par défaut
+    - Si tout existe déjà → ne rien faire
+    """
+    now  = datetime.now().isoformat()
+    conn = get_conn()
+    try:
+        # ── User ──────────────────────────────────────────────────────────
+        existing = conn.execute(
+            "SELECT id FROM users WHERE telegram_id = ?", (user_id,)
+        ).fetchone()
+ 
+        if not existing:
+            # On ne connaît que le telegram_id
+            # name et phone sont NOT NULL → valeurs vides en attendant le profil
+            conn.execute("""
+                INSERT INTO users (name, phone, country, created_at, telegram_id)
+                VALUES (?, ?, ?, ?, ?)
+            """, ("", "", "", now, user_id))
+            print(f"✓ Nouveau user enregistré : telegram_id={user_id}")
+ 
+        # ── Conversation ──────────────────────────────────────────────────
+        conv = conn.execute(
+            "SELECT id FROM conversations WHERE user_id = ?", (user_id,)
+        ).fetchone()
+ 
+        if not conv:
+            conn.execute("""
+                INSERT INTO conversations (user_id, ia_enabled, unread_count, created_at, updated_at)
+                VALUES (?, 1, 0, ?, ?)
+            """, (user_id, now, now))
+            print(f"✓ Nouvelle conversation créée : telegram_id={user_id}")
+ 
+        conn.commit()
+    finally:
+        conn.close()
  
 async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -163,6 +206,8 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
     # ── Log si média non téléchargé ───────────────────────────────────────
     if message_type not in ("text", "sticker", "other") and media_url is None:
         print(f"⚠️ Média {message_type} non téléchargé pour user {user_id}")
+
+    ensure_user_and_conversation(user_id)    
  
     # ── Enregistrement en base ────────────────────────────────────────────
     save_message(
