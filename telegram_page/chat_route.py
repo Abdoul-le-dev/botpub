@@ -25,7 +25,7 @@ from telegram_page.chat import (
     # Profil
     get_chat_profile, get_received_broadcasts,
     # Exports
-    export_conversation,
+    export_conversation,mark_requires_admin, mark_testimonial
 )
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -468,3 +468,18 @@ async def api_export(user_id: int, fmt: str = "json"):
         media_type=result["content_type"],
         headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"'}
     )
+
+@router.patch("/messages/{message_id}/requires-admin")
+async def api_mark_requires_admin(message_id: int, payload: dict):
+    """payload: { value: 0 | 1 }"""
+    if "value" not in payload:
+        raise HTTPException(status_code=400, detail="value requis")
+    return await mark_requires_admin(message_id, payload["value"])
+
+
+@router.patch("/messages/{message_id}/testimonial")
+async def api_mark_testimonial(message_id: int, payload: dict):
+    """payload: { value: 0 | 1 }"""
+    if "value" not in payload:
+        raise HTTPException(status_code=400, detail="value requis")
+    return await mark_testimonial(message_id, payload["value"])

@@ -61,6 +61,7 @@ def init_chat_tables():
     try:
         # ── Nouvelles colonnes sur messages ──────────────────────────────
         migrations = [
+            "ALTER TABLE messages ADD COLUMN is_testimonial INTEGER DEFAULT 0"
             "ALTER TABLE messages ADD COLUMN requires_admin INTEGER DEFAULT 0",
             "ALTER TABLE messages ADD COLUMN direction      TEXT    DEFAULT 'inbound'",
             "ALTER TABLE messages ADD COLUMN answered_by    TEXT    DEFAULT NULL",
@@ -376,6 +377,14 @@ async def get_conversations(filters: dict = None) -> dict:
         elif tab == "blocked":
             where_clauses.append("c.is_blocked = 1")
 
+        elif tab == "requires_admin":
+            where_clauses.append("""
+                c.user_id IN (
+                    SELECT DISTINCT user_id FROM messages
+                    WHERE requires_admin = 1
+                )
+            """)
+
         if search:
             where_clauses.append("u.name LIKE ?")
             term    = f"%{search}%"
@@ -472,6 +481,9 @@ async def get_conversation_stats() -> dict:
                 COUNT(CASE WHEN ia_enabled = 1 AND is_blocked = 0 THEN 1 END) AS ia_active_count,
                 COUNT(CASE WHEN is_blocked = 1 THEN 1 END)                    AS blocked_count,
                 COUNT(CASE WHEN last_activity >= ? THEN 1 END)                AS active_today
+                COUNT(CASE WHEN c.user_id IN (
+                SELECT DISTINCT user_id FROM messages WHERE requires_admin = 1
+                ) THEN 1 END) AS requires_admin_count
             FROM conversations
         """, ((datetime.now() - timedelta(hours=24)).isoformat(),)).fetchone()
     finally:
@@ -1201,3 +1213,29 @@ async def export_conversation(user_id: int, fmt: str = "json") -> dict:
         return {"content": json.dumps(messages, ensure_ascii=False, indent=2),
                 "content_type": "application/json",
                 "filename": f"conv_{user_id}.json"}
+    
+
+async def mark_requires_admin(message_id: int, value: int) -> dict:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "UPDATE messages SET requires_admin = ? WHERE id = ?",
+            (value, message_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "ok", "message_id": message_id, "requires_admin": value}
+
+
+async def mark_testimonial(message_id: int, value: int) -> dict:
+    conn = get_conn()
+    try:
+        conn.execute(
+            "UPDATE messages SET is_testimonial = ? WHERE id = ?",
+            (value, message_id)
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "ok", "message_id": message_id, "is_testimonial": value}

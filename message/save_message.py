@@ -219,6 +219,8 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
         media_url    = media_url,
         direction    = "inbound",
         answered_by  = None,
+        requires_admin=1,
+        is_testimonial=1
     )
  
     print(f"✓ Message {message_type} enregistré — user {user_id}")
