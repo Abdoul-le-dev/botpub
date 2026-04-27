@@ -38,6 +38,14 @@ _scheduler: BackgroundScheduler | None = None
 _bot = None
 _admin_id: int | None = None
 
+def get_bot():
+    """Getter sûr pour le bot — évite d'importer _bot directement."""
+    return _bot
+ 
+def get_admin_id():
+    """Getter sûr pour l'admin_id."""
+    return _admin_id
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # INIT
