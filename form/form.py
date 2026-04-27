@@ -400,7 +400,7 @@ def get_form_responses(form_id: int, limit: int = 100) -> list[dict]:
     with _conn() as conn:
         rows = conn.execute("""
             SELECT s.telegram_id, s.score_final, s.score_max, s.pct, s.submitted_at,
-                   u.prenom
+                   u.name
             FROM form_submissions s
             LEFT JOIN users u ON u.telegram_id = s.telegram_id
             WHERE s.form_id=?
