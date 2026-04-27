@@ -28,9 +28,20 @@ def _conn() -> sqlite3.Connection:
 # ════════════════════════════════════════════════════════════════════════════
 # INIT TABLES
 # ════════════════════════════════════════════════════════════════════════════
+def migrate_forms_db():
+    """Ajoute les colonnes manquantes sans casser les données existantes."""
+    with _conn() as conn:
+        # Ajouter field_label à form_responses
+        try:
+            conn.execute("ALTER TABLE form_responses ADD COLUMN field_label TEXT DEFAULT ''")
+            conn.commit()
+            print("[forms_db] Colonne field_label ajoutée.")
+        except Exception:
+            pass  # déjà présente
 
 def init_forms_db():
     """Crée les 4 tables si elles n'existent pas. À appeler au démarrage."""
+    migrate_forms_db()
     with _conn() as conn:
         conn.executescript("""
             -- Formulaire complet tel que défini dans le builder frontend
@@ -314,25 +325,34 @@ def get_session(session_id: int) -> dict | None:
 # ════════════════════════════════════════════════════════════════════════════
 
 def save_response(
-    session_id: int,
-    form_id: int,
+    session_id:  int,
+    form_id:     int,
     telegram_id: int,
-    field_id: int,
-    field_type: str,
+    field_id:    int,
+    field_type:  str,
     value,
-    is_correct: bool | None = None,
-    points: int = 0,
+    field_label: str  = "",
+    is_correct:  bool | None = None,
+    points:      int  = 0,
 ):
-    """Enregistre la réponse d'un utilisateur à un champ."""
-    val = json.dumps(value, ensure_ascii=False) if isinstance(value, (list, dict)) else str(value)
+    """
+    Enregistre la réponse d'un utilisateur à un champ.
+    value peut être :
+      - Texte libre
+      - Chemin local  : "/media/forms/abc.jpg"  (photo/video/audio/document)
+      - Valeur spéciale : "__skip__" | "__info__"
+    """
+    val     = json.dumps(value, ensure_ascii=False) if isinstance(value, (list, dict)) else str(value)
     correct = None if is_correct is None else (1 if is_correct else 0)
+ 
     with _conn() as conn:
         conn.execute("""
             INSERT INTO form_responses
-                (session_id, form_id, telegram_id, field_id, field_type, value, is_correct, points)
-            VALUES (?,?,?,?,?,?,?,?)
-        """, (session_id, form_id, telegram_id, field_id, field_type, val, correct, points))
+                (session_id, form_id, telegram_id, field_id, field_type, field_label, value, is_correct, points)
+            VALUES (?,?,?,?,?,?,?,?,?)
+        """, (session_id, form_id, telegram_id, field_id, field_type, field_label or "", val, correct, points))
         conn.commit()
+ 
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -411,16 +431,37 @@ def get_form_responses(form_id: int, limit: int = 100) -> list[dict]:
 
 
 def get_user_responses_for_form(form_id: int, telegram_id: int) -> list[dict]:
-    """Retourne toutes les réponses détaillées d'un user pour un formulaire."""
+    """
+    Retourne toutes les réponses détaillées d'un user pour un formulaire.
+    Inclut field_label pour l'affichage dans la modal.
+    """
     with _conn() as conn:
         session = conn.execute(
-            "SELECT id FROM form_sessions WHERE form_id=? AND telegram_id=?",
+            "SELECT id FROM form_sessions WHERE form_id=? AND telegram_id=? ORDER BY id DESC LIMIT 1",
             (form_id, telegram_id)
         ).fetchone()
+ 
         if not session:
             return []
+ 
         rows = conn.execute(
-            "SELECT * FROM form_responses WHERE session_id=? ORDER BY answered_at",
+            """SELECT field_id, field_type, field_label, value, is_correct, points, answered_at
+               FROM form_responses
+               WHERE session_id=?
+               ORDER BY answered_at""",
             (session["id"],)
         ).fetchall()
-    return [dict(r) for r in rows]
+ 
+    result = []
+    for r in rows:
+        row = dict(r)
+        # Nettoyer les valeurs JSON si besoin
+        val = row.get("value", "")
+        try:
+            parsed = json.loads(val)
+            row["value"] = parsed if isinstance(parsed, str) else val
+        except Exception:
+            row["value"] = val
+        result.append(row)
+ 
+    return result
