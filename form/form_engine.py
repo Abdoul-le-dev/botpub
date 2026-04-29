@@ -33,7 +33,7 @@ MEDIA_URL  = "/media/forms"               # préfixe URL côté front
 
 FORM_STEP  = 200
 
-
+conn = sqlite3.connect(DB_PATH)
 # ════════════════════════════════════════════════════════════════════════════
 # HELPERS
 # ════════════════════════════════════════════════════════════════════════════
@@ -42,15 +42,15 @@ def _get_prenom(telegram_id: int) -> str:
     try:
         c = sqlite3.connect(DB_PATH)
         c.row_factory = sqlite3.Row
-        row = c.execute("SELECT prenom FROM users WHERE telegram_id=?", (telegram_id,)).fetchone()
+        row = c.execute("SELECT name FROM users WHERE telegram_id=?", (telegram_id,)).fetchone()
         c.close()
-        if row and row["prenom"]:
-            p = row["prenom"].strip()
+        if row and row["name"]:
+            p = row["name"].strip()
             if 1 <= len(p) <= 20:
                 return p
     except Exception:
         pass
-    return "toi"
+    return "l'ami"
 
 
 def _inject_vars(text: str, telegram_id: int, score: int = 0, total: int = 0) -> str:
@@ -306,8 +306,16 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command = "/" + update.message.text.strip().lstrip("/").split()[0]
 
     form = get_form_by_command(command)
+
     if not form:
         await update.message.reply_text("...")#form non disponible
+        return ConversationHandler.END
+    
+    options = form.get("options", [])
+
+    if options['one_per_user'] :
+        if has_completed_form(conn,user_id,form["id"]) :
+             await update.message.reply_text("Form remplis")#form non disponible
         return ConversationHandler.END
 
     session = get_or_create_session(form["id"], user_id)
@@ -319,7 +327,7 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["responses"]  = {}
 
     fields = form.get("fields", [])
-    options = form.get("options", [])
+    
     print(options["progress"])
     if not fields:
         await update.message.reply_text("Ce formulaire est vide.")
@@ -493,6 +501,54 @@ async def _form_receive_media(update: Update, context: ContextTypes.DEFAULT_TYPE
 # TRAITEMENT COMMUN D'UNE RÉPONSE
 # ════════════════════════════════════════════════════════════════════════════
 
+async def has_completed_form(conn, form_id: int, telegram_id: int) -> bool:
+    """
+    Vérifie si un utilisateur a complété avec succès un formulaire entier.
+    Retourne True si toutes les réponses sont présentes et valides.
+    """
+    
+
+    # 1. Récupérer les champs requis du formulaire
+    form = conn.execute(
+        "SELECT fields FROM forms WHERE id = ?", (form_id,)
+    ).fetchone()
+
+    if not form:
+        return False
+
+    try:
+        fields = json.loads(form[0])
+    except json.JSONDecodeError:
+        return False
+
+    # Filtrer uniquement les champs obligatoires (non optionnels)
+    required_fields = [
+        f for f in fields
+        if not f.get("optional", False) and f.get("id")
+    ]
+
+    if not required_fields:
+        return False  # Formulaire sans champs = pas valide
+
+    required_ids = {str(f["id"]) for f in required_fields}
+
+    # 2. Récupérer les réponses de cet utilisateur pour ce formulaire
+    responses = conn.execute("""
+        SELECT field_id, value
+        FROM form_responses
+        WHERE form_id = ? AND telegram_id = ?
+    """, (form_id, telegram_id)).fetchall()
+
+    if not responses:
+        return False
+
+    # 3. Vérifier que tous les champs requis ont une réponse non vide
+    answered_ids = {
+        str(r[0]) for r in responses
+        if r[1] is not None and str(r[1]).strip() != ""
+    }
+
+    return required_ids.issubset(answered_ids)
 async def _process_answer(
     update, context,
     form, fields, field, step,
