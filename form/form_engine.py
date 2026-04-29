@@ -111,12 +111,12 @@ async def _download_media(bot, file_id: str, field_type: str) -> str | None:
 # ENVOI D'UN CHAMP (question)
 # ════════════════════════════════════════════════════════════════════════════
 
-async def _send_field(bot, chat_id: int, field: dict, step: int, total_steps: int):
+async def _send_field(bot, chat_id: int, field: dict, step: int, total_steps: int, progress: bool):
     ftype = field.get("type", "text")
     label = field.get("label") or "Réponds à cette question :"
     
     
-    progress = f"[{step}/{total_steps}] " if total_steps > 1 else ""
+    progress = f"[{step}/{total_steps}] " if total_steps > 1 and progress else ""
     text = f"{progress}{label}"
 
     if ftype == "qcm":
@@ -318,8 +318,9 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["multi_sel"]  = []
     context.user_data["responses"]  = {}
 
-    fields = form.get("options", [])
-    print(fields)
+    fields = form.get("fields", [])
+    options = form.get("options", [])
+    print(options["progess"])
     if not fields:
         await update.message.reply_text("Ce formulaire est vide.")
         return ConversationHandler.END
@@ -334,7 +335,7 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Tu as déjà complété ce formulaire.")
         return ConversationHandler.END
 
-    await _send_field(context.bot, user_id, fields[step], step + 1, len(fields))
+    await _send_field(context.bot, user_id, fields[step], step + 1, len(fields),options["progess"])
     return FORM_STEP
 
 
