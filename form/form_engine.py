@@ -114,6 +114,8 @@ async def _download_media(bot, file_id: str, field_type: str) -> str | None:
 async def _send_field(bot, chat_id: int, field: dict, step: int, total_steps: int):
     ftype = field.get("type", "text")
     label = field.get("label") or "Réponds à cette question :"
+    option = field.get("option")
+    print(option)
     progress = f"[{step}/{total_steps}] " if total_steps > 1 else ""
     text = f"{progress}{label}"
 
@@ -164,10 +166,10 @@ async def _send_field(bot, chat_id: int, field: dict, step: int, total_steps: in
 
     elif ftype in ("photo", "video", "audio", "document"):
         hints = {
-            "photo":    "📸 Envoie ta photo.",
-            "video":    "🎬 Envoie ta vidéo (max 20 Mo).",
-            "audio":    "🎙️ Envoie un message vocal.",
-            "document": "📄 Envoie ton document (PDF, ZIP…).",
+            "photo":    "📸 ",
+            "video":    "🎬 (max 20 Mo).",
+            "audio":    "🎙️",
+            "document": "📄",
         }
         skip_btn = None
         if not field.get("required", True):
@@ -305,7 +307,7 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     form = get_form_by_command(command)
     if not form:
-        await update.message.reply_text("❌ Ce formulaire n'est pas disponible.")
+        await update.message.reply_text("...")#form non disponible
         return ConversationHandler.END
 
     session = get_or_create_session(form["id"], user_id)
