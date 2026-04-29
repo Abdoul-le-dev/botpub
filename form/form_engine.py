@@ -320,7 +320,7 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     fields = form.get("fields", [])
     options = form.get("options", [])
-    print(options["progess"])
+    print(options["progress"])
     if not fields:
         await update.message.reply_text("Ce formulaire est vide.")
         return ConversationHandler.END
@@ -335,7 +335,7 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Tu as déjà complété ce formulaire.")
         return ConversationHandler.END
 
-    await _send_field(context.bot, user_id, fields[step], step + 1, len(fields),options["progess"])
+    await _send_field(context.bot, user_id, fields[step], step + 1, len(fields),options["progress"])
     return FORM_STEP
 
 
