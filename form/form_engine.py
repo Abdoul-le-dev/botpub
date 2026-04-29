@@ -553,6 +553,7 @@ async def has_completed_form(conn, form_id: int, telegram_id: int) -> bool:
         str(r[0]) for r in responses
         if r[1] is not None and str(r[1]).strip() != ""
     }
+    print(answered_ids)
 
     return required_ids.issubset(answered_ids)
 async def _process_answer(
