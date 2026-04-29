@@ -438,7 +438,7 @@ async def _form_receive_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     return await _process_answer(
         update, context, form, fields, field, step,
-        session_id, form_id, user_id, raw_answer,  progress, is_callback=True
+        session_id, form_id, user_id, raw_answer, is_callback=True, progress= progress
     )
 
 
