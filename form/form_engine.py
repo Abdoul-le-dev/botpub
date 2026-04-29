@@ -312,9 +312,11 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     
     options = form.get("options", [])
+    form_completed = await has_completed_form(conn,user_id,form["id"])
+    print(form_completed)
 
     if options['one_per_user'] :
-        if has_completed_form(conn,user_id,form["id"]) :
+        if form_completed :
              await update.message.reply_text("Form remplis")#form non disponible
         return ConversationHandler.END
 
