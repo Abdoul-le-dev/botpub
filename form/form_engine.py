@@ -317,8 +317,8 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if options['one_per_user'] :
         if form_completed :
-             await update.message.reply_text("Form remplis")#form non disponible
-        return ConversationHandler.END
+            await update.message.reply_text("Form remplis")#form non disponible
+            return ConversationHandler.END
 
     session = get_or_create_session(form["id"], user_id)
 
