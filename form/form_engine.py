@@ -520,11 +520,13 @@ async def has_completed_form(conn, form_id: int, telegram_id: int) -> bool:
     ).fetchone()
 
     if not form:
+        print("1")
         return False
 
     try:
         fields = json.loads(form[0])
     except json.JSONDecodeError:
+        print("2")
         return False
 
     # Filtrer uniquement les champs obligatoires (non optionnels)
@@ -534,6 +536,7 @@ async def has_completed_form(conn, form_id: int, telegram_id: int) -> bool:
     ]
 
     if not required_fields:
+        print("3")
         return False  # Formulaire sans champs = pas valide
 
     required_ids = {str(f["id"]) for f in required_fields}
@@ -546,6 +549,7 @@ async def has_completed_form(conn, form_id: int, telegram_id: int) -> bool:
     """, (form_id, telegram_id)).fetchall()
 
     if not responses:
+        print("4")
         return False
 
     # 3. Vérifier que tous les champs requis ont une réponse non vide
