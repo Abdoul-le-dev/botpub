@@ -318,7 +318,7 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["multi_sel"]  = []
     context.user_data["responses"]  = {}
 
-    fields = form.get("fields", [])
+    fields = form.get("options", [])
     print(fields)
     if not fields:
         await update.message.reply_text("Ce formulaire est vide.")
