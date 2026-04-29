@@ -114,8 +114,9 @@ async def _download_media(bot, file_id: str, field_type: str) -> str | None:
 async def _send_field(bot, chat_id: int, field: dict, step: int, total_steps: int):
     ftype = field.get("type", "text")
     label = field.get("label") or "Réponds à cette question :"
-    option = field.get("option")
+    option = field.get("options")
     print(option)
+    if option: print(option['progress'])
     progress = f"[{step}/{total_steps}] " if total_steps > 1 else ""
     text = f"{progress}{label}"
 
