@@ -325,12 +325,12 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["form_id"]    = form["id"]
     context.user_data["session_id"] = session["id"]
     context.user_data["step"]       = session["step_index"]
+    context.user_data["progress"]    = options["progress"]
     context.user_data["multi_sel"]  = []
     context.user_data["responses"]  = {}
 
     fields = form.get("fields", [])
     
-    print(options["progress"])
     if not fields:
         await update.message.reply_text("Ce formulaire est vide.")
         return ConversationHandler.END
@@ -357,6 +357,7 @@ async def _form_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user_id    = update.effective_user.id
     form_id    = context.user_data.get("form_id")
     session_id = context.user_data.get("session_id")
+    progress = context.user_data.get("progress")
     step       = context.user_data.get("step", 0)
 
     if not form_id:
@@ -375,7 +376,7 @@ async def _form_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     return await _process_answer(
         update, context, form, fields, field, step,
-        session_id, form_id, user_id, raw_answer
+        session_id, form_id, user_id, raw_answer, progress
     )
 
 
@@ -390,6 +391,7 @@ async def _form_receive_callback(update: Update, context: ContextTypes.DEFAULT_T
     form_id    = context.user_data.get("form_id")
     session_id = context.user_data.get("session_id")
     step       = context.user_data.get("step", 0)
+    progress   = context.user_data.get("progress")
 
     if not form_id:
         return ConversationHandler.END
@@ -436,7 +438,7 @@ async def _form_receive_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     return await _process_answer(
         update, context, form, fields, field, step,
-        session_id, form_id, user_id, raw_answer, is_callback=True
+        session_id, form_id, user_id, raw_answer,  progress, is_callback=True
     )
 
 
@@ -449,6 +451,7 @@ async def _form_receive_media(update: Update, context: ContextTypes.DEFAULT_TYPE
     form_id    = context.user_data.get("form_id")
     session_id = context.user_data.get("session_id")
     step       = context.user_data.get("step", 0)
+    progress = context.user_data.get("progress")
 
     if not form_id:
         return ConversationHandler.END
@@ -495,7 +498,7 @@ async def _form_receive_media(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     return await _process_answer(
         update, context, form, fields, field, step,
-        session_id, form_id, user_id, raw_answer
+        session_id, form_id, user_id, raw_answer, progress
     )
 
 
@@ -557,6 +560,8 @@ async def _process_answer(
     session_id, form_id, user_id,
     raw_answer: str,
     is_callback: bool = False,
+    progress :bool = False,
+    
 ):
     bot = context.bot
 
@@ -590,7 +595,7 @@ async def _process_answer(
         return await _finish_form(update, context, form, session_id, form_id, user_id, cond_actions)
 
     context.user_data["step"] = next_step
-    await _send_field(bot, user_id, fields[next_step], next_step + 1, len(fields))
+    await _send_field(bot, user_id, fields[next_step], next_step + 1, len(fields),progress)
     return FORM_STEP
 
 
@@ -639,6 +644,7 @@ async def _form_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def send_form_to_user(bot, telegram_id: int, form_id: int, app: Application = None):
     form = get_form_by_id(form_id)
+   
     if not form:
         return
     fields  = form.get("fields", [])
@@ -649,7 +655,7 @@ async def send_form_to_user(bot, telegram_id: int, form_id: int, app: Applicatio
         intro = _inject_vars(form["intro"], telegram_id)
         await bot.send_message(telegram_id, intro)
         await asyncio.sleep(0.4)
-    await _send_field(bot, telegram_id, fields[0], 1, len(fields))
+    await _send_field(bot, telegram_id, fields[0], 1, len(fields),False)
 
 
 async def broadcast_form(bot, form_id: int, user_ids: list[int], admin_id: int = None):
