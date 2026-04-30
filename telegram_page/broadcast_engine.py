@@ -144,6 +144,7 @@ async def _send_one(
       document+text→ send_message + send_document
     """
     telegram_file_id = None
+    media_url = media_url.lstrip("/")
     print(media_url)
     try:
         # ── Résoudre le média : fichier local ou file_id Telegram ────────────
