@@ -180,9 +180,9 @@ async def _send_one(
             
 
         elif fmt == "image+text":
-            if text:
+            if len(text)> 1000:
                 await bot.send_message(chat_id=user_id, text=text)
-            msg = await bot.send_photo(chat_id=user_id, photo=media)
+            msg = await bot.send_photo(chat_id=user_id, photo=media, caption=text)
             
 
         elif fmt == "video+text":
