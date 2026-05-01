@@ -97,7 +97,7 @@ def reset_problem_tables():
 
 def init_trading_tables():
 
-    ensure_forms()
+    
     
     conn = get_conn()
 
@@ -247,6 +247,32 @@ def init_trading_tables():
 
         conn.commit()
         print("[DB] Vérification + migration terminée OK")
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS forms (
+            id INTEGER PRIMARY KEY AUTOINCREMENT
+        )
+    """)
+
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(forms)")]
+
+        def add(col, typ):
+            if col not in cols:
+                conn.execute(f"ALTER TABLE forms ADD COLUMN {col} {typ}")
+
+        add("name", "TEXT")
+        add("command", "TEXT")
+        add("type", "TEXT DEFAULT 'custom'")
+        add("is_active", "INTEGER DEFAULT 1")
+
+        # ❌ PAS de DEFAULT dynamique ici
+        add("created_at", "TEXT")
+
+        # remplir manuellement après
+        conn.execute("""
+            UPDATE forms
+            SET created_at = datetime('now')
+            WHERE created_at IS NULL
+        """)
 
     finally:
         conn.close()
@@ -1615,34 +1641,7 @@ async def get_form_stats() -> dict:
     return stats
 
 
-def ensure_forms():
-    conn = get_conn()
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS forms (
-            id INTEGER PRIMARY KEY AUTOINCREMENT
-        )
-    """)
 
-    cols = [r[1] for r in conn.execute("PRAGMA table_info(forms)")]
-
-    def add(col, typ):
-        if col not in cols:
-            conn.execute(f"ALTER TABLE forms ADD COLUMN {col} {typ}")
-
-    add("name", "TEXT")
-    add("command", "TEXT")
-    add("type", "TEXT DEFAULT 'custom'")
-    add("is_active", "INTEGER DEFAULT 1")
-
-    # ❌ PAS de DEFAULT dynamique ici
-    add("created_at", "TEXT")
-
-    # remplir manuellement après
-    conn.execute("""
-        UPDATE forms
-        SET created_at = datetime('now')
-        WHERE created_at IS NULL
-    """)
 
 async def get_forms_list() -> list:
     """
