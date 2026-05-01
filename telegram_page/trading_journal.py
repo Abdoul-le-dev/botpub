@@ -361,6 +361,8 @@ async def publish_signal(payload: dict) -> dict:
             print(payload)
 
             report = await broadcast_engine(_bot, broadcast_payload)
+
+            print(report)
             broadcast_id = None  # broadcast_engine ne retourne pas l'id DB direct
 
             # Mise à jour du broadcast_id si disponible
