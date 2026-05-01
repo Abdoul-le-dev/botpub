@@ -1613,34 +1613,28 @@ async def get_form_stats() -> dict:
     return stats
 
 
-async def get_forms_list() -> list:
-    """
-    Liste tous les formulaires avec statistiques de collecte.
-    Indique le type (system | custom) et les stats associées.
-    """
-    conn = get_conn()
-    try:
-        rows = conn.execute("""
-            SELECT
-                f.id,
-                f.name,
-                f.command,
-                f.type,
-                f.is_active,
-                f.created_at,
-                COUNT(DISTINCT fr.telegram_id) AS respondents,
-                COUNT(DISTINCT fr.id)          AS total_responses,
-                MAX(fr.created_at)             AS last_response_at
-            FROM forms f
-            LEFT JOIN form_responses fr ON fr.form_id = f.id
-            GROUP BY f.id
-            ORDER BY f.type DESC, f.created_at DESC
-        """).fetchall()
-    finally:
-        conn.close()
-    return [dict(r) for r in rows]
+def ensure_forms(conn):
+    # créer table si inexistante
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS forms (
+            id INTEGER PRIMARY KEY AUTOINCREMENT
+        )
+    """)
 
+    # colonnes existantes
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(forms)")]
 
+    def add(col, typ):
+        if col not in cols:
+            conn.execute(f"ALTER TABLE forms ADD COLUMN {col} {typ}")
+
+    # colonnes attendues par ton code
+    add("name", "TEXT")
+    add("command", "TEXT")
+    add("type", "TEXT DEFAULT 'custom'")
+    add("is_active", "INTEGER DEFAULT 1")
+    add("created_at", "TEXT DEFAULT (datetime('now'))")
+    
 async def get_form_field_mapping(form_id: int) -> dict:
     """
     Retourne le mapping champ→statistique d'un formulaire.
