@@ -291,6 +291,7 @@ async def publish_signal(payload: dict) -> dict:
     Retourne le signal créé + broadcast_id.
     """
     conn = get_conn()
+    print(payload)
     try:
         cur = conn.execute("""
             INSERT INTO signals
@@ -375,7 +376,8 @@ async def publish_signal(payload: dict) -> dict:
 
         except Exception as e:
             signal["broadcast_warning"] = str(e)
-
+    else:
+        print('not bot')
     signal["id"] = signal_id
     return signal
 
