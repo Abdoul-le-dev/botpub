@@ -38,13 +38,20 @@ from telegram_page.chat_route import router as chat_router
 from telegram_page.chat import init_chat_tables, set_bot 
 
 from contextlib import asynccontextmanager
- 
+
+from telegram_page.routes_trading import router as trading_router
+from telegram_page.trading_journal import (
+    init_trading_tables,
+    set_bot as set_trading_bot,
+)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_chat_tables() 
     set_bot(bot)
     init_forms_db()                          
     start_scheduler(bot, admin_id=571718066)
+    set_trading_bot(bot)
+    init_trading_tables()    
     #init_broadcast_history()
     #init_trading_tables()
     #migrate_categories_to_meta()      # crée conversations, subscriptions, migre messages
@@ -59,6 +66,7 @@ bot = Bot(token=os.getenv("token"))
 app = FastAPI(lifespan=lifespan)
 app.include_router(chat_router)
 app.include_router(forms_router) 
+app.include_router(trading_router) 
 
 
 origins = [
