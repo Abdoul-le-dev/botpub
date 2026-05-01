@@ -185,6 +185,83 @@ SCHEMA: dict[str, dict] = {
             "target", "total_sent", "open_rate", "broadcast_id", "generated_at",
         ],
     },
+
+    # ── Tables form_engine ────────────────────────────────────────────────────
+
+    "forms": {
+        "ddl": """
+            CREATE TABLE IF NOT EXISTS forms (
+                id            INTEGER  PRIMARY KEY AUTOINCREMENT,
+                name          TEXT     NOT NULL,
+                command       TEXT     NOT NULL UNIQUE,
+                type          TEXT     NOT NULL,
+                trigger_type  TEXT     NOT NULL DEFAULT 'command',
+                trigger_value TEXT,
+                intro         TEXT     DEFAULT '',
+                outro         TEXT     DEFAULT '',
+                fields        TEXT     NOT NULL DEFAULT '[]',
+                actions       TEXT     NOT NULL DEFAULT '[]',
+                conditions    TEXT     NOT NULL DEFAULT '[]',
+                quiz_config   TEXT     NOT NULL DEFAULT '{}',
+                options       TEXT     NOT NULL DEFAULT '{}',
+                actif         INTEGER  NOT NULL DEFAULT 1,
+                cree_le       DATETIME DEFAULT (datetime('now')),
+                modifie_le    DATETIME DEFAULT (datetime('now')),
+                is_active     INTEGER  DEFAULT 1,
+                created_at    TEXT
+            )
+        """,
+        "columns": [
+            "id", "name", "command", "type", "trigger_type", "trigger_value",
+            "intro", "outro", "fields", "actions", "conditions",
+            "quiz_config", "options", "actif", "cree_le", "modifie_le",
+            "is_active", "created_at",
+        ],
+    },
+
+    "form_responses": {
+    "ddl": """
+        CREATE TABLE IF NOT EXISTS form_responses (
+            id          INTEGER  PRIMARY KEY AUTOINCREMENT,
+            session_id  INTEGER  NOT NULL REFERENCES form_sessions(id),
+            form_id     INTEGER  NOT NULL,
+            telegram_id INTEGER  NOT NULL,
+            field_id    INTEGER  NOT NULL,
+            field_type  TEXT     NOT NULL,
+            value       TEXT,
+            is_correct  INTEGER,
+            points      INTEGER  DEFAULT 0,
+            answered_at DATETIME DEFAULT (datetime('now')),
+            field_label TEXT     DEFAULT '',
+            created_at  DATETIME DEFAULT (datetime('now'))   -- ← ajoutée
+        )
+    """,
+    "columns": [
+        "id", "session_id", "form_id", "telegram_id", "field_id",
+        "field_type", "value", "is_correct", "points",
+        "answered_at", "field_label", "created_at",   # ← ajoutée
+    ],
+    },
+
+    "form_sessions": {
+        "ddl": """
+            CREATE TABLE IF NOT EXISTS form_sessions (
+                id          INTEGER  PRIMARY KEY AUTOINCREMENT,
+                form_id     INTEGER  NOT NULL REFERENCES forms(id),
+                telegram_id INTEGER  NOT NULL,
+                step_index  INTEGER  NOT NULL DEFAULT 0,
+                status      TEXT     NOT NULL DEFAULT 'in_progress',
+                score       INTEGER  NOT NULL DEFAULT 0,
+                started_at  DATETIME DEFAULT (datetime('now')),
+                updated_at  DATETIME DEFAULT (datetime('now')),
+                UNIQUE(form_id, telegram_id)
+            )
+        """,
+        "columns": [
+            "id", "form_id", "telegram_id", "step_index",
+            "status", "score", "started_at", "updated_at",
+        ],
+    },
 }
 
 # Index à (re)créer après migration
