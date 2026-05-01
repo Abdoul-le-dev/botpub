@@ -97,7 +97,7 @@ def reset_problem_tables():
 
 def init_trading_tables():
 
-    ensure_forms(conn)
+    ensure_forms()
     
     conn = get_conn()
 
@@ -1615,8 +1615,10 @@ async def get_form_stats() -> dict:
     return stats
 
 
-def ensure_forms(conn):
+def ensure_forms():
     # créer table si inexistante
+
+    conn = get_conn()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS forms (
             id INTEGER PRIMARY KEY AUTOINCREMENT
