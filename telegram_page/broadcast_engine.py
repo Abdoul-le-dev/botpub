@@ -302,18 +302,20 @@ async def broadcast_engine(bot, payload: dict) -> dict:
             return {"error": "format scheduled_at invalide, utilise YYYY-MM-DD HH:MM:SS"}
 
     # ── 4. Résolution destinataires ───────────────────────────────────────────
+    print("2")
     final_ids = _resolve_user_ids(category, user_ids, exclude_user_ids, filters)
     total     = len(final_ids)
 
     if total == 0:
         await _notify_admin(bot, ADMIN_ID, "❌ Aucun destinataire trouvé. Diffusion annulée.")
         return {"error": "aucun destinataire trouvé", "tag": tag}
-
+    print("3")
     # ── 5. Démarrage ──────────────────────────────────────────────────────────
     started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     tag_label  = f"[{tag}] " if tag else ""
     est_min    = round(total * delay / 60, 2)
 
+    print("4")
     await _notify_admin(bot, ADMIN_ID,
         f"📤 {tag_label}Diffusion démarrée\n"
         f"Destinataires : {total}\nFormat : {fmt}\nDurée estimée : {est_min} min")

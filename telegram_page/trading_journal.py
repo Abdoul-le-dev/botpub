@@ -357,8 +357,8 @@ async def publish_signal(payload: dict) -> dict:
                 broadcast_payload["format"]    = "image+text"
                 broadcast_payload["media_url"] = payload["screenshot_url"]
 
-                print("1")
-                print(payload)
+            print("1")
+            print(payload)
 
             report = await broadcast_engine(_bot, broadcast_payload)
             broadcast_id = None  # broadcast_engine ne retourne pas l'id DB direct
