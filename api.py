@@ -41,7 +41,7 @@ from contextlib import asynccontextmanager
 
 from telegram_page.routes_trading import router as trading_router
 from telegram_page.trading_journal import (
-    init_trading_tables,
+    init_trading_tables,reset_problem_tables,
     set_bot as set_trading_bot,
 )
 @asynccontextmanager
@@ -51,6 +51,7 @@ async def lifespan(app: FastAPI):
     init_forms_db()                          
     start_scheduler(bot, admin_id=571718066)
     set_trading_bot(bot)
+    reset_problem_tables()
     init_trading_tables()    
     #init_broadcast_history()
     #init_trading_tables()

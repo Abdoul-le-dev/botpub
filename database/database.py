@@ -1405,77 +1405,158 @@ async def drop_category(name_categorie: str):
         "members_removed": deleted_members
     }
 
-
-async def init_trading_tables():
-    """
-    Crée les 3 tables trading si elles n'existent pas.
-    Appelé depuis init_db() au boot.
-    """
+def init_trading_tables():
     conn = get_conn()
-    cursor = conn.cursor()
- 
-    # ── signals ─────────────────────────────────────────────────────────
-    # Les signaux envoyés par l'admin à la communauté
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS signals (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            pair            VARCHAR(20)  NOT NULL,          -- EURUSD, GBPJPY...
-            direction       VARCHAR(10)  NOT NULL,          -- buy | sell
-            entry_price     DECIMAL(10,5) NOT NULL,
-            stop_loss       DECIMAL(10,5) NOT NULL,
-            take_profit_1   DECIMAL(10,5) NOT NULL,
-            take_profit_2   DECIMAL(10,5),                  -- optionnel
-            take_profit_3   DECIMAL(10,5),                  -- optionnel
-            result_pips     DECIMAL(8,1)  DEFAULT NULL,     -- rempli à la clôture
-            result_percent  DECIMAL(6,2)  DEFAULT NULL,     -- rempli à la clôture
-            status          VARCHAR(20)   DEFAULT 'active', -- active | closed | cancelled
-            message_id      BIGINT        DEFAULT NULL,     -- message Telegram lié
-            note            TEXT,                           -- commentaire admin
-            created_at      DATETIME      DEFAULT CURRENT_TIMESTAMP,
-            closed_at       DATETIME      DEFAULT NULL
+
+    def ensure_table(table_name, create_sql, columns):
+        # 1. créer table si absente
+        conn.execute(create_sql)
+
+        # 2. récupérer colonnes existantes
+        existing = [r[1] for r in conn.execute(f"PRAGMA table_info({table_name})")]
+
+        # 3. ajouter colonnes manquantes
+        for col_name, col_type in columns.items():
+            if col_name not in existing:
+                try:
+                    conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
+                    print(f"[MIGRATION] {table_name}.{col_name} ajouté")
+                except Exception as e:
+                    print(f"[MIGRATION ERROR] {table_name}.{col_name} -> {e}")
+
+    try:
+        # ─────────────────────────────────────────────
+        # SIGNALS
+        # ─────────────────────────────────────────────
+        ensure_table(
+            "signals",
+            """
+            CREATE TABLE IF NOT EXISTS signals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT
+            )
+            """,
+            {
+                "pair": "TEXT",
+                "direction": "TEXT",
+                "timeframe": "TEXT DEFAULT 'H4'",
+                "entry_price": "REAL",
+                "tp1": "REAL",
+                "tp2": "REAL",
+                "sl": "REAL",
+                "note": "TEXT",
+                "screenshot_url": "TEXT",
+                "category": "TEXT DEFAULT 'clients_actifs'",
+                "status": "TEXT DEFAULT 'open'",
+                "close_price": "REAL",
+                "close_result": "TEXT",
+                "close_screenshot": "TEXT",
+                "result_pips": "REAL",
+                "result_percent": "REAL",
+                "published_at": "TEXT",
+                "closed_at": "TEXT",
+                "lot_suggested": "REAL",
+                "broadcast_id": "INTEGER"
+            }
         )
-    """)
- 
-    # ── trade_journal ────────────────────────────────────────────────────
-    # Journal personnel de chaque membre pour chaque signal
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS trade_journal (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            signal_id       INTEGER       NOT NULL,
-            user_id         BIGINT        NOT NULL,         -- telegram_id du membre
-            entry_price     DECIMAL(10,5) NOT NULL,         -- prix réel du membre
-            exit_price      DECIMAL(10,5) DEFAULT NULL,     -- rempli à la clôture
-            lot_size        DECIMAL(6,2)  DEFAULT NULL,     -- taille de position
-            result_pips     DECIMAL(8,1)  DEFAULT NULL,
-            result_percent  DECIMAL(6,2)  DEFAULT NULL,
-            screenshot_url  TEXT          DEFAULT NULL,     -- URL serveur externe
-            status          VARCHAR(20)   DEFAULT 'open',   -- open | closed | cancelled
-            note            TEXT,                           -- note personnelle du membre
-            created_at      DATETIME      DEFAULT CURRENT_TIMESTAMP,
-            closed_at       DATETIME      DEFAULT NULL,
-            FOREIGN KEY (signal_id) REFERENCES signals(id) ON DELETE CASCADE
+
+        # ─────────────────────────────────────────────
+        # SIGNAL PARTICIPATIONS
+        # ─────────────────────────────────────────────
+        ensure_table(
+            "signal_participations",
+            """
+            CREATE TABLE IF NOT EXISTS signal_participations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT
+            )
+            """,
+            {
+                "signal_id": "INTEGER",
+                "user_id": "INTEGER",
+                "response": "TEXT",
+                "responded_at": "TEXT"
+            }
         )
-    """)
- 
-    # ── trade_comments ───────────────────────────────────────────────────
-    # Commentaires des membres sur un trade journalisé
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS trade_comments (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            trade_id    INTEGER  NOT NULL,                  -- trade_journal.id
-            user_id     BIGINT   NOT NULL,                  -- telegram_id
-            comment     TEXT     NOT NULL,
-            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (trade_id) REFERENCES trade_journal(id) ON DELETE CASCADE
+
+        # ─────────────────────────────────────────────
+        # TRADE JOURNAL
+        # ─────────────────────────────────────────────
+        ensure_table(
+            "trade_journal",
+            """
+            CREATE TABLE IF NOT EXISTS trade_journal (
+                id INTEGER PRIMARY KEY AUTOINCREMENT
+            )
+            """,
+            {
+                "signal_id": "INTEGER",
+                "user_id": "INTEGER",
+                "participated": "INTEGER DEFAULT 1",
+                "entry_price": "REAL",
+                "exit_price": "REAL",
+                "result_pips": "REAL",
+                "result_percent": "REAL",
+                "gain_usd": "REAL",
+                "lot_used": "REAL",
+                "behavior": "TEXT",
+                "screenshot_url": "TEXT",
+                "capital_before": "REAL",
+                "capital_after": "REAL",
+                "submitted_at": "TEXT",
+                "status": "TEXT"
+            }
         )
-    """)
- 
-    conn.commit()
-    cursor.close()
-    conn.close()
-    print("[DB] ✅ Tables trading vérifiées (signals, trade_journal, trade_comments)")
- 
- 
+
+        # ─────────────────────────────────────────────
+        # FOLLOWUP COMMENTS
+        # ─────────────────────────────────────────────
+        ensure_table(
+            "followup_comments",
+            """
+            CREATE TABLE IF NOT EXISTS followup_comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT
+            )
+            """,
+            {
+                "signal_id": "INTEGER",
+                "type": "TEXT",
+                "message": "TEXT",
+                "screenshot_url": "TEXT",
+                "broadcast_id": "INTEGER",
+                "sent_at": "TEXT"
+            }
+        )
+
+        # ─────────────────────────────────────────────
+        # MEMBER CAPITAL
+        # ─────────────────────────────────────────────
+        ensure_table(
+            "member_capital",
+            """
+            CREATE TABLE IF NOT EXISTS member_capital (
+                id INTEGER PRIMARY KEY AUTOINCREMENT
+            )
+            """,
+            {
+                "user_id": "INTEGER",
+                "capital": "REAL",
+                "type": "TEXT DEFAULT 'gains'",
+                "declared_at": "TEXT",
+                "source": "TEXT DEFAULT 'form'"
+            }
+        )
+
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_signal_pub ON signals(published_at)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_signal_status ON signals(status)
+        """)
+
+        conn.commit()
+        print("[DB] Vérification + migration terminée OK")
+
+    finally:
+        conn.close()
 # ────────────────────────────────────────────────────────────────────────
 # SIGNALS
 # ────────────────────────────────────────────────────────────────────────
