@@ -79,10 +79,6 @@ def _percent(entry: float, exit_: float, direction: str) -> float:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def init_trading_tables():
-    """
-    Crée toutes les tables trading si elles n'existent pas.
-    Gère aussi les migrations simples (ajout de colonnes manquantes).
-    """
     conn = get_conn()
     try:
         # ── Table signals ────────────────────────────────────────────────
@@ -90,19 +86,18 @@ def init_trading_tables():
             CREATE TABLE IF NOT EXISTS signals (
                 id               INTEGER  PRIMARY KEY AUTOINCREMENT,
                 pair             TEXT     NOT NULL,
-                direction        TEXT     NOT NULL CHECK(direction IN ('long','short')),
-                timeframe        TEXT     DEFAULT 'H4',
-                entry_price      REAL     NOT NULL,
+                direction        TEXT     NOT NULL,
+                timeframe        TEXT,
+                entry_price      REAL,
                 tp1              REAL,
                 tp2              REAL,
                 sl               REAL,
                 note             TEXT,
                 screenshot_url   TEXT,
-                category         TEXT     DEFAULT 'clients_actifs',
-                status           TEXT     DEFAULT 'open'
-                                          CHECK(status IN ('open','closed','cancelled')),
+                category         TEXT,
+                status           TEXT,
                 close_price      REAL,
-                close_result     TEXT     CHECK(close_result IN ('tp','sl','partial','cancelled') OR close_result IS NULL),
+                close_result     TEXT,
                 close_screenshot TEXT,
                 result_pips      REAL,
                 result_percent   REAL,
@@ -113,310 +108,39 @@ def init_trading_tables():
             )
         """)
 
-        # ── MIGRATION: ajouter colonnes manquantes ───────────────────────
-        cols = [row[1] for row in conn.execute("PRAGMA table_info(signals)")]
+        # ── MIGRATION INTELLIGENTE ──────────────────────────────────────
+        existing_cols = [row[1] for row in conn.execute("PRAGMA table_info(signals)")]
 
-        if "published_at" not in cols:
-            conn.execute("ALTER TABLE signals ADD COLUMN published_at TEXT")
-            conn.execute("UPDATE signals SET published_at = datetime('now') WHERE published_at IS NULL")
+        def add_column(name, sql_type):
+            if name not in existing_cols:
+                conn.execute(f"ALTER TABLE signals ADD COLUMN {name} {sql_type}")
 
-        if "closed_at" not in cols:
-            conn.execute("ALTER TABLE signals ADD COLUMN closed_at TEXT")
+        add_column("close_result", "TEXT")
+        add_column("close_price", "REAL")
+        add_column("close_screenshot", "TEXT")
+        add_column("result_pips", "REAL")
+        add_column("result_percent", "REAL")
+        add_column("published_at", "TEXT")
+        add_column("closed_at", "TEXT")
+        add_column("lot_suggested", "REAL")
+        add_column("broadcast_id", "INTEGER")
 
-        if "lot_suggested" not in cols:
-            conn.execute("ALTER TABLE signals ADD COLUMN lot_suggested REAL")
-
-        if "broadcast_id" not in cols:
-            conn.execute("ALTER TABLE signals ADD COLUMN broadcast_id INTEGER")
-
-        # ── Table signal_participations ──────────────────────────────────
+        # Remplir les dates si NULL
         conn.execute("""
-            CREATE TABLE IF NOT EXISTS signal_participations (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                signal_id   INTEGER NOT NULL REFERENCES signals(id),
-                user_id     INTEGER NOT NULL,
-                response    TEXT    NOT NULL CHECK(response IN ('in','out')),
-                responded_at TEXT   DEFAULT (datetime('now')),
-                UNIQUE(signal_id, user_id)
-            )
+            UPDATE signals 
+            SET published_at = datetime('now') 
+            WHERE published_at IS NULL
         """)
 
-        # ── Table trade_journal ──────────────────────────────────────────
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS trade_journal (
-                id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                signal_id        INTEGER NOT NULL REFERENCES signals(id),
-                user_id          INTEGER NOT NULL,
-                participated     INTEGER DEFAULT 1,
-                entry_price      REAL,
-                exit_price       REAL,
-                result_pips      REAL,
-                result_percent   REAL,
-                gain_usd         REAL,
-                lot_used         REAL,
-                behavior         TEXT CHECK(behavior IN ('disciplined','early_exit','sl_skip','passive') OR behavior IS NULL),
-                screenshot_url   TEXT,
-                capital_before   REAL,
-                capital_after    REAL,
-                submitted_at     TEXT DEFAULT (datetime('now')),
-                status           TEXT DEFAULT 'closed'
-                                     CHECK(status IN ('open','closed')),
-                UNIQUE(signal_id, user_id)
-            )
-        """)
-
-        # ── Table followup_comments ──────────────────────────────────────
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS followup_comments (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                signal_id    INTEGER NOT NULL REFERENCES signals(id),
-                type         TEXT NOT NULL
-                                     CHECK(type IN ('update','invalidation','secure','encourage')),
-                message      TEXT NOT NULL,
-                screenshot_url TEXT,
-                broadcast_id INTEGER,
-                sent_at      TEXT DEFAULT (datetime('now'))
-            )
-        """)
-
-        # ── Table trading_pairs ──────────────────────────────────────────
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS trading_pairs (
-                id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol         TEXT NOT NULL UNIQUE,
-                category       TEXT DEFAULT 'forex'
-                                       CHECK(category IN ('forex','crypto','indices','commodities')),
-                pip_value      REAL NOT NULL DEFAULT 10.0,
-                decimals       INTEGER DEFAULT 5,
-                binance_symbol TEXT,
-                is_active      INTEGER DEFAULT 1,
-                note           TEXT,
-                created_at     TEXT DEFAULT (datetime('now')),
-                updated_at     TEXT DEFAULT (datetime('now'))
-            )
-        """)
-
-        # ── Table member_capital ─────────────────────────────────────────
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS member_capital (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id      INTEGER NOT NULL,
-                capital      REAL NOT NULL,
-                type         TEXT DEFAULT 'gains'
-                                     CHECK(type IN ('gains','withdrawal','loss','initial')),
-                declared_at  TEXT DEFAULT (datetime('now')),
-                source       TEXT DEFAULT 'form'
-            )
-        """)
-
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_capital_user 
-            ON member_capital(user_id, declared_at DESC)
-        """)
-
-        # ── Table ai_bilans ──────────────────────────────────────────────
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS ai_bilans (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                week_label   TEXT NOT NULL,
-                week_start   TEXT NOT NULL,
-                week_end     TEXT NOT NULL,
-                target       TEXT DEFAULT 'journalised',
-                total_sent   INTEGER DEFAULT 0,
-                open_rate    REAL,
-                broadcast_id INTEGER,
-                generated_at TEXT DEFAULT (datetime('now'))
-            )
-        """)
-
-        # ── Index ────────────────────────────────────────────────────────
+        # ── INDEX (après migration !) ────────────────────────────────────
         conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_status ON signals(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_pub ON signals(published_at DESC)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tj_user ON trade_journal(user_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tj_signal ON trade_journal(signal_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_sp_signal ON signal_participations(signal_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_sp_user ON signal_participations(user_id)")
-
-        # ── Données de base ──────────────────────────────────────────────
-        default_pairs = [
-            ("EUR/USD", "forex", 10.0, 5, "EURUSDT"),
-            ("GBP/USD", "forex", 10.0, 5, "GBPUSDT"),
-            ("XAU/USD", "commodities", 1.0, 2, "XAUUSDT"),
-            ("BTC/USD", "crypto", 1.0, 1, "BTCUSDT"),
-            ("GBP/JPY", "forex", 8.2, 3, "GBPJPY"),
-            ("NAS100", "indices", 1.0, 1, "NASUSDT"),
-        ]
-
-        conn.executemany("""
-            INSERT OR IGNORE INTO trading_pairs 
-            (symbol, category, pip_value, decimals, binance_symbol)
-            VALUES (?, ?, ?, ?, ?)
-        """, default_pairs)
 
         conn.commit()
-        print("[trading_journal] Tables initialisées.")
+        print("[trading_journal] Migration OK + tables prêtes")
+
     finally:
         conn.close()
-def init_trading_tabless():
-    """
-    Crée toutes les tables trading si elles n'existent pas.
-    Idempotent — sans risque si appelée plusieurs fois.
-    """
-    conn = get_conn()
-    try:
-        # ── Table signals (trades publiés par l'admin) ────────────────────
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS signals (
-                id               INTEGER  PRIMARY KEY AUTOINCREMENT,
-                pair             TEXT     NOT NULL,
-                direction        TEXT     NOT NULL CHECK(direction IN ('long','short')),
-                timeframe        TEXT     DEFAULT 'H4',
-                entry_price      REAL     NOT NULL,
-                tp1              REAL,
-                tp2              REAL,
-                sl               REAL,
-                note             TEXT,
-                screenshot_url   TEXT,
-                category         TEXT     DEFAULT 'clients_actifs',
-                status           TEXT     DEFAULT 'open'
-                                          CHECK(status IN ('open','closed','cancelled')),
-                close_price      REAL,
-                close_result     TEXT     CHECK(close_result IN ('tp','sl','partial','cancelled') OR close_result IS NULL),
-                close_screenshot TEXT,
-                result_pips      REAL,
-                result_percent   REAL,
-                published_at     TEXT     DEFAULT (datetime('now')),
-                closed_at        TEXT,
-                lot_suggested    REAL,
-                broadcast_id     INTEGER
-            )
-        """)
-
-        # ── Table signal_participations (boutons "Je suis dedans") ────────
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS signal_participations (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                signal_id   INTEGER NOT NULL REFERENCES signals(id),
-                user_id     INTEGER NOT NULL,
-                response    TEXT    NOT NULL CHECK(response IN ('in','out')),
-                responded_at TEXT   DEFAULT (datetime('now')),
-                UNIQUE(signal_id, user_id)
-            )
-        """)
-
-        # ── Table trade_journal (résultats réels membres) ─────────────────
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS trade_journal (
-                id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                signal_id        INTEGER NOT NULL REFERENCES signals(id),
-                user_id          INTEGER NOT NULL,
-                participated     INTEGER DEFAULT 1,
-                entry_price      REAL,
-                exit_price       REAL,
-                result_pips      REAL,
-                result_percent   REAL,
-                gain_usd         REAL,
-                lot_used         REAL,
-                behavior         TEXT    CHECK(behavior IN ('disciplined','early_exit','sl_skip','passive') OR behavior IS NULL),
-                screenshot_url   TEXT,
-                capital_before   REAL,
-                capital_after    REAL,
-                submitted_at     TEXT    DEFAULT (datetime('now')),
-                status           TEXT    DEFAULT 'closed'
-                                         CHECK(status IN ('open','closed')),
-                UNIQUE(signal_id, user_id)
-            )
-        """)
-
-        # ── Table followup_comments (commentaires de suivi trade ouvert) ──
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS followup_comments (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                signal_id    INTEGER NOT NULL REFERENCES signals(id),
-                type         TEXT    NOT NULL
-                                     CHECK(type IN ('update','invalidation','secure','encourage')),
-                message      TEXT    NOT NULL,
-                screenshot_url TEXT,
-                broadcast_id INTEGER,
-                sent_at      TEXT    DEFAULT (datetime('now'))
-            )
-        """)
-
-        # ── Table trading_pairs (référentiel paires) ──────────────────────
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS trading_pairs (
-                id             INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol         TEXT    NOT NULL UNIQUE,
-                category       TEXT    DEFAULT 'forex'
-                                       CHECK(category IN ('forex','crypto','indices','commodities')),
-                pip_value      REAL    NOT NULL DEFAULT 10.0,
-                decimals       INTEGER DEFAULT 5,
-                binance_symbol TEXT,
-                is_active      INTEGER DEFAULT 1,
-                note           TEXT,
-                created_at     TEXT    DEFAULT (datetime('now')),
-                updated_at     TEXT    DEFAULT (datetime('now'))
-            )
-        """)
-
-        # ── Table member_capital (suivi capital déclaré) ──────────────────
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS member_capital (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id      INTEGER NOT NULL,
-                capital      REAL    NOT NULL,
-                type         TEXT    DEFAULT 'gains'
-                                     CHECK(type IN ('gains','withdrawal','loss','initial')),
-                declared_at  TEXT    DEFAULT (datetime('now')),
-                source       TEXT    DEFAULT 'form'
-            )
-        """)
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_capital_user ON member_capital(user_id, declared_at DESC)
-        """)
-
-        # ── Table ai_bilans (historique bilans IA générés) ────────────────
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS ai_bilans (
-                id           INTEGER PRIMARY KEY AUTOINCREMENT,
-                week_label   TEXT    NOT NULL,
-                week_start   TEXT    NOT NULL,
-                week_end     TEXT    NOT NULL,
-                target       TEXT    DEFAULT 'journalised',
-                total_sent   INTEGER DEFAULT 0,
-                open_rate    REAL,
-                broadcast_id INTEGER,
-                generated_at TEXT    DEFAULT (datetime('now'))
-            )
-        """)
-
-        # ── Index performance ─────────────────────────────────────────────
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_status   ON signals(status)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_pub      ON signals(published_at DESC)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tj_user         ON trade_journal(user_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tj_signal       ON trade_journal(signal_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_sp_signal       ON signal_participations(signal_id)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_sp_user         ON signal_participations(user_id)")
-
-        # ── Données de base (paires) ──────────────────────────────────────
-        default_pairs = [
-            ("EUR/USD", "forex",       10.0, 5, "EURUSDT"),
-            ("GBP/USD", "forex",       10.0, 5, "GBPUSDT"),
-            ("XAU/USD", "commodities",  1.0, 2, "XAUUSDT"),
-            ("BTC/USD", "crypto",       1.0, 1, "BTCUSDT"),
-            ("GBP/JPY", "forex",        8.2, 3, "GBPJPY"),
-            ("NAS100",  "indices",      1.0, 1, "NASUSDT"),
-        ]
-        conn.executemany("""
-            INSERT OR IGNORE INTO trading_pairs (symbol, category, pip_value, decimals, binance_symbol)
-            VALUES (?, ?, ?, ?, ?)
-        """, default_pairs)
-
-        conn.commit()
-        print("[trading_journal] Tables initialisées.")
-    finally:
-        conn.close()
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 — SIGNAUX
