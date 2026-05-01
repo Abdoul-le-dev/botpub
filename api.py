@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from database.database import migrate_categories_to_meta, get_data, get_data_users, get_categories_user, init_broadcast_history,  get_broadcast_history,  init_trading_tables
+from database.database import migrate_categories_to_meta, get_data, get_data_users, get_categories_user, init_broadcast_history,  get_broadcast_history
 import os
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
@@ -41,7 +41,7 @@ from contextlib import asynccontextmanager
 
 from telegram_page.routes_trading import router as trading_router
 from telegram_page.trading_journal import (
-    init_trading_tables,reset_problem_tables,
+    init_trading_tables, reset_problem_tables,
     set_bot as set_trading_bot,
 )
 @asynccontextmanager

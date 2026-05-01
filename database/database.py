@@ -1405,7 +1405,8 @@ async def drop_category(name_categorie: str):
         "members_removed": deleted_members
     }
 
-def init_trading_tables():
+def init_trading_tabless():
+
     conn = get_conn()
 
     def ensure_table(table_name, create_sql, columns):
