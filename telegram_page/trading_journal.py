@@ -377,7 +377,7 @@ async def publish_signal(payload: dict) -> dict:
         except Exception as e:
             signal["broadcast_warning"] = str(e)
     else:
-        print('not bot')
+        print('not bot...')
     signal["id"] = signal_id
     return signal
 
