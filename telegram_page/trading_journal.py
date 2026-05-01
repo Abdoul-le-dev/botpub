@@ -81,37 +81,6 @@ def _percent(entry: float, exit_: float, direction: str) -> float:
 def init_trading_tables():
     conn = get_conn()
     try:
-        # ── TABLE signals ───────────────────────────────────────────────
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS signals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                pair TEXT,
-                direction TEXT,
-                entry_price REAL,
-                status TEXT,
-                close_result TEXT,
-                published_at TEXT,
-                closed_at TEXT
-            )
-        """)
-
-        # MIGRATION signals
-        sig_cols = [row[1] for row in conn.execute("PRAGMA table_info(signals)")]
-
-        def add_sig(col, type_):
-            if col not in sig_cols:
-                conn.execute(f"ALTER TABLE signals ADD COLUMN {col} {type_}")
-
-        add_sig("close_result", "TEXT")
-        add_sig("published_at", "TEXT")
-        add_sig("closed_at", "TEXT")
-
-        conn.execute("""
-            UPDATE signals
-            SET published_at = datetime('now')
-            WHERE published_at IS NULL
-        """)
-
         # ── TABLE trade_journal ─────────────────────────────────────────
         conn.execute("""
             CREATE TABLE IF NOT EXISTS trade_journal (
@@ -121,36 +90,39 @@ def init_trading_tables():
             )
         """)
 
-        # MIGRATION trade_journal
-        tj_cols = [row[1] for row in conn.execute("PRAGMA table_info(trade_journal)")]
+        # ── MIGRATION COMPLETE trade_journal ────────────────────────────
+        cols = [row[1] for row in conn.execute("PRAGMA table_info(trade_journal)")]
 
-        def add_tj(col, type_):
-            if col not in tj_cols:
+        def add(col, type_):
+            if col not in cols:
                 conn.execute(f"ALTER TABLE trade_journal ADD COLUMN {col} {type_}")
 
-        add_tj("submitted_at", "TEXT")
-        add_tj("result_pips", "REAL")
-        add_tj("result_percent", "REAL")
-        add_tj("gain_usd", "REAL")
-        add_tj("lot_used", "REAL")
-        add_tj("status", "TEXT")
+        add("participated", "INTEGER DEFAULT 1")
+        add("entry_price", "REAL")
+        add("exit_price", "REAL")
+        add("result_pips", "REAL")
+        add("result_percent", "REAL")
+        add("gain_usd", "REAL")
+        add("lot_used", "REAL")
+        add("behavior", "TEXT")
+        add("screenshot_url", "TEXT")
+        add("capital_before", "REAL")
+        add("capital_after", "REAL")
+        add("submitted_at", "TEXT")
+        add("status", "TEXT")
 
+        # ── FIX DATA ────────────────────────────────────────────────────
         conn.execute("""
             UPDATE trade_journal
             SET submitted_at = datetime('now')
             WHERE submitted_at IS NULL
         """)
 
-        # ── INDEX ───────────────────────────────────────────────────────
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_pub ON signals(published_at DESC)")
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_tj_user ON trade_journal(user_id)")
-
         conn.commit()
-        print("[trading_journal] DB OK + migrations appliquées")
+        print("[trade_journal] migration OK")
 
     finally:
-        conn.close()
-# ══════════════════════════════════════════════════════════════════════════════
+        conn.close()# ══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 — SIGNAUX
 # ══════════════════════════════════════════════════════════════════════════════
 
