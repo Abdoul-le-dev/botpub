@@ -1616,8 +1616,6 @@ async def get_form_stats() -> dict:
 
 
 def ensure_forms():
-    # créer table si inexistante
-
     conn = get_conn()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS forms (
@@ -1625,19 +1623,26 @@ def ensure_forms():
         )
     """)
 
-    # colonnes existantes
     cols = [r[1] for r in conn.execute("PRAGMA table_info(forms)")]
 
     def add(col, typ):
         if col not in cols:
             conn.execute(f"ALTER TABLE forms ADD COLUMN {col} {typ}")
 
-    # colonnes attendues par ton code
     add("name", "TEXT")
     add("command", "TEXT")
     add("type", "TEXT DEFAULT 'custom'")
     add("is_active", "INTEGER DEFAULT 1")
-    add("created_at", "TEXT DEFAULT (datetime('now'))")
+
+    # ❌ PAS de DEFAULT dynamique ici
+    add("created_at", "TEXT")
+
+    # remplir manuellement après
+    conn.execute("""
+        UPDATE forms
+        SET created_at = datetime('now')
+        WHERE created_at IS NULL
+    """)
 
 async def get_forms_list() -> list:
     """
