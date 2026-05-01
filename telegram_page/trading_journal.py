@@ -81,67 +81,75 @@ def _percent(entry: float, exit_: float, direction: str) -> float:
 def init_trading_tables():
     conn = get_conn()
     try:
-        # ── Table signals ────────────────────────────────────────────────
+        # ── TABLE signals ───────────────────────────────────────────────
         conn.execute("""
             CREATE TABLE IF NOT EXISTS signals (
-                id               INTEGER  PRIMARY KEY AUTOINCREMENT,
-                pair             TEXT     NOT NULL,
-                direction        TEXT     NOT NULL,
-                timeframe        TEXT,
-                entry_price      REAL,
-                tp1              REAL,
-                tp2              REAL,
-                sl               REAL,
-                note             TEXT,
-                screenshot_url   TEXT,
-                category         TEXT,
-                status           TEXT,
-                close_price      REAL,
-                close_result     TEXT,
-                close_screenshot TEXT,
-                result_pips      REAL,
-                result_percent   REAL,
-                published_at     TEXT,
-                closed_at        TEXT,
-                lot_suggested    REAL,
-                broadcast_id     INTEGER
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pair TEXT,
+                direction TEXT,
+                entry_price REAL,
+                status TEXT,
+                close_result TEXT,
+                published_at TEXT,
+                closed_at TEXT
             )
         """)
 
-        # ── MIGRATION INTELLIGENTE ──────────────────────────────────────
-        existing_cols = [row[1] for row in conn.execute("PRAGMA table_info(signals)")]
+        # MIGRATION signals
+        sig_cols = [row[1] for row in conn.execute("PRAGMA table_info(signals)")]
 
-        def add_column(name, sql_type):
-            if name not in existing_cols:
-                conn.execute(f"ALTER TABLE signals ADD COLUMN {name} {sql_type}")
+        def add_sig(col, type_):
+            if col not in sig_cols:
+                conn.execute(f"ALTER TABLE signals ADD COLUMN {col} {type_}")
 
-        add_column("close_result", "TEXT")
-        add_column("close_price", "REAL")
-        add_column("close_screenshot", "TEXT")
-        add_column("result_pips", "REAL")
-        add_column("result_percent", "REAL")
-        add_column("published_at", "TEXT")
-        add_column("closed_at", "TEXT")
-        add_column("lot_suggested", "REAL")
-        add_column("broadcast_id", "INTEGER")
+        add_sig("close_result", "TEXT")
+        add_sig("published_at", "TEXT")
+        add_sig("closed_at", "TEXT")
 
-        # Remplir les dates si NULL
         conn.execute("""
-            UPDATE signals 
-            SET published_at = datetime('now') 
+            UPDATE signals
+            SET published_at = datetime('now')
             WHERE published_at IS NULL
         """)
 
-        # ── INDEX (après migration !) ────────────────────────────────────
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_status ON signals(status)")
+        # ── TABLE trade_journal ─────────────────────────────────────────
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS trade_journal (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                signal_id INTEGER,
+                user_id INTEGER
+            )
+        """)
+
+        # MIGRATION trade_journal
+        tj_cols = [row[1] for row in conn.execute("PRAGMA table_info(trade_journal)")]
+
+        def add_tj(col, type_):
+            if col not in tj_cols:
+                conn.execute(f"ALTER TABLE trade_journal ADD COLUMN {col} {type_}")
+
+        add_tj("submitted_at", "TEXT")
+        add_tj("result_pips", "REAL")
+        add_tj("result_percent", "REAL")
+        add_tj("gain_usd", "REAL")
+        add_tj("lot_used", "REAL")
+        add_tj("status", "TEXT")
+
+        conn.execute("""
+            UPDATE trade_journal
+            SET submitted_at = datetime('now')
+            WHERE submitted_at IS NULL
+        """)
+
+        # ── INDEX ───────────────────────────────────────────────────────
         conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_pub ON signals(published_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tj_user ON trade_journal(user_id)")
 
         conn.commit()
-        print("[trading_journal] Migration OK + tables prêtes")
+        print("[trading_journal] DB OK + migrations appliquées")
 
     finally:
         conn.close()
-
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 — SIGNAUX
 # ══════════════════════════════════════════════════════════════════════════════
