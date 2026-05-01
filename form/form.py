@@ -319,7 +319,7 @@ def get_session(session_id: int) -> dict | None:
         row = conn.execute("SELECT * FROM form_sessions WHERE id=?", (session_id,)).fetchone()
     return dict(row) if row else None
 
-
+print('go')
 # ════════════════════════════════════════════════════════════════════════════
 # RÉPONSES
 # ════════════════════════════════════════════════════════════════════════════
