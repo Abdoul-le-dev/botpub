@@ -267,7 +267,7 @@ async def broadcast_engine(bot, payload: dict) -> dict:
     media_url        = payload.get("media_url")
     category         = payload.get("category")
     user_ids         = payload.get("user_ids")
-    scheduled_at     = payload.get("scheduled_at")
+    scheduled_at     = payload.get("scheduled_at") 
     delay            = float(payload.get("delay", 0.1))
     retry            = bool(payload.get("retry", True))
     exclude_user_ids = payload.get("exclude_user_ids") or []
@@ -275,6 +275,7 @@ async def broadcast_engine(bot, payload: dict) -> dict:
     filters          = payload.get("filters") or {}
     tag              = payload.get("tag", "")
     callback_url     = payload.get("callback_url")
+    print("1")
 
     # ── 2. Validation ─────────────────────────────────────────────────────────
     if not message and fmt == "text":
