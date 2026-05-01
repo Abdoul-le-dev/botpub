@@ -51,8 +51,8 @@ async def lifespan(app: FastAPI):
     init_forms_db()                          
     start_scheduler(bot, admin_id=571718066)
     set_trading_bot(bot)
-    #reset_problem_tables()
-    init_trading_tables()    
+    reset_problem_tables()
+    #init_trading_tables()    
     #init_broadcast_history()
     #init_trading_tables()
     #migrate_categories_to_meta()      # crée conversations, subscriptions, migre messages
