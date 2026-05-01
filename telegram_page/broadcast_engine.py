@@ -42,6 +42,7 @@ def _resolve_user_ids(
 ) -> list:
     exclude = set(exclude_user_ids or [])
 
+    print(category)
     with _conn() as conn:
         if user_ids:
             return [uid for uid in user_ids if uid not in exclude]
