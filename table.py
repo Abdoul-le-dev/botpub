@@ -220,27 +220,27 @@ SCHEMA: dict[str, dict] = {
     },
 
     "form_responses": {
-    "ddl": """
-        CREATE TABLE IF NOT EXISTS form_responses (
-            id          INTEGER  PRIMARY KEY AUTOINCREMENT,
-            session_id  INTEGER  NOT NULL REFERENCES form_sessions(id),
-            form_id     INTEGER  NOT NULL,
-            telegram_id INTEGER  NOT NULL,
-            field_id    INTEGER  NOT NULL,
-            field_type  TEXT     NOT NULL,
-            value       TEXT,
-            is_correct  INTEGER,
-            points      INTEGER  DEFAULT 0,
-            answered_at DATETIME DEFAULT (datetime('now')),
-            field_label TEXT     DEFAULT '',
-            created_at  DATETIME DEFAULT (datetime('now'))   -- ← ajoutée
-        )
-    """,
-    "columns": [
-        "id", "session_id", "form_id", "telegram_id", "field_id",
-        "field_type", "value", "is_correct", "points",
-        "answered_at", "field_label", "created_at",   # ← ajoutée
-    ],
+        "ddl": """
+            CREATE TABLE IF NOT EXISTS form_responses (
+                id          INTEGER  PRIMARY KEY AUTOINCREMENT,
+                session_id  INTEGER  NOT NULL REFERENCES form_sessions(id),
+                form_id     INTEGER  NOT NULL,
+                telegram_id INTEGER  NOT NULL,
+                field_id    INTEGER  NOT NULL,
+                field_type  TEXT     NOT NULL,
+                value       TEXT,
+                is_correct  INTEGER,
+                points      INTEGER  DEFAULT 0,
+                answered_at DATETIME DEFAULT (datetime('now')),
+                field_label TEXT     DEFAULT '',
+                created_at  DATETIME DEFAULT (datetime('now'))
+            )
+        """,
+        "columns": [
+            "id", "session_id", "form_id", "telegram_id", "field_id",
+            "field_type", "value", "is_correct", "points",
+            "answered_at", "field_label", "created_at",
+        ],
     },
 
     "form_sessions": {
@@ -403,14 +403,20 @@ def migrate_trading_tables(db_path: str = DB_PATH) -> dict[str, Any]:
             backup = _backup_data(conn, table, spec["columns"])
             print(f"[{table}] {len(backup)} lignes sauvegardées")
 
-            # Supprimer les index associés pour éviter les erreurs DROP
+            # Supprimer uniquement les index explicites (pas les autoindex SQLite)
             index_rows = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=?",
                 (table,),
             ).fetchall()
             for idx in index_rows:
-                conn.execute(f"DROP INDEX IF EXISTS {idx['name']}")
-                print(f"[{table}] Index '{idx['name']}' supprimé")
+                idx_name = idx["name"]
+                if idx_name.startswith("sqlite_autoindex_"):
+                    # Index système lié à PRIMARY KEY / UNIQUE — non supprimable,
+                    # SQLite le recrée automatiquement avec la table.
+                    print(f"[{table}] Index système '{idx_name}' ignoré (géré par SQLite)")
+                    continue
+                conn.execute(f"DROP INDEX IF EXISTS {idx_name}")
+                print(f"[{table}] Index '{idx_name}' supprimé")
 
             conn.execute(f"DROP TABLE {table}")
             print(f"[{table}] Table supprimée")
