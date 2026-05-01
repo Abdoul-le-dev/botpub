@@ -280,7 +280,7 @@ async def broadcast_engine(bot, payload: dict) -> dict:
         return {"error": "message vide"}
 
     if fmt in {"image", "video", "document", "image+text", "video+text", "document+text"} and not media_url:
-        print(ftm)
+        print(fmt)
         return {"error": "media_url manquant"}
 
     if not category and not user_ids:

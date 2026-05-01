@@ -14,7 +14,7 @@ Et dans le lifespan :
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 
-from trading.trading_journal import (
+from telegram_page.trading_journal import (
     # Signaux
     publish_signal,
     get_signals,
