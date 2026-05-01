@@ -77,52 +77,96 @@ def _percent(entry: float, exit_: float, direction: str) -> float:
 # ══════════════════════════════════════════════════════════════════════════════
 # INITIALISATION TABLES
 # ══════════════════════════════════════════════════════════════════════════════
+SCHEMA = {
+    "signals": {
+        "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "pair": "TEXT",
+        "direction": "TEXT",
+        "timeframe": "TEXT DEFAULT 'H4'",
+        "entry_price": "REAL",
+        "tp1": "REAL",
+        "tp2": "REAL",
+        "sl": "REAL",
+        "note": "TEXT",
+        "screenshot_url": "TEXT",
+        "category": "TEXT DEFAULT 'clients_actifs'",
+        "status": "TEXT DEFAULT 'open'",
+        "close_price": "REAL",
+        "close_result": "TEXT",
+        "close_screenshot": "TEXT",
+        "result_pips": "REAL",
+        "result_percent": "REAL",
+        "published_at": "TEXT",
+        "closed_at": "TEXT",
+        "lot_suggested": "REAL",
+        "broadcast_id": "INTEGER",
+    },
+
+    "trade_journal": {
+        "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "signal_id": "INTEGER",
+        "user_id": "INTEGER",
+        "participated": "INTEGER DEFAULT 1",
+        "entry_price": "REAL",
+        "exit_price": "REAL",
+        "result_pips": "REAL",
+        "result_percent": "REAL",
+        "gain_usd": "REAL",
+        "lot_used": "REAL",
+        "behavior": "TEXT",
+        "screenshot_url": "TEXT",
+        "capital_before": "REAL",
+        "capital_after": "REAL",
+        "submitted_at": "TEXT",
+        "status": "TEXT"
+    },
+
+    "signal_participations": {
+        "id": "INTEGER PRIMARY KEY AUTOINCREMENT",
+        "signal_id": "INTEGER",
+        "user_id": "INTEGER",
+        "response": "TEXT",
+        "responded_at": "TEXT"
+    }
+}
+def ensure_schema(conn):
+    for table, columns in SCHEMA.items():
+
+        # 1. créer table vide si elle n'existe pas
+        conn.execute(f"""
+            CREATE TABLE IF NOT EXISTS {table} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT
+            )
+        """)
+
+        # 2. lire colonnes existantes
+        existing = [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
+
+        # 3. ajouter colonnes manquantes
+        for col, col_type in columns.items():
+            if col not in existing:
+                try:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
+                    print(f"[MIGRATION] {table}.{col} ajouté")
+                except Exception as e:
+                    print(f"[MIGRATION ERROR] {table}.{col} -> {e}")
 
 def init_trading_tables():
     conn = get_conn()
     try:
-        # ── TABLE trade_journal ─────────────────────────────────────────
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS trade_journal (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                signal_id INTEGER,
-                user_id INTEGER
-            )
-        """)
+        ensure_schema(conn)
 
-        # ── MIGRATION COMPLETE trade_journal ────────────────────────────
-        cols = [row[1] for row in conn.execute("PRAGMA table_info(trade_journal)")]
-
-        def add(col, type_):
-            if col not in cols:
-                conn.execute(f"ALTER TABLE trade_journal ADD COLUMN {col} {type_}")
-
-        add("participated", "INTEGER DEFAULT 1")
-        add("entry_price", "REAL")
-        add("exit_price", "REAL")
-        add("result_pips", "REAL")
-        add("result_percent", "REAL")
-        add("gain_usd", "REAL")
-        add("lot_used", "REAL")
-        add("behavior", "TEXT")
-        add("screenshot_url", "TEXT")
-        add("capital_before", "REAL")
-        add("capital_after", "REAL")
-        add("submitted_at", "TEXT")
-        add("status", "TEXT")
-
-        # ── FIX DATA ────────────────────────────────────────────────────
-        conn.execute("""
-            UPDATE trade_journal
-            SET submitted_at = datetime('now')
-            WHERE submitted_at IS NULL
-        """)
+        # indexes séparés (safe)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_pub ON signals(published_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_status ON signals(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tj_user ON trade_journal(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sp_signal ON signal_participations(signal_id)")
 
         conn.commit()
-        print("[trade_journal] migration OK")
+        print("[DB] Schema vérifié et synchronisé")
 
     finally:
-        conn.close()# ══════════════════════════════════════════════════════════════════════════════
+        conn.close()
 # SECTION 1 — SIGNAUX
 # ══════════════════════════════════════════════════════════════════════════════
 
