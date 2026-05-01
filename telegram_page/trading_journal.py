@@ -319,7 +319,9 @@ async def publish_signal(payload: dict) -> dict:
         conn.close()
 
     # Broadcast Telegram si bot disponible
+    print("1")
     if _bot:
+        print("2")
         try:
             from telegram_page.broadcast_engine import broadcast_engine
             direction_emoji = "📈" if payload["direction"] == "long" else "📉"
@@ -342,6 +344,7 @@ async def publish_signal(payload: dict) -> dict:
                 message_lines.append(f"\n_{payload['note']}_")
 
             message = "\n".join(message_lines)
+            print(message)
 
             broadcast_payload = {
                 "message":   message,
@@ -353,6 +356,8 @@ async def publish_signal(payload: dict) -> dict:
             if payload.get("screenshot_url"):
                 broadcast_payload["format"]    = "image+text"
                 broadcast_payload["media_url"] = payload["screenshot_url"]
+
+                print("1")
 
             report = await broadcast_engine(_bot, broadcast_payload)
             broadcast_id = None  # broadcast_engine ne retourne pas l'id DB direct
