@@ -286,7 +286,7 @@ async def publish_signal(payload: dict) -> dict:
     # les boutons de participation Telegram inline au message.
     if _bot:
         try:
-            from trading.signal_broadcast import broadcast_signal
+            from telegram_page.signal_broadcast import broadcast_signal
 
             report = await broadcast_signal(
                 bot       = _bot,
