@@ -305,7 +305,9 @@ async def broadcast_engine(bot, payload: dict) -> dict:
     # ── 4. Résolution destinataires ───────────────────────────────────────────
     print("2")
     final_ids = _resolve_user_ids(category, user_ids, exclude_user_ids, filters)
+    print(final_ids)
     total     = len(final_ids)
+    print(total)
 
     if total == 0:
         await _notify_admin(bot, ADMIN_ID, "❌ Aucun destinataire trouvé. Diffusion annulée.")
