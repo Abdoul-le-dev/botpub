@@ -427,6 +427,7 @@ API_BASE = "http://localhost:8000/trading"   # ← adapter si besoin
 
 
 async def handle_signal_participation(update, context):
+    print("=== CALLBACK RECU ===", update.callback_query.data)
     query   = update.callback_query
     user_id = query.from_user.id
     data    = query.data  # "sgt_in_42" ou "sgt_out_42"
@@ -471,6 +472,8 @@ async def handle_signal_participation(update, context):
 
 def register_signal_handlers(app):
     from telegram.ext import CallbackQueryHandler
+
+    
 
     app.add_handler(
         CallbackQueryHandler(
