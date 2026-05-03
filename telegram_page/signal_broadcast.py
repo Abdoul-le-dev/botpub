@@ -139,7 +139,7 @@ def build_participation_keyboard(signal_id: int) -> InlineKeyboardMarkup:
                 callback_data=f"sgt_in_{signal_id}"
             ),
             InlineKeyboardButton(
-                "❌ Je ne prends pas",
+                "❌ J'ai pas pu",
                 callback_data=f"sgt_out_{signal_id}"
             ),
         ]
@@ -448,23 +448,19 @@ API_BASE = "http://localhost:8000/trading"   # ← adapter si besoin
 
 
 async def handle_signal_participation(update, context):
-    """
-    Intercepte les callbacks "sgt_in_{id}" et "sgt_out_{id}".
-    Enregistre la participation via l'API REST et met à jour le bouton.
-    """
-    query     = update.callback_query
-    user_id   = query.from_user.id
-    data      = query.data   # ex: "sgt_in_42" ou "sgt_out_42"
+    query   = update.callback_query
+    user_id = query.from_user.id
+    data    = query.data  # "sgt_in_42" ou "sgt_out_42"
 
     try:
-        parts     = data.split("_")          # ["sgt", "in", "42"]
-        response  = parts[1]                  # "in" | "out"
+        parts     = data.split("_")
+        response  = parts[1]   # "in" | "out"
         signal_id = int(parts[2])
     except (IndexError, ValueError):
         await query.answer("❌ Erreur — réessaie.")
         return
 
-    # Appel API
+    # Enregistrement en base
     try:
         async with _httpx.AsyncClient(timeout=8) as client:
             r = await client.post(
@@ -472,47 +468,46 @@ async def handle_signal_participation(update, context):
                 json={"user_id": user_id, "response": response}
             )
             r.raise_for_status()
-    except Exception as e:
-        await query.answer("⚠️ Erreur de communication, réessaie.")
+    except Exception:
+        await query.answer("⚠️ Erreur de communication, réessaie.", show_alert=True)
         return
 
-    # Réponse Telegram (toast + mise à jour clavier)
-    label_map = {
-        "in":  "✅ Tu es dans le trade — bonne chance !",
-        "out": "👌 Noté, tu ne prends pas ce trade.",
+    # Toast de confirmation
+    toast = {
+        "in":  "✅ Trade pris — bonne chance !",
+        "out": "👌 Noté, trade non pris.",
     }
-    await query.answer(label_map.get(response, "OK"), show_alert=False)
+    await query.answer(toast.get(response, "OK"), show_alert=False)
 
-    # Mise à jour du clavier : montre le choix fait
+    # Remplacement du clavier par une ligne de statut (boutons désactivés)
+    label = "✅ Trade pris" if response == "in" else "❌ Trade non pris"
     new_kbd = InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                "✅ Je suis dedans" if response == "in" else "□ Je suis dedans",
-                callback_data=f"sgt_in_{signal_id}"
-            ),
-            InlineKeyboardButton(
-                "❌ Je ne prends pas" if response == "out" else "□ Je ne prends pas",
-                callback_data=f"sgt_out_{signal_id}"
-            ),
-        ]
+        [InlineKeyboardButton(label, callback_data="sgt_done")]
     ])
+
     try:
         await query.edit_message_reply_markup(reply_markup=new_kbd)
     except Exception:
-        pass  # Message trop vieux ou pas modifiable
-
+        pass
 
 def register_signal_handlers(app):
-    """
-    Enregistre le handler callback dans l'Application python-telegram-bot.
-    À appeler une seule fois au démarrage du bot.
-    """
     from telegram.ext import CallbackQueryHandler
+
     app.add_handler(
         CallbackQueryHandler(
             handle_signal_participation,
-            pattern=r"^sgt_(in|out)_\\d+$"
+            pattern=r"^sgt_(in|out)_\d+$"
         ),
-        group=2   # groupe séparé pour ne pas interférer avec d'autres handlers
+        group=2
     )
-    print("[signal_broadcast] Handler participation enregistré ✓")
+
+    # Bloque le clic sur le bouton statut "Trade pris / non pris"
+    async def _done(update, context):
+        await update.callback_query.answer("Tu as déjà répondu à ce signal.", show_alert=False)
+
+    app.add_handler(
+        CallbackQueryHandler(_done, pattern=r"^sgt_done$"),
+        group=2
+    )
+
+    print("[signal_broadcast] Handlers participation enregistrés ✓")
