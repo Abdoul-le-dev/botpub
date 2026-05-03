@@ -511,7 +511,7 @@ def register_signal_handlers(app):
     app.add_handler(
         CallbackQueryHandler(
             handle_signal_participation,
-            pattern=r"^sgt_(in|out)_\d+$"
+            pattern=r"^sgt_(in|out)_\\d+$"
         ),
         group=2   # groupe séparé pour ne pas interférer avec d'autres handlers
     )
