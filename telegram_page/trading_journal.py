@@ -2452,3 +2452,21 @@ async def _get_signal_recipients(signal_id: int) -> list:
     finally:
         conn.close()
     return [r["id_user"] for r in rows]
+
+def reset_problem_tables():
+    conn = get_conn()
+    try:
+        tables = [
+            "signals",
+            "trade_journal",
+            "signal_participations",
+            "followup_comments"
+        ]
+
+        for t in tables:
+            conn.execute(f"DROP TABLE IF EXISTS {t}")
+            print(f"[DROP] {t}")
+
+        conn.commit()
+    finally:
+        conn.close()
