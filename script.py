@@ -316,29 +316,10 @@ if __name__ == '__main__':
     
     app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
 
-    #app.add_handler(MessageHandler(filters.ALL, detect_channel))
+    register_signal_handlers(app)
     
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
-    conv_handler_mail_user = ConversationHandler(
-    entry_points=[CommandHandler('addemail', save_mail)],
-    states={
-        USER: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_mail_id)],
-        PWD: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_mail_pwd)],
-    },
-    fallbacks=[CommandHandler('cancel', cancel)],
-    allow_reentry=True,
-    )
-
-    conv_handler_process_exam1 = ConversationHandler(
-    entry_points=[CommandHandler('CommencerMonExamen', start_exam)],#[CallbackQueryHandler(start_exam)],
     
-    states={
-        EMAIL_EXAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, verification_email)],
-        
-    }, fallbacks=[CommandHandler('cancel', cancel)])
-
-    app.add_handler(conv_handler_process_exam1)
-
 
     conv_handler_process_exam2 = ConversationHandler(
     entry_points=[CallbackQueryHandler(start_exams, pattern='premiere')],
@@ -384,7 +365,7 @@ if __name__ == '__main__':
 
     app.add_handler(conv_handler_welcome)
 
-    app.add_handler(conv_handler_mail_user)
+    
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("JeMEnregistre", start)],
         states={
@@ -476,20 +457,14 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("now", try_mail))
     
     app.add_handler(conv_handlerMsg)
-   # app.add_handler(convs_handler)
-
-    #app.add_handler(conv_handler_jeu)
+  
     
 
 
 
     app.add_handler(conv_handler)
     app.add_handler(conv_handlerstart)
-    #app.add_handler(CommandHandler("LesGagnants", export_and_send_pdf))
-    #app.add_handler(CommandHandler("categoriesss", categories_user))
-
-    #app.add_handler(CommandHandler("lastMessage", last_message))
-    #app.add_handler(CommandHandler("delete_all_exercices", delete_all_exercices))
+    
 
     app.add_handler(CommandHandler("userInfo", user_info))
     app.add_handler(CommandHandler("user_check_doublou", check_user_doublon))
@@ -592,7 +567,7 @@ if __name__ == '__main__':
 
 
     app.add_handler(conv_handler_delete_user)
-    register_signal_handlers(app)
+    
 
     register_form_handlers(app, app.bot, ADMIN_ID)
 
