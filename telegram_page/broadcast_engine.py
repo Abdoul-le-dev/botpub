@@ -145,7 +145,7 @@ async def _send_one(
       document+text→ send_message + send_document
     """
     telegram_file_id = None
-    if media: 
+    if media_url: 
         media_url = media_url.lstrip("/")
         print(media_url)
     try:
