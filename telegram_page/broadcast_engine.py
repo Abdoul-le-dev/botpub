@@ -261,6 +261,7 @@ async def broadcast_engine(bot, payload: dict) -> dict:
       - file_id Telegram récupéré → réutilisé pour tous les envois suivants
       - Pas de re-upload pour chaque destinataire
     """
+    print(payload)
     print("0")
     # ── 1. Extraction payload ─────────────────────────────────────────────────
     message          = _limit_text(payload.get("message", ""))
