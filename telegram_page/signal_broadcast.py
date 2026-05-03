@@ -421,27 +421,6 @@ async def broadcast_signal(
     }
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# HANDLER CALLBACK — À ENREGISTRER DANS LE BOT
-# ══════════════════════════════════════════════════════════════════════════════
-
-"""
-À ajouter dans ton bot.py principal pour intercepter les boutons :
-
-from telegram.ext import CallbackQueryHandler
-from signal_broadcast import register_signal_handlers
-
-register_signal_handlers(app)          # app = Application de python-telegram-bot
-
-
-Ou manuellement :
-
-app.add_handler(CallbackQueryHandler(
-    handle_signal_participation,
-    pattern=r"^sgt_(in|out)_\d+$"
-))
-"""
-
 import httpx as _httpx
 
 API_BASE = "http://localhost:8000/trading"   # ← adapter si besoin
