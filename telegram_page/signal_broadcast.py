@@ -128,21 +128,9 @@ def build_signal_message(signal: dict, lot: float | None = None, prenom: str = "
 
 
 def build_participation_keyboard(signal_id: int) -> InlineKeyboardMarkup:
-    """
-    Boutons inline de participation.
-    Callback data : "sgt_in_{signal_id}" / "sgt_out_{signal_id}"
-    """
     return InlineKeyboardMarkup([
-        [
-            InlineKeyboardButton(
-                "✅ Je suis dans ce trade",
-                callback_data=f"sgt_in_{signal_id}"
-            ),
-            InlineKeyboardButton(
-                "❌ J'ai pas pu",
-                callback_data=f"sgt_out_{signal_id}"
-            ),
-        ]
+        [InlineKeyboardButton("✅ Je suis dans ce trade", callback_data=f"sgt_in_{signal_id}")],
+        [InlineKeyboardButton("❌ Je ne prends pas",      callback_data=f"sgt_out_{signal_id}")],
     ])
 
 
@@ -460,10 +448,11 @@ async def handle_signal_participation(update, context):
     await query.answer(toast.get(response, "OK"), show_alert=False)
 
     # Remplacement du clavier par une ligne de statut (boutons désactivés)
-    label = "✅ Trade pris" if response == "in" else "❌ Trade non pris"
+    label = "✅ Trade pris — Bonne chance !" if response == "in" else "❌ Non pris — Noté 👌"
     new_kbd = InlineKeyboardMarkup([
         [InlineKeyboardButton(label, callback_data="sgt_done")]
     ])
+    
 
     try:
         await query.edit_message_reply_markup(reply_markup=new_kbd)

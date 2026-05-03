@@ -19,7 +19,8 @@ Intégration avec l'existant :
 Schéma IA attendu (retourné par les fonctions IA) :
   Voir SCHEMA IA en bas de fichier.
 """
-
+import logging
+logger = logging.getLogger(__name__)
 import sqlite3
 import json
 import uuid
@@ -451,15 +452,6 @@ async def get_signal_detail(signal_id: int) -> dict | None:
 
 
 async def close_signal(signal_id: int, payload: dict) -> dict:
-    """
-    Clôture un signal et enregistre le résultat admin.
-
-    payload: {
-        close_price, close_result: 'tp'|'sl'|'partial'|'cancelled',
-        close_screenshot?, form_id?, send_form_to: 'participated'|'all'
-    }
-    Déclenche l'envoi du formulaire de collecte via form_engine.
-    """
     conn = get_conn()
     try:
         signal = conn.execute("SELECT * FROM signals WHERE id = ?", (signal_id,)).fetchone()
@@ -476,12 +468,12 @@ async def close_signal(signal_id: int, payload: dict) -> dict:
         conn.execute("""
             UPDATE signals
             SET status = 'closed',
-                close_price     = ?,
-                close_result    = ?,
+                close_price      = ?,
+                close_result     = ?,
                 close_screenshot = ?,
-                result_pips     = ?,
-                result_percent  = ?,
-                closed_at       = ?
+                result_pips      = ?,
+                result_percent   = ?,
+                closed_at        = ?
             WHERE id = ?
         """, (
             close_price,
@@ -492,18 +484,61 @@ async def close_signal(signal_id: int, payload: dict) -> dict:
             _now(),
             signal_id,
         ))
+
+        # Récupérer commande formulaire
+        form_command = ""
+        if payload.get("form_id"):
+            try:
+                form = conn.execute(
+                    "SELECT command FROM forms WHERE id = ?", (payload["form_id"],)
+                ).fetchone()
+                if form and form["command"]:
+                    form_command = f"\n\n📋 *Remplis ton journal de trade :*\n{form['command']}"
+            except Exception:
+                pass
+
         conn.commit()
         updated = dict(conn.execute("SELECT * FROM signals WHERE id = ?", (signal_id,)).fetchone())
     finally:
         conn.close()
 
-    # Envoi formulaire de collecte post-clôture
-    if payload.get("form_id") and _bot:
+    # Notifier les membres "Je suis dedans"
+    if _bot:
+        try:
+            conn_notif = get_conn()
+            try:
+                rows = conn_notif.execute("""
+                    SELECT user_id FROM signal_participations
+                    WHERE signal_id = ? AND response = 'in'
+                """, (signal_id,)).fetchall()
+                members_in = [r["user_id"] for r in rows]
+            finally:
+                conn_notif.close()
+
+            result_map = {
+                "tp":        f"✅ *TP atteint sur {updated['pair']}*\n\n📈 Résultat : *+{result_pips} pips ({result_percent}%)*\n\nBravo à ceux qui ont tenu la position ! 🎉{form_command}",
+                "sl":        f"❌ *SL touché sur {updated['pair']}*\n\n📉 Résultat : *{result_pips} pips ({result_percent}%)*\n\nLe SL a fait son travail — c'est la gestion du risque 💪{form_command}",
+                "partial":   f"⚡ *Clôture partielle sur {updated['pair']}*\n\n📊 Résultat : *{result_pips} pips ({result_percent}%)*{form_command}",
+                "cancelled": f"🚫 *Signal {updated['pair']} annulé*\n\nLe trade n'a pas été déclenché.",
+            }
+            message = result_map.get(payload["close_result"], f"Signal {updated['pair']} clôturé.")
+
+            for user_id in members_in:
+                try:
+                    await _bot.send_message(chat_id=user_id, text=message, parse_mode="Markdown")
+                    await asyncio.sleep(0.05)
+                except Exception as e:
+                    logger.warning(f"Close notif uid={user_id}: {e}")
+
+        except Exception as e:
+            updated["notif_warning"] = str(e)
+
+    # Envoi formulaire de collecte si demandé
+    if payload.get("form_id") and payload.get("send_form_to") and _bot:
         try:
             from form.form_engine import broadcast_form
 
-            target = payload.get("send_form_to", "participated")
-            if target == "participated":
+            if payload.get("send_form_to") == "participated":
                 conn2 = get_conn()
                 try:
                     rows = conn2.execute("""
@@ -514,7 +549,6 @@ async def close_signal(signal_id: int, payload: dict) -> dict:
                 finally:
                     conn2.close()
             else:
-                # Tous les destinataires du signal original
                 user_ids = await _get_signal_recipients(signal_id)
 
             await broadcast_form(
@@ -528,7 +562,6 @@ async def close_signal(signal_id: int, payload: dict) -> dict:
             updated["form_warning"] = str(e)
 
     return updated
-
 
 async def record_participation(signal_id: int, user_id: int, response: str) -> dict:
     """
