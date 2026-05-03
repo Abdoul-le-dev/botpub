@@ -291,7 +291,7 @@ async def publish_signal(payload: dict) -> dict:
     Retourne le signal créé + broadcast_id.
     """
     conn = get_conn()
-    print(payload)
+    
     try:
         cur = conn.execute("""
             INSERT INTO signals
@@ -307,7 +307,7 @@ async def publish_signal(payload: dict) -> dict:
             float(payload["tp2"])   if payload.get("tp2") else None,
             float(payload["sl"])    if payload.get("sl")  else None,
             payload.get("note"),
-            payload.get("screenshot_url"),
+            payload.get("media_url"),
             payload.get("category", "clients_actifs"),
             payload.get("lot_suggested"),
             _now(),
@@ -319,9 +319,9 @@ async def publish_signal(payload: dict) -> dict:
         conn.close()
 
     # Broadcast Telegram si bot disponible
-    print("1")
+    
     if _bot:
-        print("2")
+        
         try:
             from telegram_page.broadcast_engine import broadcast_engine
             direction_emoji = "📈" if payload["direction"] == "long" else "📉"
@@ -346,6 +346,8 @@ async def publish_signal(payload: dict) -> dict:
             message = "\n".join(message_lines)
             print(message)
 
+
+
             broadcast_payload = {
                 "message":   message,
                 "format":    "text",
@@ -353,9 +355,9 @@ async def publish_signal(payload: dict) -> dict:
                 "tag":       f"signal_{signal_id}_{payload['pair'].replace('/', '')}",
                 "delay":     0.05,
             }
-            if payload.get("screenshot_url"):
+            if payload.get("media_url"):
                 broadcast_payload["format"]    = "image+text"
-                broadcast_payload["media_url"] = payload["screenshot_url"]
+                broadcast_payload["media_url"] = payload["media_url"]
 
             print("1")
             print(payload)
