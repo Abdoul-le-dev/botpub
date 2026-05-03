@@ -77,205 +77,169 @@ def _percent(entry: float, exit_: float, direction: str) -> float:
 # ══════════════════════════════════════════════════════════════════════════════
 # INITIALISATION TABLES
 # ══════════════════════════════════════════════════════════════════════════════
-def reset_problem_tables():
-    conn = get_conn()
-    try:
-        tables = [
-            "signals",
-            "trade_journal",
-            "signal_participations",
-            "followup_comments"
-        ]
-
-        for t in tables:
-            conn.execute(f"DROP TABLE IF EXISTS {t}")
-            print(f"[DROP] {t}")
-
-        conn.commit()
-    finally:
-        conn.close()
 
 def init_trading_tables():
-
-    
-    
+    """
+    Crée toutes les tables trading si elles n'existent pas.
+    Idempotent — sans risque si appelée plusieurs fois.
+    """
     conn = get_conn()
-
-    def ensure_table(table_name, create_sql, columns):
-        # 1. créer table si absente
-        conn.execute(create_sql)
-
-        # 2. récupérer colonnes existantes
-        existing = [r[1] for r in conn.execute(f"PRAGMA table_info({table_name})")]
-
-        # 3. ajouter colonnes manquantes
-        for col_name, col_type in columns.items():
-            if col_name not in existing:
-                try:
-                    conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
-                    print(f"[MIGRATION] {table_name}.{col_name} ajouté")
-                except Exception as e:
-                    print(f"[MIGRATION ERROR] {table_name}.{col_name} -> {e}")
-
     try:
-        # ─────────────────────────────────────────────
-        # SIGNALS
-        # ─────────────────────────────────────────────
-        ensure_table(
-            "signals",
-            """
+        # ── Table signals (trades publiés par l'admin) ────────────────────
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS signals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT
+                id               INTEGER  PRIMARY KEY AUTOINCREMENT,
+                pair             TEXT     NOT NULL,
+                direction        TEXT     NOT NULL CHECK(direction IN ('long','short')),
+                timeframe        TEXT     DEFAULT 'H4',
+                entry_price      REAL     NOT NULL,
+                tp1              REAL,
+                tp2              REAL,
+                sl               REAL,
+                note             TEXT,
+                screenshot_url   TEXT,
+                category         TEXT     DEFAULT 'clients_actifs',
+                status           TEXT     DEFAULT 'open'
+                                          CHECK(status IN ('open','closed','cancelled')),
+                close_price      REAL,
+                close_result     TEXT     CHECK(close_result IN ('tp','sl','partial','cancelled') OR close_result IS NULL),
+                close_screenshot TEXT,
+                result_pips      REAL,
+                result_percent   REAL,
+                published_at     TEXT     DEFAULT (datetime('now')),
+                closed_at        TEXT,
+                lot_suggested    REAL,
+                broadcast_id     INTEGER
             )
-            """,
-            {
-                "pair": "TEXT",
-                "direction": "TEXT",
-                "timeframe": "TEXT DEFAULT 'H4'",
-                "entry_price": "REAL",
-                "tp1": "REAL",
-                "tp2": "REAL",
-                "sl": "REAL",
-                "note": "TEXT",
-                "screenshot_url": "TEXT",
-                "category": "TEXT DEFAULT 'clients_actifs'",
-                "status": "TEXT DEFAULT 'open'",
-                "close_price": "REAL",
-                "close_result": "TEXT",
-                "close_screenshot": "TEXT",
-                "result_pips": "REAL",
-                "result_percent": "REAL",
-                "published_at": "TEXT",
-                "closed_at": "TEXT",
-                "lot_suggested": "REAL",
-                "broadcast_id": "INTEGER"
-            }
-        )
+        """)
 
-        # ─────────────────────────────────────────────
-        # SIGNAL PARTICIPATIONS
-        # ─────────────────────────────────────────────
-        ensure_table(
-            "signal_participations",
-            """
+        # ── Table signal_participations (boutons "Je suis dedans") ────────
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS signal_participations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                signal_id   INTEGER NOT NULL REFERENCES signals(id),
+                user_id     INTEGER NOT NULL,
+                response    TEXT    NOT NULL CHECK(response IN ('in','out')),
+                responded_at TEXT   DEFAULT (datetime('now')),
+                UNIQUE(signal_id, user_id)
             )
-            """,
-            {
-                "signal_id": "INTEGER",
-                "user_id": "INTEGER",
-                "response": "TEXT",
-                "responded_at": "TEXT"
-            }
-        )
+        """)
 
-        # ─────────────────────────────────────────────
-        # TRADE JOURNAL
-        # ─────────────────────────────────────────────
-        ensure_table(
-            "trade_journal",
-            """
+        # ── Table trade_journal (résultats réels membres) ─────────────────
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS trade_journal (
-                id INTEGER PRIMARY KEY AUTOINCREMENT
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                signal_id        INTEGER NOT NULL REFERENCES signals(id),
+                user_id          INTEGER NOT NULL,
+                participated     INTEGER DEFAULT 1,
+                entry_price      REAL,
+                exit_price       REAL,
+                result_pips      REAL,
+                result_percent   REAL,
+                gain_usd         REAL,
+                lot_used         REAL,
+                behavior         TEXT    CHECK(behavior IN ('disciplined','early_exit','sl_skip','passive') OR behavior IS NULL),
+                screenshot_url   TEXT,
+                capital_before   REAL,
+                capital_after    REAL,
+                submitted_at     TEXT    DEFAULT (datetime('now')),
+                status           TEXT    DEFAULT 'closed'
+                                         CHECK(status IN ('open','closed')),
+                UNIQUE(signal_id, user_id)
             )
-            """,
-            {
-                "signal_id": "INTEGER",
-                "user_id": "INTEGER",
-                "participated": "INTEGER DEFAULT 1",
-                "entry_price": "REAL",
-                "exit_price": "REAL",
-                "result_pips": "REAL",
-                "result_percent": "REAL",
-                "gain_usd": "REAL",
-                "lot_used": "REAL",
-                "behavior": "TEXT",
-                "screenshot_url": "TEXT",
-                "capital_before": "REAL",
-                "capital_after": "REAL",
-                "submitted_at": "TEXT",
-                "status": "TEXT"
-            }
-        )
+        """)
 
-        # ─────────────────────────────────────────────
-        # FOLLOWUP COMMENTS
-        # ─────────────────────────────────────────────
-        ensure_table(
-            "followup_comments",
-            """
+        # ── Table followup_comments (commentaires de suivi trade ouvert) ──
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS followup_comments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                signal_id    INTEGER NOT NULL REFERENCES signals(id),
+                type         TEXT    NOT NULL
+                                     CHECK(type IN ('update','invalidation','secure','encourage')),
+                message      TEXT    NOT NULL,
+                screenshot_url TEXT,
+                broadcast_id INTEGER,
+                sent_at      TEXT    DEFAULT (datetime('now'))
             )
-            """,
-            {
-                "signal_id": "INTEGER",
-                "type": "TEXT",
-                "message": "TEXT",
-                "screenshot_url": "TEXT",
-                "broadcast_id": "INTEGER",
-                "sent_at": "TEXT"
-            }
-        )
+        """)
 
-        # ─────────────────────────────────────────────
-        # MEMBER CAPITAL
-        # ─────────────────────────────────────────────
-        ensure_table(
-            "member_capital",
-            """
+        # ── Table trading_pairs (référentiel paires) ──────────────────────
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS trading_pairs (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol         TEXT    NOT NULL UNIQUE,
+                category       TEXT    DEFAULT 'forex'
+                                       CHECK(category IN ('forex','crypto','indices','commodities')),
+                pip_value      REAL    NOT NULL DEFAULT 10.0,
+                decimals       INTEGER DEFAULT 5,
+                binance_symbol TEXT,
+                is_active      INTEGER DEFAULT 1,
+                note           TEXT,
+                created_at     TEXT    DEFAULT (datetime('now')),
+                updated_at     TEXT    DEFAULT (datetime('now'))
+            )
+        """)
+
+        # ── Table member_capital (suivi capital déclaré) ──────────────────
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS member_capital (
-                id INTEGER PRIMARY KEY AUTOINCREMENT
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id      INTEGER NOT NULL,
+                capital      REAL    NOT NULL,
+                type         TEXT    DEFAULT 'gains'
+                                     CHECK(type IN ('gains','withdrawal','loss','initial')),
+                declared_at  TEXT    DEFAULT (datetime('now')),
+                source       TEXT    DEFAULT 'form'
             )
-            """,
-            {
-                "user_id": "INTEGER",
-                "capital": "REAL",
-                "type": "TEXT DEFAULT 'gains'",
-                "declared_at": "TEXT",
-                "source": "TEXT DEFAULT 'form'"
-            }
-        )
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_capital_user ON member_capital(user_id, declared_at DESC)
+        """)
 
+        # ── Table ai_bilans (historique bilans IA générés) ────────────────
         conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_signal_pub ON signals(published_at)
+            CREATE TABLE IF NOT EXISTS ai_bilans (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                week_label   TEXT    NOT NULL,
+                week_start   TEXT    NOT NULL,
+                week_end     TEXT    NOT NULL,
+                target       TEXT    DEFAULT 'journalised',
+                total_sent   INTEGER DEFAULT 0,
+                open_rate    REAL,
+                broadcast_id INTEGER,
+                generated_at TEXT    DEFAULT (datetime('now'))
+            )
         """)
-        conn.execute("""
-            CREATE INDEX IF NOT EXISTS idx_signal_status ON signals(status)
-        """)
+
+        # ── Index performance ─────────────────────────────────────────────
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_status   ON signals(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_signal_pub      ON signals(published_at DESC)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tj_user         ON trade_journal(user_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tj_signal       ON trade_journal(signal_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sp_signal       ON signal_participations(signal_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_sp_user         ON signal_participations(user_id)")
+
+        # ── Données de base (paires) ──────────────────────────────────────
+        default_pairs = [
+            ("EUR/USD", "forex",       10.0, 5, "EURUSDT"),
+            ("GBP/USD", "forex",       10.0, 5, "GBPUSDT"),
+            ("XAU/USD", "commodities",  1.0, 2, "XAUUSDT"),
+            ("BTC/USD", "crypto",       1.0, 1, "BTCUSDT"),
+            ("GBP/JPY", "forex",        8.2, 3, "GBPJPY"),
+            ("NAS100",  "indices",      1.0, 1, "NASUSDT"),
+        ]
+        conn.executemany("""
+            INSERT OR IGNORE INTO trading_pairs (symbol, category, pip_value, decimals, binance_symbol)
+            VALUES (?, ?, ?, ?, ?)
+        """, default_pairs)
 
         conn.commit()
-        print("[DB] Vérification + migration terminée OK")
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS forms (
-            id INTEGER PRIMARY KEY AUTOINCREMENT
-        )
-    """)
-
-        cols = [r[1] for r in conn.execute("PRAGMA table_info(forms)")]
-
-        def add(col, typ):
-            if col not in cols:
-                conn.execute(f"ALTER TABLE forms ADD COLUMN {col} {typ}")
-
-        add("name", "TEXT")
-        add("command", "TEXT")
-        add("type", "TEXT DEFAULT 'custom'")
-        add("is_active", "INTEGER DEFAULT 1")
-
-        # ❌ PAS de DEFAULT dynamique ici
-        add("created_at", "TEXT")
-
-        # remplir manuellement après
-        conn.execute("""
-            UPDATE forms
-            SET created_at = datetime('now')
-            WHERE created_at IS NULL
-        """)
-
+        print("[trading_journal] Tables initialisées.")
     finally:
         conn.close()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SECTION 1 — SIGNAUX
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -291,7 +255,6 @@ async def publish_signal(payload: dict) -> dict:
     Retourne le signal créé + broadcast_id.
     """
     conn = get_conn()
-    
     try:
         cur = conn.execute("""
             INSERT INTO signals
@@ -307,7 +270,7 @@ async def publish_signal(payload: dict) -> dict:
             float(payload["tp2"])   if payload.get("tp2") else None,
             float(payload["sl"])    if payload.get("sl")  else None,
             payload.get("note"),
-            payload.get("media_url"),
+            payload.get("screenshot_url"),
             payload.get("category", "clients_actifs"),
             payload.get("lot_suggested"),
             _now(),
@@ -318,76 +281,30 @@ async def publish_signal(payload: dict) -> dict:
     finally:
         conn.close()
 
-    # Broadcast Telegram si bot disponible
-    
+    # ── Broadcast avec boutons inline ────────────────────────────────────────
+    # On utilise signal_broadcast (et non broadcast_engine) pour attacher
+    # les boutons de participation Telegram inline au message.
     if _bot:
-        
         try:
-            from telegram_page.broadcast_engine import broadcast_engine
-            direction_emoji = "📈" if payload["direction"] == "long" else "📉"
-            direction_label = "LONG" if payload["direction"] == "long" else "SHORT"
+            from trading.signal_broadcast import broadcast_signal
 
-            message_lines = [
-                f"📊 *Signal de Trading*",
-                f"",
-                f"🔷 Paire : *{payload['pair']}*",
-                f"{direction_emoji} Direction : *{direction_label}*",
-                f"🎯 Entrée : *{payload['entry_price']}*",
-            ]
-            if payload.get("tp1"):
-                message_lines.append(f"✅ TP1 : *{payload['tp1']}*")
-            if payload.get("tp2"):
-                message_lines.append(f"✅ TP2 : *{payload['tp2']}*")
-            if payload.get("sl"):
-                message_lines.append(f"❌ SL : *{payload['sl']}*")
-            if payload.get("note"):
-                message_lines.append(f"\n_{payload['note']}_")
-
-            message = "\n".join(message_lines)
-            print(message)
-
-
-
-            broadcast_payload = {
-                "message":   message,
-                "format":    "text",
-                "category":  payload.get("category", "clients_actifs"),
-                "tag":       f"signal_{signal_id}_{payload['pair'].replace('/', '')}",
-                "delay":     0.05,
-            }
-            if payload.get("media_url"):
-                broadcast_payload["format"]    = "image+text"
-                broadcast_payload["media_url"] = payload["media_url"]
-
-            print("1")
-            print(payload)
-
-            report = await broadcast_engine(_bot, broadcast_payload)
-
-            print(report)
-            broadcast_id = None  # broadcast_engine ne retourne pas l'id DB direct
-
-            # Mise à jour du broadcast_id si disponible
-            conn2 = get_conn()
-            try:
-                bh = conn2.execute(
-                    "SELECT id FROM broadcast_history ORDER BY id DESC LIMIT 1"
-                ).fetchone()
-                if bh:
-                    broadcast_id = bh["id"]
-                    conn2.execute(
-                        "UPDATE signals SET broadcast_id = ? WHERE id = ?",
-                        (broadcast_id, signal_id)
-                    )
-                    conn2.commit()
-                    signal["broadcast_id"] = broadcast_id
-            finally:
-                conn2.close()
+            report = await broadcast_signal(
+                bot       = _bot,
+                signal    = signal,
+                category  = payload.get("category", "clients_actifs"),
+                media_url = payload.get("media_url") or payload.get("screenshot_url"),
+                delay     = 0.08,
+                retry     = True,
+                risk_pct  = 2.0,
+            )
+            signal["broadcast_report"] = report
 
         except Exception as e:
             signal["broadcast_warning"] = str(e)
+            print(f"[publish_signal] Erreur broadcast: {e}")
     else:
-        print('not bot...')
+        print("[publish_signal] Bot non disponible — signal enregistré sans envoi Telegram")
+
     signal["id"] = signal_id
     return signal
 
@@ -1651,8 +1568,6 @@ async def get_form_stats() -> dict:
     finally:
         conn.close()
     return stats
-
-
 
 
 async def get_forms_list() -> list:

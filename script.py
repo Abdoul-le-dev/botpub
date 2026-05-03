@@ -56,7 +56,7 @@ from constance import QUESTION, ANSWER, EXPLANATION, CATEGORIE,  NOM_CATEGORIE, 
 from exercice import start_add_exam,get_ars_1 , get_ars_2, get_ars_3, recevoir_categorie,start_rapport,start_add_exercice, get_question, get_answer, get_explanation, get_categorie, cmd_verify_categorie,start_exercice,receive_answer,start_add_categorie, get_nom_categorie
 
 from seminaire import get_level_welcome,get_why_welcome,get_numero_whatsapp_welcome,get_mail_welcome,get_name_welcome,last_step_welcome
-
+from telegram_page.signal_broadcast import register_signal_handlers
 #new 
 from message.save_message import log_unhandled_message
 type =""
@@ -592,6 +592,7 @@ if __name__ == '__main__':
 
 
     app.add_handler(conv_handler_delete_user)
+    register_signal_handlers(app)
 
     register_form_handlers(app, app.bot, ADMIN_ID)
 
