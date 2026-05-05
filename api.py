@@ -35,6 +35,7 @@ from telegram_page.categorie import (
 from telegram_page.broadcast_engine import broadcast_engine
 
 from telegram_page.chat_route import router as chat_router
+from telegram_page.automatisation.routes_growth import router as growth_router
 from telegram_page.chat import init_chat_tables, set_bot 
 
 from contextlib import asynccontextmanager
@@ -44,6 +45,7 @@ from telegram_page.trading_journal import (
     init_trading_tables, reset_problem_tables,
     set_bot as set_trading_bot,
 )
+from telegram_page.automatisation.growth_tables import init_growth_tables
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_chat_tables() 
@@ -51,6 +53,7 @@ async def lifespan(app: FastAPI):
     init_forms_db()                          
     start_scheduler(bot, admin_id=571718066)
     set_trading_bot(bot)
+    init_growth_tables()
     #reset_problem_tables()
     #init_trading_tables()    
     #init_broadcast_history()
@@ -68,6 +71,7 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(chat_router)
 app.include_router(forms_router) 
 app.include_router(trading_router) 
+app.include_router(growth_router)
 
 
 origins = [
