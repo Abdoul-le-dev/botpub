@@ -6,18 +6,20 @@ from datetime import datetime
 DB = "preinscriptions.db"
 
 def get_conn():
-    c = sqlite3.connect(DB)
+    c = sqlite3.connect(DB, timeout=30)
     c.row_factory = sqlite3.Row
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA foreign_keys = ON")
     return c
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
-    args = context.args  # tout ce qui suit /start
+    args = context.args
 
     start_param = args[0] if args else None
 
-    # Enregistrer le user si pas encore en base
+    # Enregistrer le user + récupérer le lien en une seule connexion
     conn = get_conn()
     conn.execute(
         "INSERT OR IGNORE INTO users (telegram_id, name) VALUES (?,?)",
@@ -35,19 +37,16 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if link:
         link = dict(link)
 
-        # Vérifier quota
         if link["quota_max"] and link["quota_used"] >= link["quota_max"]:
+            conn.close()
             await update.message.reply_text("Ce lien a atteint sa limite d'utilisation.")
-            conn.close()
             return
 
-        # Vérifier expiration
         if link["expires_at"] and link["expires_at"] < datetime.now().isoformat():
-            await update.message.reply_text("Ce lien a expiré.")
             conn.close()
+            await update.message.reply_text("Ce lien a expiré.")
             return
 
-        # Enregistrer click + register
         conn.execute(
             "INSERT INTO invite_link_stats (link_id, user_id, event) VALUES (?,?,?)",
             (link["id"], user_id, "click")
@@ -60,8 +59,10 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "UPDATE invite_links SET quota_used=quota_used+1 WHERE id=?",
             (link["id"],)
         )
+        conn.commit()
+        conn.close()  # ← FERMÉ avant tout appel externe
 
-        # Catégorie auto
+        # Appels externes APRÈS fermeture connexion
         if link["auto_category"]:
             try:
                 from telegram_page.categorie import add_members_to_category
@@ -69,15 +70,10 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"[start_handler] categorie error: {e}")
 
-        conn.commit()
-        conn.close()
-
-        # Lancer formulaire lié
         if link.get("form_id"):
             try:
                 from form.form_engine import send_form_to_user
                 await send_form_to_user(context.bot, user_id, link["form_id"])
-                # Stocker dans user_data pour tracker la complétion
                 context.user_data["pending_link_id"] = link["id"]
                 return
             except Exception as e:
@@ -90,11 +86,12 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def record_form_completion(bot, user_id: int, link_id: int):
-    """Appelé quand le formulaire lié à un lien est complété."""
     conn = get_conn()
-    conn.execute(
-        "INSERT INTO invite_link_stats (link_id, user_id, event) VALUES (?,?,?)",
-        (link_id, user_id, "subscribe")
-    )
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute(
+            "INSERT INTO invite_link_stats (link_id, user_id, event) VALUES (?,?,?)",
+            (link_id, user_id, "subscribe")
+        )
+        conn.commit()
+    finally:
+        conn.close()
