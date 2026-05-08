@@ -63,16 +63,18 @@ def get_links():
     conn = get_conn()
     try:
         rows = conn.execute(
-            """
-            SELECT l.*,
-              COUNT(CASE WHEN s.event='click'     THEN 1 END) as clicks,
-              COUNT(CASE WHEN s.event='register'  THEN 1 END) as registrations,
-              COUNT(CASE WHEN s.event='subscribe' THEN 1 END) as subscribers
-            FROM invite_links l
-            LEFT JOIN invite_link_stats s ON s.link_id=l.id
-            GROUP BY l.id
-            ORDER BY l.created_at DESC
-            """
+        """
+        SELECT l.*,
+        COUNT(CASE WHEN s.event='click'     THEN 1 END) as clicks,
+        COUNT(CASE WHEN s.event='register'  THEN 1 END) as registrations,
+        COUNT(CASE WHEN s.event='subscribe' THEN 1 END) as subscribers,
+        f.name as form_name
+        FROM invite_links l
+        LEFT JOIN invite_link_stats s ON s.link_id=l.id
+        LEFT JOIN forms f ON f.id=l.form_id
+        GROUP BY l.id
+        ORDER BY l.created_at DESC
+        """
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
