@@ -302,10 +302,24 @@ async def _run_actions(bot, telegram_id: int, actions: list, context_vars: dict)
 # ════════════════════════════════════════════════════════════════════════════
 
 async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    command = "/" + update.message.text.strip().lstrip("/").split()[0]
+    user = update.effective_user
+    user_id = user.id
+    text = update.message.text.strip()
+    command = "/" + text.lstrip("/").split()[0]
+    args = text.split()[1:] if len(text.split()) > 1 else []
+    start_param = args[0] if args and command == "/start" else None
 
-    form = get_form_by_command(command)
+    # ── Logique start_handler intégrée ──
+    if command == "/start":
+        from telegram_page.start_handler import process_start_link
+        form_id = await process_start_link(update, context, user_id, user.first_name, start_param)
+        if not form_id:
+            await update.message.reply_text(f"Bienvenue {user.first_name} ! 👋")
+            return ConversationHandler.END
+        # form_id trouvé → continuer vers le formulaire
+        form = get_form_by_id(form_id)
+    else:
+        form = get_form_by_command(command)
 
     if not form:
         await update.message.reply_text("...")#form non disponible
@@ -714,7 +728,7 @@ def register_form_handlers(app: Application, bot, admin_id: int):
     app.bot_data["admin_id"] = admin_id
 
     conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.COMMAND, _form_start),CommandHandler("start", _start_via_link),],
+        entry_points=[MessageHandler(filters.COMMAND, _form_start)],
         states={
             FORM_STEP: [
                 CallbackQueryHandler(_form_receive_callback, pattern=r"^(fopt_|fmul_)"),

@@ -281,7 +281,7 @@ if __name__ == '__main__':
     
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
 
-    app.add_handler(CommandHandler("start", handle_start), group=0)
+    
     
 
 
