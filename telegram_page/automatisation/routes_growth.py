@@ -16,9 +16,10 @@ DB = "preinscriptions.db"
 
 
 def get_conn():
-    c = sqlite3.connect(DB)
+    c = sqlite3.connect(DB, timeout=30)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys = ON")
+    c.execute("PRAGMA journal_mode=WAL")
     return c
 
 
