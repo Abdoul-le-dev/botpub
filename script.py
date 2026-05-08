@@ -34,7 +34,7 @@ from message.save_message import log_unhandled_message
 type =""
 load_dotenv()
 
-from telegram_page.start_handler import handle_start
+
 
 ADMIN_ID = 571718066  # Remplace par ton ID Telegram
 
