@@ -618,7 +618,7 @@ async def _finish_form(update, context, form, session_id, form_id, user_id, extr
         from telegram_page.start_handler import record_form_completion
         await record_form_completion(bot, user_id, link_id)
         context.user_data.pop("pending_link_id", None)
-        
+
     session   = get_session(session_id)
     score     = session["score"] if session else 0
     qcfg      = form.get("quiz_config", {})
@@ -655,21 +655,32 @@ async def _form_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ════════════════════════════════════════════════════════════════════════════
 # ENVOI DIRECT (scheduler / broadcast)
 # ════════════════════════════════════════════════════════════════════════════
-
-async def send_form_to_user(bot, telegram_id: int, form_id: int, app: Application = None):
+async def send_form_to_user(bot, telegram_id: int, form_id: int, app: Application = None, context=None):
     form = get_form_by_id(form_id)
-   
     if not form:
         return
-    fields  = form.get("fields", [])
+    fields = form.get("fields", [])
     if not fields:
         return
+    
+    options = form.get("options", {}) or {}
     session = get_or_create_session(form_id, telegram_id)
+    
     if form.get("intro"):
         intro = _inject_vars(form["intro"], telegram_id)
         await bot.send_message(telegram_id, intro)
         await asyncio.sleep(0.4)
-    await _send_field(bot, telegram_id, fields[0], 1, len(fields),False)
+
+    # Remplir user_data si context disponible
+    if context:
+        context.user_data["form_id"]    = form_id
+        context.user_data["session_id"] = session["id"]
+        context.user_data["step"]       = session["step_index"]
+        context.user_data["progress"]   = options.get("progress", False)
+        context.user_data["multi_sel"]  = []
+        context.user_data["responses"]  = {}
+
+    await _send_field(bot, telegram_id, fields[0], 1, len(fields), options.get("progress", False))
 
 
 async def broadcast_form(bot, form_id: int, user_ids: list[int], admin_id: int = None):

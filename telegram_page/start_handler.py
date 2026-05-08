@@ -73,7 +73,7 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if link.get("form_id"):
             try:
                 from form.form_engine import send_form_to_user
-                await send_form_to_user(context.bot, user_id, link["form_id"])
+                await send_form_to_user(context.bot, user_id, link["form_id"], context=context)
                 context.user_data["pending_link_id"] = link["id"]
                 return
             except Exception as e:
