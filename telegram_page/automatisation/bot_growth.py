@@ -1,6 +1,6 @@
 """
 telegram_page/bot_growth.py
-Logique bot pour le Growth Hub : automations, scoring, segments, rapports.
+Logique bot pour le Growth Hub : automations, rapports.
 """
 
 import sqlite3
@@ -44,11 +44,7 @@ async def resolve_job_targets(job: dict) -> list:
             rows = conn.execute(
                 "SELECT id_user FROM categories WHERE name_categorie=?", (cat,)
             ).fetchall()
-        elif t.startswith("seg:"):
-            seg_id = int(t.replace("seg:", ""))
-            rows = conn.execute(
-                "SELECT user_id FROM segment_members WHERE segment_id=?", (seg_id,)
-            ).fetchall()
+       
         else:
             return []
         return [r[0] for r in rows if r[0]]
@@ -268,117 +264,6 @@ async def check_ia_trigger(user_id: int) -> bool:
         conn.close()
     return False
 
-
-# ─────────────────────────────────────────────────────────────
-# compute_all_segments
-# ─────────────────────────────────────────────────────────────
-
-async def compute_all_segments():
-    """Recalcule tous les segments. Appelé au boot et toutes les heures."""
-    conn = get_conn()
-    try:
-        segs = [dict(r) for r in conn.execute("SELECT * FROM segments").fetchall()]
-    finally:
-        conn.close()
-
-    for seg in segs:
-        conditions = json.loads(seg.get("conditions") or "[]")
-        conn2 = get_conn()
-        try:
-            all_ids = {
-                r[0]
-                for r in conn2.execute(
-                    "SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL"
-                ).fetchall()
-            }
-            matching = set(all_ids)
-
-            for cond in conditions:
-                field = cond.get("field", "")
-                value = cond.get("value", "")
-
-                if "ormulaire" in field or "form_completed" in field:
-                    rows = conn2.execute(
-                        "SELECT DISTINCT telegram_id FROM form_sessions WHERE status='completed'"
-                    ).fetchall()
-                    matching &= {r[0] for r in rows}
-
-                elif "apital" in field:
-                    try:
-                        threshold = float(value) if value else 0
-                        rows = conn2.execute(
-                            """
-                            SELECT user_id FROM member_capital
-                            GROUP BY user_id HAVING MAX(capital) > ?
-                            """,
-                            (threshold,),
-                        ).fetchall()
-                        matching &= {r[0] for r in rows}
-                    except (ValueError, TypeError):
-                        pass
-
-                elif "core" in field:
-                    try:
-                        threshold = int(value) if value else 0
-                        rows = conn2.execute(
-                            "SELECT user_id FROM engagement_scores WHERE score > ?",
-                            (threshold,),
-                        ).fetchall()
-                        matching &= {r[0] for r in rows}
-                    except (ValueError, TypeError):
-                        pass
-
-                elif "bonne" in field or "subscri" in field:
-                    rows = conn2.execute(
-                        "SELECT user_id FROM growth_subscriptions WHERE status='active' AND user_id IS NOT NULL"
-                    ).fetchall()
-                    matching &= {r[0] for r in rows}
-
-                elif "nactif" in field or "inactive" in field:
-                    try:
-                        days = int(value) if value else 14
-                        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-                        rows = conn2.execute(
-                            "SELECT DISTINCT user_id FROM messages WHERE created_at >= ?",
-                            (cutoff,),
-                        ).fetchall()
-                        matching -= {r[0] for r in rows}
-                    except (ValueError, TypeError):
-                        pass
-
-                elif "in rate" in field or "win_rate" in field:
-                    try:
-                        threshold = float(value) if value else 0
-                        rows = conn2.execute(
-                            """
-                            SELECT user_id,
-                                CAST(SUM(CASE WHEN result_percent>0 THEN 1 ELSE 0 END)
-                                     AS REAL) / NULLIF(COUNT(*),0) * 100 as wr
-                            FROM trade_journal
-                            WHERE participated=1 AND status='closed'
-                            GROUP BY user_id HAVING wr > ?
-                            """,
-                            (threshold,),
-                        ).fetchall()
-                        matching &= {r[0] for r in rows}
-                    except (ValueError, TypeError):
-                        pass
-
-            conn2.execute(
-                "DELETE FROM segment_members WHERE segment_id=?", (seg["id"],)
-            )
-            if matching:
-                conn2.executemany(
-                    "INSERT OR IGNORE INTO segment_members (segment_id, user_id) VALUES (?,?)",
-                    [(seg["id"], uid) for uid in matching],
-                )
-            conn2.execute(
-                "UPDATE segments SET member_count=?, last_computed=datetime('now') WHERE id=?",
-                (len(matching), seg["id"]),
-            )
-            conn2.commit()
-        finally:
-            conn2.close()
 
 
 # ─────────────────────────────────────────────────────────────

@@ -613,6 +613,12 @@ async def _finish_form(update, context, form, session_id, form_id, user_id, extr
     bot = context.bot
 
     complete_session(session_id)
+    link_id = context.user_data.get("pending_link_id") if context else None
+    if link_id:
+        from telegram_page.start_handler import record_form_completion
+        await record_form_completion(bot, user_id, link_id)
+        context.user_data.pop("pending_link_id", None)
+        
     session   = get_session(session_id)
     score     = session["score"] if session else 0
     qcfg      = form.get("quiz_config", {})
@@ -626,6 +632,8 @@ async def _finish_form(update, context, form, session_id, form_id, user_id, extr
     done     = await _run_actions(bot, user_id, all_actions, ctx_vars)
 
     save_submission(session_id, form_id, user_id, done)
+
+
 
     if form.get("outro"):
         outro = _inject_vars(form["outro"], user_id, score=score, total=score_max)

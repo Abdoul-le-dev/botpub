@@ -1,9 +1,6 @@
 import os
 from telegram import Update
 import  threading
-from jeu import export_and_send_pdf
-from database.database import init_db
-from database.database import save_user
 from database.database import user_exists,delete_user_data_from_db
 from database.database import save_message, get_user_categories
 from database.database import update_user_info,reset_all_mail_counts
@@ -13,28 +10,14 @@ from database.database import save_user_default,delete_all_exercices
 from user_data import user_info
 from database.database import get_file_id
 from database.database import save_file_id
-from mail import send_email,send_none_email,envoyer_base_par_email
-from start import get_phone ,get_country ,get_name ,start , select_days_coaching
-from fonction_rapide import send_file_user_exam
-from start import get_what, get_expectations,get_discovery,get_why, get_email, get_level
-from user_data import start_delete
-from qcmprocess import start_qcm_creation,validate_bad_reason,set_categorie,set_nb_questions,set_question,set_nb_choix
 
-from qcmprocess import add_choix,set_nb_choix,validate_choix, set_categorie,set_question
 from form.form import init_forms_db
 from form.form_engine import register_form_handlers
-from challenge1000usd import send_short_link,send_mail_admin
-from constance import WAITING_ANSWER_EXAM,LEVEL_WELCOME, WHY_WELCOME, NUMERO_WHATSAPP_WELCOME, MAIL_WELCOME, NOM_WELCOME
+
 USER,PWD = range(2) 
-#from mail_fonction import save_mail_id,save_mail_pwd, save_mail
+
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import ChatJoinRequestHandler,CallbackQueryHandler, Application, CommandHandler, MessageHandler, filters, ContextTypes, PollAnswerHandler,ConversationHandler
-
-from testing import user_list_in_categorie, user_list_in_categories,user_list_in_categorie_2, user_list_in_categorie_1, choose_format,handle_format_choice,handle_who, get_media, get_text,user_list_in_categorie
-
-from challenge1000usd import check_user_doublon, delete_user_doublon
-from qcmsemainaire import start_exam,start_exams, verification_email, receive_answer_exam, try_mail
-
 
 from telegram.error import BadRequest
 
@@ -43,17 +26,6 @@ from telegram.ext import filters
 
 
 import asyncio
-from fonction_rapide import qr_code_generate
-
-from start import button_callback_waiting_1, button_callback_waiting_2
-
-from constance import NAME_EXAM , ARGS_1, ARGS_2 , EMAIL_EXAM, CHOISIR_CATEGORIE,NAME, PHONE, COUNTRY, LEVEL, WHY, WHAT, ASK_IDS,EMAIL, EXPECTATIONS,DISCOVERY,WAITING_ANSWER,DAYS
-
-from constance import ASK_USER_ID, GET_MAIL ,CATEGORIE, NOMBRE_QUESTIONS, QUESTION, NB_CHOIX, CHOIX, REPONSE_SUIVANTE
-
-from constance import QUESTION, ANSWER, EXPLANATION, CATEGORIE,  NOM_CATEGORIE, WAITING_ANSWER_1, WAITING_ANSWER_2
-
-from exercice import start_add_exam,get_ars_1 , get_ars_2, get_ars_3, recevoir_categorie,start_rapport,start_add_exercice, get_question, get_answer, get_explanation, get_categorie, cmd_verify_categorie,start_exercice,receive_answer,start_add_categorie, get_nom_categorie
 
 from seminaire import get_level_welcome,get_why_welcome,get_numero_whatsapp_welcome,get_mail_welcome,get_name_welcome,last_step_welcome
 from telegram_page.signal_broadcast import register_signal_handlers
@@ -61,6 +33,8 @@ from telegram_page.signal_broadcast import register_signal_handlers
 from message.save_message import log_unhandled_message
 type =""
 load_dotenv()
+
+from telegram_page.start_handler import handle_start
 
 ADMIN_ID = 571718066  # Remplace par ton ID Telegram
 
@@ -251,23 +225,9 @@ async def receive_TEXT(update: Update, Context: ContextTypes.DEFAULT_TYPE):
 
 
 
-async def start_delete_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if  update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("⛔ Accès réservé à l’administrateur.")
-        return
-    await update.message.reply_text("🗑 Entrez l'ID de l'utilisateur à supprimer :")
-    return ASK_USER_ID
 
-async def get_user_id_to_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        user_id = int(update.message.text)
-        delete_user_data_from_db(user_id)
-        await update.message.reply_text(f"✅ Toutes les données de l'utilisateur {user_id} ont été supprimées.")
-    except ValueError:
-        await update.message.reply_text("⚠ Veuillez entrer un nombre valide.")
-        return ASK_USER_ID
 
-    return ConversationHandler.END
+
 
 
 def scheduler_thread():
@@ -311,277 +271,35 @@ async def save_mail_pwd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if __name__ == '__main__':
 
-    init_db()
+    
+    init_forms_db()
 
     
     app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
 
-    register_signal_handlers(app)
+    
     
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
+
+    app.add_handler(CommandHandler("start", handle_start), group=0)
+
+
+    register_signal_handlers(app)
     
 
-    conv_handler_process_exam2 = ConversationHandler(
-    entry_points=[CallbackQueryHandler(start_exams, pattern='premiere')],
-    
-    states={
-        WAITING_ANSWER_EXAM: [
-            CallbackQueryHandler(receive_answer_exam),
-        ],
-    },
-    
-    fallbacks=[CommandHandler('cancel', cancel)],
-    #per_chat=True,
-    )
-
-    app.add_handler(conv_handler_process_exam2)
-
-
-    conv_handler_process_exam3 = ConversationHandler(
-    entry_points=[CallbackQueryHandler(start_exams, pattern='second')],
-    
-    states={
-      # WAITING_ANSWER_EXAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, verification_email)],
-       WAITING_ANSWER_EXAM: [ CallbackQueryHandler(receive_answer_exam),],
-        
-    }, fallbacks=[CommandHandler('cancel', cancel)])
-
-    app.add_handler(conv_handler_process_exam3)
-
-
-    conv_handler_welcome = ConversationHandler(
-    entry_points=[CallbackQueryHandler(get_level_welcome, pattern='^(enregistre)$')],
-    
-    states={
-        LEVEL_WELCOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_why_welcome)],
-        WHY_WELCOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_numero_whatsapp_welcome)],
-        NUMERO_WHATSAPP_WELCOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_mail_welcome)],
-        MAIL_WELCOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name_welcome)],
-        NOM_WELCOME: [MessageHandler(filters.TEXT & ~filters.COMMAND, last_step_welcome)],
-        
-
-
-    }, fallbacks=[CommandHandler('cancel', cancel)])
-
-    app.add_handler(conv_handler_welcome)
-
-    
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("JeMEnregistre", start)],
-        states={
-            WHY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_why)],
-            WHAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_what)],
-            LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_level)],
-            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
-            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
-            COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_country)],
-            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
-          
-            EXPECTATIONS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_expectations)],
-            
-            DISCOVERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_discovery)]
-            
-            
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-    conv_handlerstart = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            WHY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_why)],
-            WHAT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_what)],
-            LEVEL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_level)],
-            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
-            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
-            COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_country)],
-            EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_email)],
-            EXPECTATIONS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_expectations)],
-            DISCOVERY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_discovery)],
-            DAYS:[MessageHandler(filters.TEXT & ~filters.COMMAND, select_days_coaching)],
-            WAITING_ANSWER_1: [CallbackQueryHandler(button_callback_waiting_1, pattern='^Poursuivre$')],
-            WAITING_ANSWER_2: [CallbackQueryHandler(button_callback_waiting_2, pattern='^(Accepte|Refus)$')]
-            
-            
-        },  
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-
-    qcm_handler = ConversationHandler(
-    entry_points=[CommandHandler("creer_qcm", start_qcm_creation)],
-    states={
-        CATEGORIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_categorie)],
-        NOMBRE_QUESTIONS: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_nb_questions)],
-        QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_question)],
-        NB_CHOIX: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_nb_choix)],
-        CHOIX: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_choix)],
-        REPONSE_SUIVANTE: [MessageHandler(filters.TEXT & ~filters.COMMAND, validate_choix)],
-        validate_bad_reason: [MessageHandler(filters.TEXT & ~filters.COMMAND, validate_bad_reason)]
-    },
-    fallbacks=[CommandHandler("cancel", cancel)])
-
-    conv_handler_jeu = ConversationHandler(
-        entry_points=[CommandHandler("JeParticipeAuJeuConcours", start)],
-        states={
-            NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
-            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
-            COUNTRY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_country)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)],
-    )
-
-    convs_handler = ConversationHandler(
-    entry_points=[CommandHandler("message", start_message)],
-    states={
-        ASK_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_id)],
-        ASK_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_TEXT)],
-    },
-    fallbacks=[CommandHandler("cancel", cancel)]
-    )
-    
-
-    conv_handlerMsg = ConversationHandler(
-    entry_points=[CommandHandler('msgMasse', handle_who)],
-    states={
-        WHO: [MessageHandler(filters.Regex('^[1-6]$'), choose_format)],
-        CHOOSE_FORMAT: [MessageHandler(filters.Regex('^[1-5]$'), handle_format_choice)],
-        GET_MEDIA: [MessageHandler(filters.PHOTO | filters.VIDEO, get_media)],
-        GET_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_text)],
-    },
-    fallbacks=[CommandHandler('cancel', cancel)],
-    )
-
-    app.add_handler(CommandHandler("peopleCategorie", user_list_in_categories))
-    app.add_handler(CommandHandler("peopleCategorie_1", user_list_in_categorie)) 
-    app.add_handler(CommandHandler("peopleCategorie_2", user_list_in_categorie_1)) 
-    app.add_handler(CommandHandler("mes_seances", user_list_in_categorie_2)) 
-    app.add_handler(CommandHandler("now", try_mail))
-    
-    app.add_handler(conv_handlerMsg)
-  
-    
-
-
-
-    app.add_handler(conv_handler)
-    app.add_handler(conv_handlerstart)
-    
-
-    app.add_handler(CommandHandler("userInfo", user_info))
-    app.add_handler(CommandHandler("user_check_doublou", check_user_doublon))
-    app.add_handler(CommandHandler("user_delete_doublou", delete_user_doublon))
-    app.add_handler(CommandHandler("fichier_exam", send_file_user_exam))
-    app.add_handler(CommandHandler("qr_code", qr_code_generate))
-    #app.add_handler(CommandHandler("mail_none_participant", send_none_email))
-
-    app.add_handler(CommandHandler("userDelete", start_delete))
-  
-
-    conv_handler_add = ConversationHandler(
-        entry_points=[CommandHandler('add_categorie', start_add_categorie)],
-        states={
-            NOM_CATEGORIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_nom_categorie)]
-        },
-        fallbacks=[CommandHandler('cancel', cancel)]
-    )
-
-
-    app.add_handler(conv_handler_add)
-
-    conv_handler_mail = ConversationHandler(
-    entry_points=[CommandHandler('send_mail_user', send_mail_admin)],
-    states={
-        GET_MAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_short_link)],
-    },
-    fallbacks=[CommandHandler('cancel', cancel)],
-    )
-
-    app.add_handler(conv_handler_mail)
-
-   
-   
-
-    conv_handler_exercice = ConversationHandler(
-        entry_points=[CommandHandler('add_exercice', start_add_exercice)],
-        states={
-            QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_question)],
-            ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_answer)],
-            EXPLANATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_explanation)],
-            CATEGORIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_categorie)]
-        },
-        fallbacks=[CommandHandler('cancel', cancel)]
-    )
-
-    app.add_handler(conv_handler_exercice)
-
-    conv_handler_exam = ConversationHandler(
-        entry_points=[CommandHandler('add_exam', start_add_exam)],
-        states={ 
-           NAME_EXAM: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_ars_1)],
-           ARGS_1: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_ars_2)],
-           ARGS_2: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_ars_3)]
-        },
-        fallbacks=[CommandHandler('cancel', cancel)]
-    )
-
-    app.add_handler(conv_handler_exam)
-
-    app.add_handler(CommandHandler('verify_categorie', cmd_verify_categorie))
-    conv_handler_exercice_user = ConversationHandler(
-        entry_points=[CommandHandler('commencerMesExerciesDuSeminaire', start_exercice)],
-        states={
-            #WAITING_ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_answer)],
-            WAITING_ANSWER: [ CallbackQueryHandler(receive_answer),],
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        allow_reentry=True,
-    )
-
-    app.add_handler(conv_handler_exercice_user)
-    conv_handler_exercice_users = ConversationHandler(
-        entry_points=[CommandHandler('jeRecommence', start_exercice)],
-        states={
-            #WAITING_ANSWER: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_answer)],
-            WAITING_ANSWER: [ CallbackQueryHandler(receive_answer),],
-        },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        allow_reentry=True,
-    )
-
-    app.add_handler(conv_handler_exercice_users)
-    conv_handler_rapport = ConversationHandler(
-    entry_points=[CommandHandler('rapport', start_rapport)],
-    states={
-        CHOISIR_CATEGORIE: [MessageHandler(filters.TEXT & ~filters.COMMAND, recevoir_categorie)]
-    },
-    fallbacks=[CommandHandler('cancel', cancel)]
-)
-    app.add_handler(conv_handler_rapport)
-
-    conv_handler_delete_user = ConversationHandler(
-    entry_points=[CommandHandler("delete_user", start_delete_user)],
-    states={
-        ASK_USER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_user_id_to_delete)]
-    },
-    fallbacks=[CommandHandler("cancel", cancel)]
-)
-
-
-    app.add_handler(conv_handler_delete_user)
-    
 
     register_form_handlers(app, app.bot, ADMIN_ID)
 
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, log_unhandled_message))
 
 
-    #app.add_handler(conv_handler_mail_user)
     threading.Thread(target=scheduler_thread, daemon=True).start()
-    #app.add_handler(qcm_handler)
+   
     print('running...')
     
     
     
-    init_forms_db()
+    
    
     
     app.run_polling(poll_interval=1)
