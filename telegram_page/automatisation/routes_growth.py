@@ -38,6 +38,7 @@ class LinkCreate(BaseModel):
     quota_max: Optional[int] = None
     expires_at: Optional[str] = None
     source: Optional[str] = "direct"
+    form_id: Optional[int] = None
 
 
 class LinkUpdate(BaseModel):
@@ -49,6 +50,7 @@ class LinkUpdate(BaseModel):
     expires_at: Optional[str] = None
     source: Optional[str] = None
     is_active: Optional[int] = None
+    form_id: Optional[int] = None
 
 
 class LinkClickEvent(BaseModel):
@@ -89,11 +91,11 @@ def create_link(body: LinkCreate):
         cur = conn.execute(
             """
             INSERT INTO invite_links (name, start_param, auto_category, promo_code,
-                quota_max, expires_at, source)
-            VALUES (?,?,?,?,?,?,?)
+            quota_max, expires_at, source, form_id)
+            VALUES (?,?,?,?,?,?,?,?)
             """,
             (body.name, body.start_param, body.auto_category, body.promo_code,
-             body.quota_max, body.expires_at, body.source),
+            body.quota_max, body.expires_at, body.source, body.form_id),
         )
         conn.commit()
         row = conn.execute(

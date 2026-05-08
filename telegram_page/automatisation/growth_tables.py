@@ -22,6 +22,7 @@ def init_growth_tables():
             promo_code    TEXT,
             quota_max     INTEGER,
             quota_used    INTEGER DEFAULT 0,
+            form_id       INTEGER REFERENCES forms(id),
             expires_at    TEXT,
             source        TEXT    DEFAULT 'direct',
             is_active     INTEGER DEFAULT 1,
@@ -141,46 +142,18 @@ def init_growth_tables():
         );
         INSERT OR IGNORE INTO auto_promo_config (id) VALUES (1);
 
-        -- Scores d'engagement membres
-        CREATE TABLE IF NOT EXISTS engagement_scores (
-            user_id    INTEGER PRIMARY KEY,
-            score      INTEGER DEFAULT 0,
-            updated_at TEXT    DEFAULT (datetime('now'))
-        );
+       
 
-        -- Segments dynamiques
-        CREATE TABLE IF NOT EXISTS segments (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            name          TEXT    NOT NULL,
-            tag           TEXT    NOT NULL,
-            conditions    TEXT    NOT NULL DEFAULT '[]',
-            auto_action   TEXT,
-            member_count  INTEGER DEFAULT 0,
-            last_computed TEXT,
-            created_at    TEXT    DEFAULT (datetime('now'))
-        );
+        
 
-        -- Membres de chaque segment
-        CREATE TABLE IF NOT EXISTS segment_members (
-            segment_id INTEGER NOT NULL REFERENCES segments(id),
-            user_id    INTEGER NOT NULL,
-            added_at   TEXT    DEFAULT (datetime('now')),
-            PRIMARY KEY(segment_id, user_id)
-        );
-
-        -- Prospects du pipeline CRM
-        CREATE TABLE IF NOT EXISTS crm_prospects (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id    INTEGER,
-            name       TEXT    NOT NULL,
-            source     TEXT    DEFAULT 'direct',
-            link_id    INTEGER REFERENCES invite_links(id),
-            col        TEXT    DEFAULT 'nouveau'
-                       CHECK(col IN ('nouveau','engage','offre','abonne','vip')),
-            score      INTEGER DEFAULT 0,
-            created_at TEXT    DEFAULT (datetime('now'))
-        );
+        
+       
     """)
     conn.commit()
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(invite_links)").fetchall()]
+    if "form_id" not in cols:
+        conn.execute("ALTER TABLE invite_links ADD COLUMN form_id INTEGER REFERENCES forms(id)")
+        conn.commit()
+        print("[growth_tables] Colonne form_id ajoutée.")
     conn.close()
     print("[growth_tables] Tables Growth Hub initialisées.")
