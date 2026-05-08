@@ -700,6 +700,12 @@ async def broadcast_form(bot, form_id: int, user_ids: list[int], admin_id: int =
         )
 
 
+async def _start_via_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Entry point pour les /start avec formulaire pré-chargé dans user_data."""
+    if context.user_data.get("form_id"):
+        return FORM_STEP
+    return ConversationHandler.END
+
 # ════════════════════════════════════════════════════════════════════════════
 # ENREGISTREMENT DES HANDLERS
 # ════════════════════════════════════════════════════════════════════════════
@@ -708,7 +714,7 @@ def register_form_handlers(app: Application, bot, admin_id: int):
     app.bot_data["admin_id"] = admin_id
 
     conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.COMMAND, _form_start)],
+        entry_points=[MessageHandler(filters.COMMAND, _form_start),CommandHandler("start", _start_via_link),],
         states={
             FORM_STEP: [
                 CallbackQueryHandler(_form_receive_callback, pattern=r"^(fopt_|fmul_)"),
