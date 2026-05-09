@@ -98,9 +98,11 @@ def list_prompts():
 
 
 @router.get("/agent/users/{id}/prompts")
-def get_user_prompt(id):
-    
-    return get_user_prompts(id)
+def get_user_prompt(id: int):   # ← typer en int
+    result = get_user_prompts(id)
+    print(f"[DEBUG] user_id={id} → {len(result)} prompts trouvés")
+    print(f"[DEBUG] résultat={result}")
+    return result
     
     
 
