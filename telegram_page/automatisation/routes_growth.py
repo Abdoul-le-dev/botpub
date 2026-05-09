@@ -67,8 +67,11 @@ def get_links():
         """
         SELECT l.*,
         COUNT(CASE WHEN s.event='click'     THEN 1 END) as clicks,
-        COUNT(CASE WHEN s.event='register'  THEN 1 END) as registrations,
-        COUNT(CASE WHEN s.event='subscribe' THEN 1 END) as subscribers,
+        COUNT(DISTINCT CASE WHEN s.event='register' THEN s.user_id END) as registrations,
+        COUNT(DISTINCT CASE WHEN s.event='subscribe' THEN s.user_id END) as subscribers,
+        (SELECT COUNT(DISTINCT fs.telegram_id) 
+        FROM form_sessions fs 
+        WHERE fs.form_id=l.form_id AND fs.status='completed') as forms_done,
         f.name as form_name
         FROM invite_links l
         LEFT JOIN invite_link_stats s ON s.link_id=l.id
