@@ -104,7 +104,7 @@ load_dotenv()
 #AGENT_API_KEY   = os.getenv("AGENT_API_KEY",   "")
 #BOT_WEBHOOK_KEY = os.getenv("BOT_WEBHOOK_KEY", "")
 
-AGENT_URL      = "http://3.87.70.53/app2"
+AGENT_URL      = "http://3.95.218.71/app2"
 AGENT_API_KEY  = "change_moi_par_un_secret_fort"
 AGENT_TIMEOUT   = 200   # 180s max selon la doc + marge de sécurité
 
