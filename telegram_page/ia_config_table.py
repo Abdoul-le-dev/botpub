@@ -98,7 +98,7 @@ def list_prompts():
 
 
 @router.get("/agent/users/{id}/prompts")
-def get_user_prompt():
+def get_user_prompt(id):
     
     return get_user_prompts(id)
     
