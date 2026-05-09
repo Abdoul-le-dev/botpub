@@ -80,14 +80,18 @@ app.include_router(trading_router)
 app.include_router(growth_router)
 app.include_router(ai_router)
 
-
 origins = [
-    "http://127.0.0.1:8000",
-    "http://44.201.200.160",
-    "http://admin.fdksignal.com",
-    "https://admin.fdksignal.com",
+    "*"
 
 ]
+
+# origins = [
+#     "http://127.0.0.1:8000",
+#     "http://44.201.200.160",
+#     "http://admin.fdksignal.com",
+#     "https://admin.fdksignal.com",
+
+# ]
 
 
 app.add_middleware(
