@@ -31,6 +31,7 @@ def init_ia_config_tables():
             created_at  TEXT    DEFAULT (datetime('now'))
         );
     """)
+    print('ook')
     conn.commit()
     conn.close()
 
