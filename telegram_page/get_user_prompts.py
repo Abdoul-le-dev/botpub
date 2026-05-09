@@ -29,16 +29,15 @@ def get_conn() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     return conn
 
-
 def get_user_prompts(telegram_id: int) -> list[dict]:
     """
     Retourne la liste des prompts pertinents pour un utilisateur.
-
+ 
     Un prompt est inclus si :
       - Sa description contient [categorie: X] et X est une catégorie du user
       - Sa description ne contient PAS de marqueur [categorie:] du tout
         (prompt global, applicable à tous)
-
+ 
     Retourne :
     [
       {
@@ -60,9 +59,9 @@ def get_user_prompts(telegram_id: int) -> list[dict]:
             FROM categories
             WHERE id_user = ?
         """, (telegram_id,)).fetchall()
-
+ 
         user_categories = {row["name_categorie"].strip().lower() for row in rows}
-
+ 
         # ── Étape 2 : tous les prompts actifs ────────────────────────────────
         prompts = conn.execute("""
             SELECT id, name, description, content, return_format
@@ -70,37 +69,30 @@ def get_user_prompts(telegram_id: int) -> list[dict]:
             WHERE is_active = 1
             ORDER BY id ASC
         """).fetchall()
-
+ 
     finally:
         conn.close()
-
+ 
     # ── Étape 3 : filtrage selon [categorie: xxx] ─────────────────────────────
     result = []
-
+ 
     for p in prompts:
         description = p["description"] or ""
         match       = _CAT_PATTERN.search(description)
-
+ 
         if match:
             # Le prompt cible une catégorie précise
             prompt_cat = match.group(1).strip().lower()
             if prompt_cat in user_categories:
                 result.append({
-                    "id":            p["id"],
-                    "name":          p["name"],
-                    "description":   p["description"],
-                    "content":       p["content"],
-                    "return_format": p["return_format"],
+                    "name_categorie": p["name"],
+                    "prompt":         p["content"],
                 })
         else:
             # Pas de marqueur [categorie:] → prompt global, pour tout le monde
             result.append({
-                "id":            p["id"],
-                "name":          p["name"],
-                "description":   p["description"],
-                "content":       p["content"],
-                "return_format": p["return_format"],
+                "name_categorie": p["name"],
+                "prompt":         p["content"],
             })
-
+ 
     return result
-
