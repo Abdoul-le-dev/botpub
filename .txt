@@ -15,3 +15,5 @@ def reset_problem_tables():
         conn.commit()
     finally:
         conn.close()
+
+        

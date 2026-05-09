@@ -4,6 +4,7 @@
 # ============================================================
 
 import sqlite3
+from telegram_page.get_user_prompts import get_user_prompts
 
 DB = "preinscriptions.db"
 
@@ -94,6 +95,14 @@ def list_prompts():
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+@router.get("/agent/users/{id}/prompts")
+def get_user_prompt():
+    
+    return get_user_prompts(id)
+    
+    
 
 @router.post("/prompts", status_code=201)
 def create_prompt(p: PromptIn):

@@ -5,7 +5,7 @@ from database.database import user_exists,delete_user_data_from_db
 from database.database import save_message, get_user_categories
 from database.database import update_user_info,reset_all_mail_counts
 from database.database import add_categorie,verify_categorie,add_new_user
-from database.database import user_has_categorie
+from ai_agent import set_bot, log_unhandled_message
 from database.database import save_user_default,delete_all_exercices
 from user_data import user_info
 from database.database import get_file_id
@@ -30,7 +30,7 @@ import asyncio
 from seminaire import get_level_welcome,get_why_welcome,get_numero_whatsapp_welcome,get_mail_welcome,get_name_welcome,last_step_welcome
 from telegram_page.signal_broadcast import register_signal_handlers
 #new 
-from message.save_message import log_unhandled_message
+#from message.save_message import log_unhandled_message
 type =""
 load_dotenv()
 
@@ -251,6 +251,8 @@ if __name__ == '__main__':
     register_form_handlers(app, app.bot, ADMIN_ID)
 
     app.add_handler(MessageHandler(filters.ALL, log_unhandled_message))
+
+    set_bot(app.bot) 
 
 
     threading.Thread(target=scheduler_thread, daemon=True).start()

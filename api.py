@@ -34,6 +34,8 @@ from telegram_page.categorie import (
 )
 from telegram_page.broadcast_engine import broadcast_engine
 
+from ai_agent import agent_response_router, set_bot
+
 from telegram_page.chat_route import router as chat_router
 from telegram_page.automatisation.routes_growth import router as growth_router
 from telegram_page.chat import init_chat_tables, set_bot  
