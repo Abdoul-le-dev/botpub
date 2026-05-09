@@ -83,7 +83,7 @@ app.include_router(ai_router)
 
 origins = [
     "http://127.0.0.1:8000",
-    "http://localhost:8000",
+    "http://44.201.200.160",
     "http://admin.fdksignal.com",
     "https://admin.fdksignal.com",
 
