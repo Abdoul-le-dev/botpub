@@ -202,6 +202,7 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
     # ── Texte pur ─────────────────────────────────────────────────────────
     elif msg.text:
         message_type = "text"
+        
  
     # ── Autres ────────────────────────────────────────────────────────────
     else:

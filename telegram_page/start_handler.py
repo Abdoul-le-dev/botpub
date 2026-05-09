@@ -12,9 +12,7 @@ def get_conn():
     c.execute("PRAGMA foreign_keys = ON")
     return c
 
-
-async def process_start_link(update, context, user_id: int, first_name: str, start_param: str) -> int | None:
-    """Retourne form_id si un formulaire est lié, sinon None."""
+async def process_start_link(update, context, user_id: int, first_name: str, start_param: str):
     conn = get_conn()
     conn.execute(
         "INSERT OR IGNORE INTO users (telegram_id, name) VALUES (?,?)",
@@ -47,18 +45,26 @@ async def process_start_link(update, context, user_id: int, first_name: str, sta
         await update.message.reply_text("Ce lien a expiré.")
         return None
 
-    conn.execute(
-        "INSERT INTO invite_link_stats (link_id, user_id, event) VALUES (?,?,?)",
-        (link["id"], user_id, "click")
-    )
-    conn.execute(
-        "INSERT INTO invite_link_stats (link_id, user_id, event) VALUES (?,?,?)",
-        (link["id"], user_id, "register")
-    )
-    conn.execute(
-        "UPDATE invite_links SET quota_used=quota_used+1 WHERE id=?",
-        (link["id"],)
-    )
+    # Vérifier si déjà enregistré
+    already = conn.execute(
+        "SELECT id FROM invite_link_stats WHERE link_id=? AND user_id=? AND event='register'",
+        (link["id"], user_id)
+    ).fetchone()
+
+    if not already:
+        conn.execute(
+            "INSERT INTO invite_link_stats (link_id, user_id, event) VALUES (?,?,?)",
+            (link["id"], user_id, "click")
+        )
+        conn.execute(
+            "INSERT INTO invite_link_stats (link_id, user_id, event) VALUES (?,?,?)",
+            (link["id"], user_id, "register")
+        )
+        conn.execute(
+            "UPDATE invite_links SET quota_used=quota_used+1 WHERE id=?",
+            (link["id"],)
+        )
+
     conn.commit()
     conn.close()
 
@@ -74,6 +80,18 @@ async def process_start_link(update, context, user_id: int, first_name: str, sta
         return link["form_id"]
 
     return None
+
+
+async def record_form_completion(bot, user_id: int, link_id: int):
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO invite_link_stats (link_id, user_id, event) VALUES (?,?,?)",
+            (link_id, user_id, "subscribe")
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 async def record_form_completion(bot, user_id: int, link_id: int):
     conn = get_conn()

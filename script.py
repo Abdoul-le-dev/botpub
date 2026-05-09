@@ -95,19 +95,17 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
     print("chat_id")
     print(chat_id)
     if args : print(args)
-    
-    if user_has_categorie(user_id,"leseminaires"):
-        print("L'utilisateur a déjà une catégorie, il est déjà membre.")
-        try:
-            await update.chat_join_request.approve()
-        except BadRequest as e:
-            if "User_already_participant" in str(e):
-                print("Déjà membre, il est membre.") 
-                print(e)     
-                return
-        await Context.bot.send_message(
-            chat_id=user_id,
-            text=(
+   
+    try:
+        await update.chat_join_request.approve()
+    except BadRequest as e:
+        if "User_already_participant" in str(e):
+            print("Déjà membre, il est membre.") 
+            print(e)     
+            return
+    await Context.bot.send_message(
+        chat_id=user_id,
+        text=(
                 "👌 **C'est bon je t'ai intégré au canal ✅**\n"
                 "*C'est pour bientôt et prépare toi, je te dirai tout !*\n\n"
                 "📌 *Épingle ce canal* pour rester à l'affût des **nouvelles informations**."
@@ -115,51 +113,12 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
             parse_mode="Markdown"
         )
 
-        return 
-    
-    
-    if chat_id == CANAL_B_ID:
-       
-        await Context.bot.send_message(
-            chat_id=user.id,
-            text=(
-                "❌ *Doucement, on ne triche pas !* \n\n"
-                "Tu n'es **pas autorisé** à rejoindre ce canal.\n"
-                "🚫 Tu es maintenant *banni à vie* de ce canal.\n\n"
-                "🔒 Toute tentative future entraînera aussi le bannissement de la personne qui t’a transmis le lien."
-            ),
-            parse_mode="Markdown"
-        )
+    try:
+        video_name = "welcomes"
 
-        await Context.bot.decline_chat_join_request(chat_id, user.id)
-        return
-    else:
-        try:
-            await update.chat_join_request.approve() 
-        except BadRequest as e:
-            if "User_already_participant" in str(e):
-                print("Déjà membre, pas besoin d’approuver.") 
+        file_id = get_file_id(video_name)
 
-        async def safe_task(coro):
-            """Exécute une tâche async sans bloquer et log les erreurs."""
-            try:
-                await coro
-            except Exception as e:
-                print(f"[ERREUR TÂCHE] {e}")
-
-        if user_has_categorie(user_id,"Grande Conference JOIN CANAL"):
-            return
-        asyncio.create_task(safe_task(add_categorie(user.id, "Grande Conference JOIN CANAL")))  
-
-                  
-
-        # Envoie un message privé
-        try:
-            video_name = "welcomes"
-
-            file_id = get_file_id(video_name)
-
-            if file_id:
+        if file_id:
                 # Réutiliser le file_id
                 await Context.bot.send_video(chat_id=user_id , video=file_id, reply_markup= build_answer_keyboards())
                 
@@ -168,12 +127,12 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
 
 
                 
-            else:
-                # Envoyer depuis fichier local, puis sauvegarder le file_id
-                video_path = "welcomes.mp4"
-                msg = await Context.bot.send_video(chat_id=user_id , video=video_path, reply_markup= build_answer_keyboards())
-                new_file_id = msg.video.file_id
-                save_file_id(video_name, new_file_id)
+        else:
+            
+            video_path = "welcomes.mp4"
+            msg = await Context.bot.send_video(chat_id=user_id , video=video_path, reply_markup= build_answer_keyboards())
+            new_file_id = msg.video.file_id
+            save_file_id(video_name, new_file_id)
                 
                 
 
@@ -184,8 +143,8 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
             #)
 
             
-        except Exception as e:
-            print(f"Impossible d’envoyer un message à {user_id} : {e}")
+    except Exception as e:
+        print(f"Impossible d’envoyer un message à {user_id} : {e}")
      
 
 async def user_imformation(update: Update, Context: ContextTypes.DEFAULT_TYPE):
@@ -291,7 +250,7 @@ if __name__ == '__main__':
 
     register_form_handlers(app, app.bot, ADMIN_ID)
 
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, log_unhandled_message))
+    app.add_handler(MessageHandler(filters.ALL, log_unhandled_message))
 
 
     threading.Thread(target=scheduler_thread, daemon=True).start()
