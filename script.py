@@ -40,7 +40,7 @@ ADMIN_ID = 571718066  # Remplace par ton ID Telegram
 
 CANAL_B_ID = -1002705005402
 ASK_BROADCAST = 99
-token = os.getenv("token")
+token = os.getenv("tokens")
 
 
 CHOOSE_TYPES =range(1)
