@@ -240,6 +240,8 @@ if __name__ == '__main__':
     
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
 
+    register_form_handlers(app, app.bot, ADMIN_ID)
+
     
     
 
@@ -248,9 +250,9 @@ if __name__ == '__main__':
     
 
 
-    register_form_handlers(app, app.bot, ADMIN_ID)
+   
 
-    app.add_handler(MessageHandler(filters.ALL, log_unhandled_message))
+    app.add_handler(MessageHandler(filters.TEXT, log_unhandled_message))
 
     set_bot(app.bot) 
 
