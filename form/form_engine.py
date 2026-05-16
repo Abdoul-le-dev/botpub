@@ -300,8 +300,72 @@ async def _run_actions(bot, telegram_id: int, actions: list, context_vars: dict)
 # ════════════════════════════════════════════════════════════════════════════
 # DÉMARRAGE D'UN FORMULAIRE
 # ════════════════════════════════════════════════════════════════════════════
-
-async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def _form_start(update, context):
+    user = update.effective_user
+    user_id = user.id
+    text = update.message.text.strip()
+    command = "/" + text.lstrip("/").split()[0]
+    args = text.split()[1:] if len(text.split()) > 1 else []
+    start_param = args[0] if args and command == "/start" else None
+ 
+    if command == "/start":
+        from telegram_page.start_handler import process_start_link
+        form_id = await process_start_link(update, context, user_id, user.first_name, start_param)
+ 
+        # ── Le flow validation a pris la main — on sort proprement ────────
+        if form_id == "__validation__":
+            return FORM_STEP   # le ConversationHandler validation gère la suite
+ 
+        if not form_id:
+            await update.message.reply_text(f"Bienvenue {user.first_name} ! 👋")
+            return ConversationHandler.END
+ 
+        form = get_form_by_id(form_id)
+    else:
+        form = get_form_by_command(command)
+ 
+    if not form:
+        await update.message.reply_text("...")
+        return ConversationHandler.END
+ 
+    options = form.get("options", [])
+    form_completed = await has_completed_form(conn, form["id"], user_id)
+ 
+    if options['one_per_user']:
+        if form_completed:
+            await update.message.reply_text("Form remplis")
+            return ConversationHandler.END
+ 
+    session = get_or_create_session(form["id"], user_id)
+ 
+    context.user_data["form_id"]    = form["id"]
+    context.user_data["session_id"] = session["id"]
+    context.user_data["step"]       = session["step_index"]
+    context.user_data["progress"]   = options["progress"]
+    context.user_data["multi_sel"]  = []
+    context.user_data["responses"]  = {}
+ 
+    fields = form.get("fields", [])
+ 
+    if not fields:
+        await update.message.reply_text("Ce formulaire est vide.")
+        return ConversationHandler.END
+ 
+    if form.get("intro"):
+        import asyncio
+        intro = _inject_vars(form["intro"], user_id)
+        await update.message.reply_text(intro)
+        await asyncio.sleep(0.5)
+ 
+    step = session["step_index"]
+    if step >= len(fields):
+        await update.message.reply_text("Tu as déjà complété ce formulaire.")
+        return ConversationHandler.END
+ 
+    await _send_field(context.bot, user_id, fields[step], step + 1, len(fields), options["progress"])
+    return FORM_STEP
+ 
+async def _form_starts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     text = update.message.text.strip()
