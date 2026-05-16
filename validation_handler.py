@@ -24,7 +24,7 @@ from telegram.ext import (
 )
 
 DB_PATH      = "preinscriptions.db"
-CATEGORIE    = "PRELANCEMENT FDK GOLD SAISON 1"
+CATEGORIE    = "PRELANCEMENT FDK GOLD SAISON"
 FORM_COMMAND = "/suivi"
 
 # ── États ──────────────────────────────────────────────────────────────────

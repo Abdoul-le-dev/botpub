@@ -11,7 +11,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 DB = "preinscriptions.db"
-VALIDATION_START_PARAM = "validation"   # ← doit correspondre au start_param dans invite_links
+VALIDATION_START_PARAM = "fdkgoldsaison"   # ← doit correspondre au start_param dans invite_links
 
 
 def get_conn():
