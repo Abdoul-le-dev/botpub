@@ -1,7 +1,5 @@
 """
-migrate_subscription_info.py
-Recrée subscription_info sans contrainte NOT NULL sur user_id.
-Lance : python3 migrate_subscription_info.py
+migrate_subscription_info.py — Recrée subscription_info sans user_id.
 """
 import sqlite3
 
@@ -13,13 +11,10 @@ def run():
     c.execute("PRAGMA journal_mode=WAL")
 
     c.executescript("""
-        -- 1. Sauvegarde
         ALTER TABLE subscription_info RENAME TO subscription_info_bak;
 
-        -- 2. Nouvelle table sans NOT NULL sur user_id
         CREATE TABLE subscription_info (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id       INTEGER,
             plan          TEXT    NOT NULL,
             duration_days INTEGER NOT NULL,
             started_at    TEXT    NOT NULL,
@@ -41,17 +36,24 @@ def run():
             updated_at    TEXT    DEFAULT (datetime('now'))
         );
 
-        -- 3. Copie des données
         INSERT INTO subscription_info
-            SELECT * FROM subscription_info_bak;
+            (id, plan, duration_days, started_at, expires_at, status, note,
+             order_id, name, email, phone, country_code, billing_cycle,
+             amount_usd, currency, amount_local, aggregator, paid_at,
+             created_at, updated_at)
+        SELECT
+             id, plan, duration_days, started_at, expires_at, status, note,
+             order_id, name, email, phone, country_code, billing_cycle,
+             amount_usd, currency, amount_local, aggregator, paid_at,
+             created_at, updated_at
+        FROM subscription_info_bak;
 
-        -- 4. Supprime la sauvegarde
         DROP TABLE subscription_info_bak;
     """)
 
     c.commit()
     c.close()
-    print("OK — subscription_info recréée sans contrainte NOT NULL sur user_id.")
+    print("OK — user_id supprimé de subscription_info.")
 
 if __name__ == "__main__":
     run()

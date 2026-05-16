@@ -130,15 +130,15 @@ def _activate(pay: dict, telegram_id: int, email: str):
         # 1. Upsert users
         _upsert_user(c, telegram_id, pay)
 
-        # 2. Activer dans subscription_info
+        # 2. Marquer le paiement comme validé dans subscription_info
         c.execute(
             """
             UPDATE subscription_info
             SET status = 'active', note = 'valide par telegram',
-                user_id = ?, updated_at = datetime('now')
+                updated_at = datetime('now')
             WHERE id = ?
             """,
-            (telegram_id, pay["id"])
+            (pay["id"],)
         )
 
         # 3. Inserer dans subscriptions si pas déjà actif
