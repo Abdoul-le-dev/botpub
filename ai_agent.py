@@ -183,6 +183,19 @@ def get_conversation_state(user_id: int) -> dict:
     return {"ia_enabled": 1, "is_blocked": 0}
 
 
+def ensure_user(user_id: int, first_name: str = "", username: str = ""):
+    """Crée l'utilisateur dans users s'il n'existe pas."""
+    conn = get_conn()
+    try:
+        conn.execute("""
+            INSERT OR IGNORE INTO users (telegram_id, name, phone, created_at)
+            VALUES (?, ?, ?, ?)
+        """, (user_id, first_name or username or "inconnu", "0000", _now()))
+        conn.commit()
+    except Exception as e:
+        print(f"[ensure_user] {e}")
+    finally:
+        conn.close()
 def ensure_conversation(user_id: int):
     """Crée la conversation si elle n'existe pas, incrémente unread_count."""
     conn = get_conn()
@@ -666,6 +679,9 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
     chat_type  = msg.chat.type   or "private"
     text       = msg.text        or None
     caption    = msg.caption     or None
+
+
+    ensure_user(user_id, first_name, username)
 
     # ══════════════════════════════════════════════════════════════════════
     # GARDE-FOUS — vérifier état de la conversation avant tout
