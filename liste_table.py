@@ -122,21 +122,21 @@ CREATE TABLE category_rules (
             )
 
 === conversations ===
-CREATE TABLE conversations (
-                id               INTEGER  PRIMARY KEY AUTOINCREMENT,
-                user_id          INTEGER  NOT NULL UNIQUE,
-                ia_enabled       INTEGER  DEFAULT 1,
-                is_blocked       INTEGER  DEFAULT 0,
-                unread_count     INTEGER  DEFAULT 0,
-                last_message_id  INTEGER  DEFAULT NULL,
-                last_activity    TEXT     DEFAULT NULL,
-                pinned           INTEGER  DEFAULT 0,
-                archived         INTEGER  DEFAULT 0,
-                note_admin       TEXT     DEFAULT NULL,
-                created_at       TEXT     DEFAULT (datetime('now')),
-                updated_at       TEXT     DEFAULT (datetime('now')),
-                FOREIGN KEY (user_id) REFERENCES users(telegram_id) ON DELETE CASCADE
-            )
+    CREATE TABLE conversations (
+                    id               INTEGER  PRIMARY KEY AUTOINCREMENT,
+                    user_id          INTEGER  NOT NULL UNIQUE,
+                    ia_enabled       INTEGER  DEFAULT 1,
+                    is_blocked       INTEGER  DEFAULT 0,
+                    unread_count     INTEGER  DEFAULT 0,
+                    last_message_id  INTEGER  DEFAULT NULL,
+                    last_activity    TEXT     DEFAULT NULL,
+                    pinned           INTEGER  DEFAULT 0,
+                    archived         INTEGER  DEFAULT 0,
+                    note_admin       TEXT     DEFAULT NULL,
+                    created_at       TEXT     DEFAULT (datetime('now')),
+                    updated_at       TEXT     DEFAULT (datetime('now')),
+                    FOREIGN KEY (user_id) REFERENCES users(telegram_id) ON DELETE CASCADE
+                )
 
 === exam ===
 CREATE TABLE exam (
