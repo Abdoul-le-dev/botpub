@@ -151,7 +151,7 @@ async def _start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text(
         "👋 Bienvenue dans le processus de validation FDK Signal.\n\n"
-        "📧 Veuillez saisir l'adresse email utilisée lors de votre paiement :",
+        "📧 Veuillez cliquer sur le bouton /valider pour valider votre paiement",
         reply_markup=ReplyKeyboardRemove()
     )
     return ASK_EMAIL
@@ -217,10 +217,8 @@ async def _receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "❌ Aucun paiement trouvé pour cet email.\n\n"
-        "Si vous pensez qu'il s'agit d'une erreur, vous pouvez demander un remboursement.",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("💸 Je souhaite un remboursement", callback_data="val_refund")
-        ]])
+        "Si vous pensez qu'il s'agit d'une erreur, vous pouvez nous contactez via support@fdksignal.com pour reclamation.",
+        
     )
     context.user_data.pop("in_validation", None)   # ← nettoie à la fin
     return SHOW_RESULT
