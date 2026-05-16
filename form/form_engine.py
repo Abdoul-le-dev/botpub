@@ -727,6 +727,7 @@ async def _start_via_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def register_form_handlers(app: Application, bot, admin_id: int):
     app.bot_data["admin_id"] = admin_id
+    print('ook')
 
     conv = ConversationHandler(
         entry_points=[MessageHandler(filters.COMMAND, _form_start)],
