@@ -387,7 +387,7 @@ async def _form_starts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         form = get_form_by_command(command)
 
     if not form:
-        await update.message.reply_text("...")#form non disponible
+        await update.message.reply_text("")#form non disponible
         return ConversationHandler.END
     
     options = form.get("options", [])

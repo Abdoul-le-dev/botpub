@@ -260,17 +260,11 @@ async def _confirm_subscription(update: Update, context: ContextTypes.DEFAULT_TY
         f"🎉 *Votre abonnement FDK Gold est validé \\!*\n\n"
         f"⏳ Il est actif jusqu'au *{_format_date(pay.get('expires_at'))}*\\.\n\n"
         "Si vous avez des questions, n'hésitez pas à les poser ici — "
-        "un membre de notre équipe sera disponible pour vous répondre\\.\n\n",
-        # f"📋 Un formulaire vous sera envoyer dans la suite de la journée afin que nous "
-        # f"puissions suivre votre progression ",
+        "un membre de notre équipe sera disponible pour vous répondre\\.\n\n"
+        "📋 Veuillez cliquer sur /mon_profil_trader_fdk afin de "
+        "compléter votre *Profil Trader* ",
         parse_mode="MarkdownV2"
     )
-
-    await query.message.reply_text(
-    "📋 Veuillez cliquer sur /mon_profil_trader_fdk afin de "
-    "compléter votre *Profil Trader* ",
-    parse_mode="MarkdownV2"
-)
     return ConversationHandler.END
 
 
