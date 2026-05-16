@@ -250,7 +250,7 @@ if __name__ == '__main__':
 
     register_form_handlers(app, app.bot, ADMIN_ID)
 
-    
+    app.add_handler(MessageHandler(filters.ALL, log_unhandled_message))
 
     set_bot(app.bot) 
 
