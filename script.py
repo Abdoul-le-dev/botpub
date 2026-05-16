@@ -10,6 +10,7 @@ from database.database import save_user_default,delete_all_exercices
 from user_data import user_info
 from database.database import get_file_id
 from database.database import save_file_id
+from validation_handler import register_validation_handler
 
 from form.form import init_forms_db
 from form.form_engine import register_form_handlers
@@ -239,6 +240,8 @@ if __name__ == '__main__':
     
     
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
+
+    register_validation_handler(app)  
 
     register_form_handlers(app, app.bot, ADMIN_ID)
 
