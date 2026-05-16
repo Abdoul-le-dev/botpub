@@ -440,6 +440,9 @@ async def _form_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
     progress = context.user_data.get("progress")
     step       = context.user_data.get("step", 0)
 
+    if context.user_data.get("in_validation"):
+        return
+
     if not form_id:
         return ConversationHandler.END
 

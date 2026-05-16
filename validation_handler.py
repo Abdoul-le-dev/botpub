@@ -146,6 +146,7 @@ def _format_date(raw) -> str:
 # Étape 1
 
 async def _start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["in_validation"] = True
     print(f"[validation] _start user={update.effective_user.id}")
     context.user_data.clear()
     await update.message.reply_text(
@@ -159,6 +160,7 @@ async def _start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Étape 2
 
 async def _receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["in_validation"] = True
     email = update.message.text.strip()
     print(f"[validation] _receive_email email={email}")
 
@@ -220,6 +222,7 @@ async def _receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton("💸 Je souhaite un remboursement", callback_data="val_refund")
         ]])
     )
+    context.user_data.pop("in_validation", None)   # ← nettoie à la fin
     return SHOW_RESULT
 
 
