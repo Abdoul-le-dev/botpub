@@ -34,8 +34,8 @@ async def process_start_link(update, context, user_id: int, first_name: str, sta
         print(f"[start_handler] → bienvenu FDK Gold, redirection /valider")
         await update.message.reply_text(
             f"👋 Bienvenue <b>{first_name}</b> !\n\n"
-            "Nous sommes ravis de vous accueillir dans la communauté <b>FDK Gold Saison 1</b> 🥇\n\n"
-            "Pour activer votre accès, tapez la commande :\n"
+            "Nous sommes ravis de vous accueillir dans la <b>FDK Gold Saison </b> \n\n"
+            "Pour activer votre accès, cliquez sur :\n"
             "👉 /valider",
             parse_mode="HTML"
         )
