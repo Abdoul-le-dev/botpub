@@ -237,7 +237,7 @@ def _evaluate_answer(field: dict, raw_answer: str) -> tuple[bool | None, int, st
 
 async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: int = None):
     """
-    Relance tous les users qui ont une session en cours (started) mais pas terminée.
+    Relance tous les users qui ont une session en cours (in_progress) mais pas terminée.
     Envoie un message avec la commande de déclenchement pour reprendre le formulaire.
     """
     conn = sqlite3.connect(DB_PATH)
@@ -246,14 +246,14 @@ async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: in
             sessions = conn.execute("""
                 SELECT s.id, s.telegram_id, s.form_id, s.step_index
                 FROM form_sessions s
-                WHERE s.status = 'started'
+                WHERE s.status = 'in_progress'
                 AND s.form_id = ?
             """, (form_id,)).fetchall()
         else:
             sessions = conn.execute("""
                 SELECT s.id, s.telegram_id, s.form_id, s.step_index
                 FROM form_sessions s
-                WHERE s.status = 'started'
+                WHERE s.status = 'in_progress'
             """).fetchall()
     finally:
         conn.close()
@@ -272,30 +272,36 @@ async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: in
         fid         = session[2]
         step_index  = session[3]
 
+        # Ignorer les groupes/canaux (IDs négatifs)
+        if telegram_id <= 0:
+            print(f"[relancer] Ignoré — ID groupe/canal : {telegram_id}")
+            continue
+
         try:
             form = get_form_by_id(fid)
             if not form:
                 continue
 
             fields = form.get("fields", [])
-            if not fields or step_index >= len(fields):
+            if not fields:
                 continue
 
-            title   = form.get("title", "le formulaire")
-            command = form.get("command", "")  # ex: "/inscription"
+            title   = form.get("name", "le formulaire")   # ← colonne "name" en base
+            command = form.get("command", "")
 
-            # Construire le message selon qu'on a une commande ou pas
+            question_actuelle = min(step_index + 1, len(fields))
+
             if command:
                 texte = (
                     f"👋 Tu n'as pas encore terminé *{title}*.\n\n"
-                    f"Tu en es à la question *{step_index + 1}/{len(fields)}*.\n\n"
+                    f"Tu en es à la question *{question_actuelle}/{len(fields)}*.\n\n"
                     f"Clique sur la commande ci-dessous pour reprendre là où tu t'es arrêté 👇\n\n"
                     f"{command}"
                 )
             else:
                 texte = (
                     f"👋 Tu n'as pas encore terminé *{title}*.\n\n"
-                    f"Tu en es à la question *{step_index + 1}/{len(fields)}*.\n\n"
+                    f"Tu en es à la question *{question_actuelle}/{len(fields)}*.\n\n"
                     f"Contacte-nous pour reprendre le formulaire. 🙏"
                 )
 
@@ -306,7 +312,7 @@ async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: in
             )
 
             sent += 1
-            await asyncio.sleep(0.2)
+            await asyncio.sleep(0.3)
 
         except Exception as e:
             errors += 1
@@ -319,7 +325,6 @@ async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: in
             admin_id,
             f"📋 Relance terminée\n✅ Envoyés : {sent} | ❌ Erreurs : {errors}"
         )
-
 # ════════════════════════════════════════════════════════════════════════════
 # LOGIQUE CONDITIONNELLE
 # ════════════════════════════════════════════════════════════════════════════
