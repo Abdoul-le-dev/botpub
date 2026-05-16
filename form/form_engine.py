@@ -603,14 +603,42 @@ async def _form_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user_id    = update.effective_user.id
     form_id    = context.user_data.get("form_id")
     session_id = context.user_data.get("session_id")
-    progress = context.user_data.get("progress")
+    progress   = context.user_data.get("progress")
     step       = context.user_data.get("step", 0)
 
     if context.user_data.get("in_validation"):
-        return
+        return FORM_STEP  # ← ne pas retourner None
 
+    # ── Reconstruire le contexte si perdu ────────────────────────────────
     if not form_id:
-        return ConversationHandler.END
+        # Chercher une session in_progress pour ce user
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            row = conn.execute("""
+                SELECT id, form_id, step_index
+                FROM form_sessions
+                WHERE telegram_id = ? AND status = 'in_progress'
+                ORDER BY updated_at DESC LIMIT 1
+            """, (user_id,)).fetchone()
+        finally:
+            conn.close()
+
+        if not row:
+            await update.message.reply_text(
+                "⚠️ Aucun formulaire en cours. Utilise la commande pour recommencer."
+            )
+            return ConversationHandler.END
+
+        session_id = row[0]
+        form_id    = row[1]
+        step       = row[2]
+
+        context.user_data["form_id"]    = form_id
+        context.user_data["session_id"] = session_id
+        context.user_data["step"]       = step
+        context.user_data["multi_sel"]  = []
+        context.user_data["responses"]  = {}
+        print(f"[form_engine] Contexte reconstruit — user {user_id} | form {form_id} | step {step}")
 
     form   = get_form_by_id(form_id)
     fields = form.get("fields", [])
@@ -641,6 +669,36 @@ async def _form_receive_callback(update: Update, context: ContextTypes.DEFAULT_T
     session_id = context.user_data.get("session_id")
     step       = context.user_data.get("step", 0)
     progress   = context.user_data.get("progress")
+
+    # ── Reconstruire le contexte si perdu ────────────────────────────────
+    if not form_id:
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            row = conn.execute("""
+                SELECT id, form_id, step_index
+                FROM form_sessions
+                WHERE telegram_id = ? AND status = 'in_progress'
+                ORDER BY updated_at DESC LIMIT 1
+            """, (user_id,)).fetchone()
+        finally:
+            conn.close()
+
+        if not row:
+            await query.message.reply_text(
+                "⚠️ Aucun formulaire en cours. Utilise la commande pour recommencer."
+            )
+            return ConversationHandler.END
+
+        session_id = row[0]
+        form_id    = row[1]
+        step       = row[2]
+
+        context.user_data["form_id"]    = form_id
+        context.user_data["session_id"] = session_id
+        context.user_data["step"]       = step
+        context.user_data["multi_sel"]  = []
+        context.user_data["responses"]  = {}
+        print(f"[form_engine] Contexte reconstruit (callback) — user {user_id} | form {form_id} | step {step}")
 
     if not form_id:
         return ConversationHandler.END
@@ -687,9 +745,8 @@ async def _form_receive_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     return await _process_answer(
         update, context, form, fields, field, step,
-        session_id, form_id, user_id, raw_answer, is_callback=True, progress= progress
+        session_id, form_id, user_id, raw_answer, is_callback=True, progress=progress
     )
-
 
 # ════════════════════════════════════════════════════════════════════════════
 # RÉCEPTION MÉDIAS — TÉLÉCHARGEMENT LOCAL
