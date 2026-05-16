@@ -82,6 +82,8 @@ app.include_router(forms_router)
 app.include_router(trading_router) 
 app.include_router(growth_router)
 app.include_router(ai_router)
+app.include_router(subscription_router)
+
 
 origins = [
     "*"
