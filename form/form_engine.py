@@ -293,23 +293,23 @@ async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: in
 
             if command:
                 texte = (
-                    f"👋 Tu n'as pas encore terminé *{title}*.\n\n"
-                    f"Tu en es à la question *{question_actuelle}/{len(fields)}*.\n\n"
+                    f"👋 Tu n'as pas encore terminé {title}.\n\n"
+                    f"Tu en es à la question {question_actuelle}/{len(fields)}.\n\n"
                     f"Clique sur la commande ci-dessous pour reprendre là où tu t'es arrêté 👇\n\n"
                     f"{command}"
                 )
             else:
                 texte = (
-                    f"👋 Tu n'as pas encore terminé *{title}*.\n\n"
-                    f"Tu en es à la question *{question_actuelle}/{len(fields)}*.\n\n"
+                    f"👋 Tu n'as pas encore terminé {title}.\n\n"
+                    f"Tu en es à la question {question_actuelle}/{len(fields)}.\n\n"
                     f"Contacte-nous pour reprendre le formulaire. 🙏"
                 )
 
             await bot.send_message(
                 telegram_id,
                 texte,
-                parse_mode="Markdown"
             )
+            
 
             sent += 1
             await asyncio.sleep(0.3)
