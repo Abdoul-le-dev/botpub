@@ -406,7 +406,7 @@ async def _form_start(update, context):
         form = get_form_by_command(command)
  
     if not form:
-        await update.message.reply_text("...")
+       
         return ConversationHandler.END
  
     options = form.get("options", [])
@@ -478,7 +478,11 @@ async def _form_starts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(options['one_per_user'])
     if options['one_per_user'] :
         if form_completed :
-            await update.message.reply_text("Form remplis")#form non disponible
+            await update.message.reply_text(
+                    "✅ Vous avez déjà complété ce formulaire.\n\n"
+                    "Notre équipe a bien reçu vos informations. "
+                    "Si vous avez des questions, n'hésitez pas à nous contacter ici."
+                )
             return ConversationHandler.END
 
     session = get_or_create_session(form["id"], user_id)
