@@ -311,6 +311,7 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Logique start_handler intégrée ──
     if command == "/start":
+        print("1")
         from telegram_page.start_handler import process_start_link
         form_id = await process_start_link(update, context, user_id, user.first_name, start_param)
         if not form_id:
