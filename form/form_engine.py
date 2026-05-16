@@ -238,7 +238,7 @@ def _evaluate_answer(field: dict, raw_answer: str) -> tuple[bool | None, int, st
 async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: int = None):
     """
     Relance tous les users qui ont une session en cours (started) mais pas terminée.
-    Si form_id est précisé, relance uniquement ce formulaire.
+    Envoie un message avec la commande de déclenchement pour reprendre le formulaire.
     """
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -267,10 +267,10 @@ async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: in
     sent = errors = 0
 
     for session in sessions:
-        session_id = session[0]
+        session_id  = session[0]
         telegram_id = session[1]
-        fid = session[2]
-        step_index = session[3]
+        fid         = session[2]
+        step_index  = session[3]
 
         try:
             form = get_form_by_id(fid)
@@ -281,26 +281,28 @@ async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: in
             if not fields or step_index >= len(fields):
                 continue
 
-            options = form.get("options", {}) or {}
-            current_field = fields[step_index]
+            title   = form.get("title", "le formulaire")
+            command = form.get("command", "")  # ex: "/inscription"
 
-            # Message de relance
+            # Construire le message selon qu'on a une commande ou pas
+            if command:
+                texte = (
+                    f"👋 Tu n'as pas encore terminé *{title}*.\n\n"
+                    f"Tu en es à la question *{step_index + 1}/{len(fields)}*.\n\n"
+                    f"Clique sur la commande ci-dessous pour reprendre là où tu t'es arrêté 👇\n\n"
+                    f"{command}"
+                )
+            else:
+                texte = (
+                    f"👋 Tu n'as pas encore terminé *{title}*.\n\n"
+                    f"Tu en es à la question *{step_index + 1}/{len(fields)}*.\n\n"
+                    f"Contacte-nous pour reprendre le formulaire. 🙏"
+                )
+
             await bot.send_message(
                 telegram_id,
-                f"👋 Tu n'as pas terminé le formulaire *{form.get('title', '')}*.\n\n"
-                f"On reprend là où tu t'es arrêté 👇",
+                texte,
                 parse_mode="Markdown"
-            )
-            await asyncio.sleep(0.3)
-
-            # Renvoyer la question en cours
-            await _send_field(
-                bot,
-                telegram_id,
-                current_field,
-                step_index + 1,
-                len(fields),
-                options.get("progress", False)
             )
 
             sent += 1
@@ -317,6 +319,7 @@ async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: in
             admin_id,
             f"📋 Relance terminée\n✅ Envoyés : {sent} | ❌ Erreurs : {errors}"
         )
+
 # ════════════════════════════════════════════════════════════════════════════
 # LOGIQUE CONDITIONNELLE
 # ════════════════════════════════════════════════════════════════════════════
