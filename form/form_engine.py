@@ -235,7 +235,88 @@ def _evaluate_answer(field: dict, raw_answer: str) -> tuple[bool | None, int, st
 
     return None, 0, ""
 
+async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: int = None):
+    """
+    Relance tous les users qui ont une session en cours (started) mais pas terminée.
+    Si form_id est précisé, relance uniquement ce formulaire.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        if form_id:
+            sessions = conn.execute("""
+                SELECT s.id, s.telegram_id, s.form_id, s.step_index
+                FROM form_sessions s
+                WHERE s.status = 'started'
+                AND s.form_id = ?
+            """, (form_id,)).fetchall()
+        else:
+            sessions = conn.execute("""
+                SELECT s.id, s.telegram_id, s.form_id, s.step_index
+                FROM form_sessions s
+                WHERE s.status = 'started'
+            """).fetchall()
+    finally:
+        conn.close()
 
+    if not sessions:
+        print("[relancer] Aucune session incomplète trouvée.")
+        if admin_id:
+            await bot.send_message(admin_id, "✅ Aucune session incomplète à relancer.")
+        return
+
+    sent = errors = 0
+
+    for session in sessions:
+        session_id = session[0]
+        telegram_id = session[1]
+        fid = session[2]
+        step_index = session[3]
+
+        try:
+            form = get_form_by_id(fid)
+            if not form:
+                continue
+
+            fields = form.get("fields", [])
+            if not fields or step_index >= len(fields):
+                continue
+
+            options = form.get("options", {}) or {}
+            current_field = fields[step_index]
+
+            # Message de relance
+            await bot.send_message(
+                telegram_id,
+                f"👋 Tu n'as pas terminé le formulaire *{form.get('title', '')}*.\n\n"
+                f"On reprend là où tu t'es arrêté 👇",
+                parse_mode="Markdown"
+            )
+            await asyncio.sleep(0.3)
+
+            # Renvoyer la question en cours
+            await _send_field(
+                bot,
+                telegram_id,
+                current_field,
+                step_index + 1,
+                len(fields),
+                options.get("progress", False)
+            )
+
+            sent += 1
+            await asyncio.sleep(0.2)
+
+        except Exception as e:
+            errors += 1
+            print(f"[relancer] Erreur user {telegram_id}: {e}")
+
+    print(f"[relancer] Relancés: {sent} | Erreurs: {errors}")
+
+    if admin_id:
+        await bot.send_message(
+            admin_id,
+            f"📋 Relance terminée\n✅ Envoyés : {sent} | ❌ Erreurs : {errors}"
+        )
 # ════════════════════════════════════════════════════════════════════════════
 # LOGIQUE CONDITIONNELLE
 # ════════════════════════════════════════════════════════════════════════════
@@ -428,6 +509,64 @@ async def _form_starts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _send_field(context.bot, user_id, fields[step], step + 1, len(fields),options["progress"])
     return FORM_STEP
 
+async def _form_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Catch-all : guide l'user sans le bloquer."""
+    form_id = context.user_data.get("form_id")
+    if not form_id:
+        return ConversationHandler.END
+    
+    await update.message.reply_text(
+        "⚠️ Je n'ai pas compris ta réponse.\n"
+        "Réponds à la question ou tape /cancel pour annuler le formulaire."
+    )
+    return FORM_STEP  # rester dans l'état actuel
+
+
+async def _form_timeout(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Appelé après inactivité."""
+    context.user_data.clear()
+    if update.message:
+        await update.message.reply_text(
+            "⏱ Le formulaire a expiré. Recommence avec la commande."
+        )
+    return ConversationHandler.END
+
+
+def register_form_handlers(app: Application, bot, admin_id: int):
+    app.bot_data["admin_id"] = admin_id
+
+    conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.COMMAND, _form_start)],
+        states={
+            FORM_STEP: [
+                CallbackQueryHandler(_form_receive_callback, pattern=r"^(fopt_|fmul_)"),
+                MessageHandler(filters.CONTACT,      _form_receive_text),
+                MessageHandler(filters.PHOTO,        _form_receive_media),
+                MessageHandler(filters.VIDEO,        _form_receive_media),
+                MessageHandler(filters.VOICE,        _form_receive_media),
+                MessageHandler(filters.AUDIO,        _form_receive_media),
+                MessageHandler(filters.Document.ALL, _form_receive_media),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, _form_receive_text),
+            ],
+            ConversationHandler.TIMEOUT: [        # ← état timeout
+                MessageHandler(filters.ALL, _form_timeout),
+                CallbackQueryHandler(_form_timeout),
+            ],
+        },
+        fallbacks=[
+            CommandHandler("cancel",   _form_cancel),
+            CommandHandler("annuler",  _form_cancel),
+            MessageHandler(filters.COMMAND, _form_cancel),   # ← toute autre commande = annulation
+            MessageHandler(filters.ALL, _form_fallback),     # ← catch-all
+        ],
+        per_chat=False,
+        per_user=True,
+        allow_reentry=True,
+        conversation_timeout=600,                            # ← 10 min
+    )
+
+    app.add_handler(conv, group=1)
+    print("[form_engine] Handlers formulaires enregistrés.")
 
 # ════════════════════════════════════════════════════════════════════════════
 # RÉCEPTION TEXTE / CONTACT
@@ -792,7 +931,7 @@ async def _start_via_link(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ENREGISTREMENT DES HANDLERS
 # ════════════════════════════════════════════════════════════════════════════
 
-def register_form_handlers(app: Application, bot, admin_id: int):
+def register_form_handlers_(app: Application, bot, admin_id: int):
     app.bot_data["admin_id"] = admin_id
     print('ook')
 
