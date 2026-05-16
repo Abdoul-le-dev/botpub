@@ -30,6 +30,17 @@ class SubscriptionPayload(BaseModel):
 def create_subscription(payload: SubscriptionPayload):
     conn = sqlite3.connect(DB_PATH)
     try:
+        # Vérifier si un enregistrement existe déjà avec le même email ET paid_at
+        existing = conn.execute('''
+            SELECT id FROM subscription_info
+            WHERE email = ? AND paid_at = ?
+        ''', (payload.email, payload.paid_at)).fetchone()
+
+        if existing:
+            print(f"[subscription-info] Déjà sauvegardé — email={payload.email} | paid_at={payload.paid_at} | id={existing[0]}")
+            return {'id': existing[0], 'message': 'déjà sauvegardé'}
+
+        # Nouveau paiement → insérer
         cur = conn.execute('''
             INSERT INTO subscription_info
                 (plan, duration_days, started_at, expires_at, status, note,
@@ -44,7 +55,9 @@ def create_subscription(payload: SubscriptionPayload):
             payload.currency, payload.amount_local, payload.aggregator, payload.paid_at
         ))
         conn.commit()
+        print(f"[subscription-info] Nouveau paiement enregistré — email={payload.email} | id={cur.lastrowid}")
         return {'id': cur.lastrowid, 'message': 'subscription enregistrée'}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
