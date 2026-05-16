@@ -13,7 +13,7 @@ from telegram.ext import (
 )
 
 DB_PATH      = "preinscriptions.db"
-CATEGORIE    = "PRELANCEMENT FDK GOLD SAISON 1"
+CATEGORIE    = "PRELANCEMENT FDK GOLD SAISON"
 FORM_COMMAND = "/suivi"
 
 ASK_EMAIL, SHOW_RESULT, CONFIRM_REFUND = range(300, 303)
@@ -30,6 +30,16 @@ CLAUSES = (
     "En cliquant sur *Je valide mon abonnement*, vous confirmez avoir lu "
     "et accepté ces conditions ainsi que celles disponibles sur fdksignal\\.com\\."
 )
+
+
+# Helper
+
+def _escape_md(text) -> str:
+    if not text:
+        return "—"
+    for ch in r"\_*[]()~`>#+-=|{}.!":
+        text = str(text).replace(ch, f"\\{ch}")
+    return text
 
 
 # DB
@@ -199,10 +209,10 @@ async def _receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await update.message.reply_text(
                 f"✅ *Paiement trouvé*\n\n"
-                f"📦 Plan      : *{pay.get('plan', '—')}*\n"
-                f"💰 Montant   : {pay.get('amount_usd', '—')} \\$\n"
-                f"📅 Paiement  : {_format_date(pay.get('paid_at'))}\n"
-                f"⏳ Expire le : {_format_date(pay.get('expires_at'))}\n\n"
+                f"📦 Plan      : *{_escape_md(pay.get('plan', '—'))}*\n"
+                f"💰 Montant   : {_escape_md(pay.get('amount_usd', '—'))} \\$\n"
+                f"📅 Paiement  : {_escape_md(_format_date(pay.get('paid_at')))}\n"
+                f"⏳ Expire le : {_escape_md(_format_date(pay.get('expires_at')))}\n\n"
                 f"{CLAUSES}",
                 parse_mode="MarkdownV2",
                 reply_markup=InlineKeyboardMarkup([[
@@ -218,9 +228,8 @@ async def _receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "❌ Aucun paiement trouvé pour cet email.\n\n"
         "Si vous pensez qu'il s'agit d'une erreur, vous pouvez nous contactez via support@fdksignal.com pour reclamation.",
-        
     )
-    context.user_data.pop("in_validation", None)   # ← nettoie à la fin
+    context.user_data.pop("in_validation", None)
     return SHOW_RESULT
 
 
@@ -253,8 +262,8 @@ async def _confirm_subscription(update: Update, context: ContextTypes.DEFAULT_TY
         f"⏳ Il est actif jusqu'au *{_format_date(pay.get('expires_at'))}*\\.\n\n"
         "Si vous avez des questions, n'hésitez pas à les poser ici — "
         "un membre de notre équipe sera disponible pour vous répondre\\.\n\n"
-        f"📋 Merci de bien vouloir remplir ce formulaire afin que nous "
-        f"puissions suivre votre progression :\n👉 {FORM_COMMAND}",
+        f"📋 Un formulaire vous sera envoyer dans la suite de la afin que nous "
+        f"puissions suivre votre progression ",
         parse_mode="MarkdownV2"
     )
     return ConversationHandler.END
@@ -304,7 +313,7 @@ async def _refund_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Notre équipe reviendra vers vous dans les plus brefs délais\\. "
         "N'hésitez pas à poser vos questions ici — un membre de notre équipe "
         "est disponible pour vous répondre\\.\n\n"
-        f"📋 En attendant, merci de remplir ce formulaire :\n👉 {FORM_COMMAND}",
+        f"",
         parse_mode="MarkdownV2"
     )
     return ConversationHandler.END
