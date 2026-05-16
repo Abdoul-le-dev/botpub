@@ -12,6 +12,8 @@ from telegram.ext import (
     filters, ContextTypes,
 )
 
+from telegram.helpers import escape_markdown
+
 DB_PATH      = "preinscriptions.db"
 CATEGORIE    = "PRELANCEMENT FDK GOLD SAISON"
 FORM_COMMAND = "/suivi"
@@ -257,14 +259,14 @@ async def _confirm_subscription(update: Update, context: ContextTypes.DEFAULT_TY
 
     await query.edit_message_reply_markup(reply_markup=None)
     await query.message.reply_text(
-        f"🎉 *Votre abonnement FDK Gold est validé \\!*\n\n"
-        f"⏳ Il est actif jusqu'au *{_format_date(pay.get('expires_at'))}*\\.\n\n"
-        "Si vous avez des questions, n'hésitez pas à les poser ici — "
-        "un membre de notre équipe sera disponible pour vous répondre\\.\n\n"
-        "📋 Veuillez cliquer sur /mon_profil_trader_fdk afin de "
-        "compléter votre *Profil Trader* ",
-        parse_mode="MarkdownV2"
-    )
+    f"🎉 *Votre abonnement FDK Gold est validé \\!*\n\n"
+    f"⏳ Il est actif jusqu'au *{escape_markdown(_format_date(pay.get('expires_at')), version=2)}*\\.\n\n"
+    "Si vous avez des questions, n'hésitez pas à les poser ici — "
+    "un membre de notre équipe sera disponible pour vous répondre\\.\n\n"
+    "📋 Veuillez cliquer sur /mon\\_profil\\_trader\\_fdk afin de "
+    "compléter votre *Profil Trader*",
+    parse_mode="MarkdownV2"
+)
     return ConversationHandler.END
 
 
