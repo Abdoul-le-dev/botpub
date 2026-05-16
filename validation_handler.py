@@ -352,5 +352,5 @@ def register_validation_handler(app):
         per_chat=False,
         allow_reentry=True,
     )
-    app.add_handler(conv, group=2)
+    app.add_handler(conv, group=0)
     print("[validation_handler] Handler enregistré.")
