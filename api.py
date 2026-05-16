@@ -11,7 +11,7 @@ from fastapi import HTTPException, UploadFile, File
 import csv  
 from form.form_route import router as forms_router
 from form.form import init_forms_db
-from telegram_page.subscription.db_subscription_info import init_subscription_info
+
 from telegram_page.subscription.subscription import router as subscription_router
 from form.form_scheduler import start_scheduler, stop_scheduler
 from telegram_page.categorie import (
@@ -56,7 +56,7 @@ from telegram_page.automatisation.growth_tables import init_growth_tables
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_chat_tables() 
-    init_subscription_info()
+    
     set_bot(bot)
     init_forms_db()                          
     start_scheduler(bot, admin_id=571718066)

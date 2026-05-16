@@ -1,19 +1,30 @@
-# db_subscription_info.py
+"""
+migrate_subscription_info.py
+Recrée subscription_info sans contrainte NOT NULL sur user_id.
+Lance : python3 migrate_subscription_info.py
+"""
 import sqlite3
 
-DB_PATH = 'preinscriptions.db'
+DB = "preinscriptions.db"
 
-def init_subscription_info():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS subscription_info (
+def run():
+    c = sqlite3.connect(DB)
+    c.execute("PRAGMA foreign_keys = OFF")
+    c.execute("PRAGMA journal_mode=WAL")
+
+    c.executescript("""
+        -- 1. Sauvegarde
+        ALTER TABLE subscription_info RENAME TO subscription_info_bak;
+
+        -- 2. Nouvelle table sans NOT NULL sur user_id
+        CREATE TABLE subscription_info (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id       INTEGER NOT NULL,
+            user_id       INTEGER,
             plan          TEXT    NOT NULL,
             duration_days INTEGER NOT NULL,
             started_at    TEXT    NOT NULL,
             expires_at    TEXT    NOT NULL,
-            status        TEXT    DEFAULT 'active',
+            status        TEXT    DEFAULT 'pending',
             note          TEXT    DEFAULT NULL,
             order_id      TEXT,
             name          TEXT,
@@ -28,32 +39,19 @@ def init_subscription_info():
             paid_at       TEXT,
             created_at    TEXT    DEFAULT (datetime('now')),
             updated_at    TEXT    DEFAULT (datetime('now'))
-        )
-    ''')
+        );
 
-    # Vérifie et ajoute les colonnes manquantes
-    existing = {row[1] for row in conn.execute('PRAGMA table_info(subscription_info)')}
-    columns = {
-        'order_id':      'TEXT',
-        'name':          'TEXT',
-        'email':         'TEXT',
-        'phone':         'TEXT',
-        'country_code':  'TEXT',
-        'billing_cycle': 'TEXT',
-        'amount_usd':    'REAL',
-        'currency':      'TEXT',
-        'amount_local':  'REAL',
-        'aggregator':    'TEXT',
-        'paid_at':       'TEXT',
-    }
-    for col, col_type in columns.items():
-        if col not in existing:
-            conn.execute(f'ALTER TABLE subscription_info ADD COLUMN {col} {col_type}')
-            print(f'Colonne ajoutée : {col}')
+        -- 3. Copie des données
+        INSERT INTO subscription_info
+            SELECT * FROM subscription_info_bak;
 
-    conn.commit()
-    conn.close()
-    print('Table subscription_info prête.')
+        -- 4. Supprime la sauvegarde
+        DROP TABLE subscription_info_bak;
+    """)
 
-if __name__ == '__main__':
-    init_subscription_info()
+    c.commit()
+    c.close()
+    print("OK — subscription_info recréée sans contrainte NOT NULL sur user_id.")
+
+if __name__ == "__main__":
+    run()
