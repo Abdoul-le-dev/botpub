@@ -238,6 +238,8 @@ if __name__ == '__main__':
     app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
 
     
+
+    
     
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
 

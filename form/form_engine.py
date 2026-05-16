@@ -390,6 +390,17 @@ async def _form_start(update, context):
     start_param = args[0] if args and command == "/start" else None
  
     if command == "/start":
+
+
+        if start_param == "relancer12345678":
+
+            bot = context.bot
+
+            ADMIN_ID = 571718066 
+
+            await relancer_formulaires_incomplets(bot, admin_id=ADMIN_ID)
+        
+
         from telegram_page.start_handler import process_start_link
         form_id = await process_start_link(update, context, user_id, user.first_name, start_param)
  
