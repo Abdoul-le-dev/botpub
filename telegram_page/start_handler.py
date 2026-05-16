@@ -25,17 +25,23 @@ async def process_start_link(update, context, user_id: int, first_name: str, sta
     conn.commit()
 
     if not start_param:
-        print(f"[start_handler] pas de start_param → None")
         conn.close()
         return None
 
+    # ── Lien validation → message bienvenu + instruction /valider ─────────
     if start_param == VALIDATION_START_PARAM:
-        print(f"[start_handler] start_param='{start_param}' → flow validation")
         conn.close()
-        from validation_handler import _start as validation_start
-        await validation_start(update, context)
-        return "__validation__"
+        print(f"[start_handler] → bienvenu FDK Gold, redirection /valider")
+        await update.message.reply_text(
+            f"👋 Bienvenue <b>{first_name}</b> !\n\n"
+            "Nous sommes ravis de vous accueillir dans la communauté <b>FDK Gold Saison 1</b> 🥇\n\n"
+            "Pour activer votre accès, tapez la commande :\n"
+            "👉 /valider",
+            parse_mode="HTML"
+        )
+        return None  # on ne lance pas de formulaire, /valider prend la suite
 
+    # ── Logique existante ──────────────────────────────────────────────────
     link = conn.execute(
         "SELECT * FROM invite_links WHERE start_param=? AND is_active=1",
         (start_param,)

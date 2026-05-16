@@ -160,10 +160,9 @@ async def _start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"[validation] _start user={update.effective_user.id}")
     context.user_data.clear()
     await update.message.reply_text(
-        "👋 Bienvenue dans le processus de validation FDK Signal.\n\n"
-        "📧 Veuillez cliquer sur le bouton /valider pour valider votre paiement",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    "📧 Veuillez saisir l'adresse email utilisée lors de votre paiement :",
+    reply_markup=ReplyKeyboardRemove()
+)
     return ASK_EMAIL
 
 
