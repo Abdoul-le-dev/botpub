@@ -711,6 +711,8 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
             ia_enabled=1,
         )
 
+        return
+
         await _handle_text_via_agent(
             user_id=user_id, chat_id=chat_id, message_id=message_id,
             text=text, first_name=first_name, username=username,
