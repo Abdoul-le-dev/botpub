@@ -1,17 +1,10 @@
-"""
-Patch à appliquer dans start_handler.py
-─────────────────────────────────────────
-Ajoute la détection du start_param "validation" pour lancer
-le flow de validation d'abonnement au lieu d'un formulaire classique.
-"""
-
 import sqlite3
 from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes
 
 DB = "preinscriptions.db"
-VALIDATION_START_PARAM = "fdkgoldsaison"   # ← doit correspondre au start_param dans invite_links
+VALIDATION_START_PARAM = "fdkgoldsaison"
 
 
 def get_conn():
@@ -23,6 +16,7 @@ def get_conn():
 
 
 async def process_start_link(update, context, user_id: int, first_name: str, start_param: str):
+    print(f"[start_handler] process_start_link user={user_id} param={start_param}")
     conn = get_conn()
     conn.execute(
         "INSERT OR IGNORE INTO users (telegram_id, name) VALUES (?,?)",
@@ -31,28 +25,29 @@ async def process_start_link(update, context, user_id: int, first_name: str, sta
     conn.commit()
 
     if not start_param:
+        print(f"[start_handler] pas de start_param → None")
         conn.close()
         return None
 
-    # ── Interception du flow validation ───────────────────────────────────
     if start_param == VALIDATION_START_PARAM:
+        print(f"[start_handler] start_param='{start_param}' → flow validation")
         conn.close()
-        # Importer ici pour éviter les imports circulaires
         from validation_handler import _start as validation_start
         await validation_start(update, context)
-        return "__validation__"   # signal à form_engine de ne pas continuer
+        return "__validation__"
 
-    # ── Logique existante ──────────────────────────────────────────────────
     link = conn.execute(
         "SELECT * FROM invite_links WHERE start_param=? AND is_active=1",
         (start_param,)
     ).fetchone()
 
     if not link:
+        print(f"[start_handler] lien introuvable pour param={start_param}")
         conn.close()
         return None
 
     link = dict(link)
+    print(f"[start_handler] lien trouvé id={link['id']} form_id={link.get('form_id')}")
 
     if link["quota_max"] and link["quota_used"] >= link["quota_max"]:
         conn.close()
@@ -101,6 +96,7 @@ async def process_start_link(update, context, user_id: int, first_name: str, sta
 
 
 async def record_form_completion(bot, user_id: int, link_id: int):
+    print(f"[start_handler] record_form_completion user={user_id} link={link_id}")
     conn = get_conn()
     try:
         conn.execute(
