@@ -433,7 +433,11 @@ async def _form_start(update, context):
  
     if options['one_per_user']:
         if form_completed:
-            await update.message.reply_text("Form remplis")
+            await update.message.reply_text(
+                "✅ Vous avez déjà complété ce formulaire.\n\n"
+                "Notre équipe a bien reçu vos informations. "
+                "Si vous avez des questions, n'hésitez pas à nous contacter ici."
+            )
             return ConversationHandler.END
  
     session = get_or_create_session(form["id"], user_id)
