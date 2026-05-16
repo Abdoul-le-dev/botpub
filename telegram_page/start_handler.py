@@ -28,18 +28,18 @@ async def process_start_link(update, context, user_id: int, first_name: str, sta
         conn.close()
         return None
 
-    # ── Lien validation → message bienvenu + instruction /valider ─────────
-    if start_param == VALIDATION_START_PARAM:
-        conn.close()
-        print(f"[start_handler] → bienvenu FDK Gold, redirection /valider")
-        await update.message.reply_text(
-            f"👋 Bienvenue <b>{first_name}</b> !\n\n"
-            "Nous sommes ravis de vous accueillir dans la <b>FDK Gold Saison </b> \n\n"
-            "Pour activer votre accès, cliquez sur :\n"
-            "👉 /valider",
-            parse_mode="HTML"
-        )
-        return None  # on ne lance pas de formulaire, /valider prend la suite
+    # # ── Lien validation → message bienvenu + instruction /valider ─────────
+    # if start_param == VALIDATION_START_PARAM:
+    #     conn.close()
+    #     print(f"[start_handler] → bienvenu FDK Gold, redirection /valider")
+    #     await update.message.reply_text(
+    #         f"👋 Bienvenue <b>{first_name}</b> !\n\n"
+    #         "Nous sommes ravis de vous accueillir dans la <b>FDK Gold Saison </b> \n\n"
+    #         "Pour activer votre accès, cliquez sur :\n"
+    #         "👉 /valider",
+    #         parse_mode="HTML"
+    #     )
+    #     return None  # on ne lance pas de formulaire, /valider prend la suite
 
     # ── Logique existante ──────────────────────────────────────────────────
     link = conn.execute(
