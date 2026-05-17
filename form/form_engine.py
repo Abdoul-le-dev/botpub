@@ -78,8 +78,7 @@ async def _background_worker():
             await asyncio.sleep(1)
 
 
-async def setup_background_worker():
-    """À appeler au démarrage de l'app (post_init)."""
+async def setup_background_worker(app=None):
     global _task_queue
     _task_queue = asyncio.Queue(maxsize=200)
     asyncio.create_task(_background_worker())
