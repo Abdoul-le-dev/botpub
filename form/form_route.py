@@ -98,7 +98,7 @@ async def api_form_stats(form_id: int):
 
 
 @router.get("/{form_id}/responses")
-async def api_form_responses(form_id: int, limit: int = 100):
+async def api_form_responses(form_id: int, limit: int = 10000):
     form = get_form_by_id(form_id)
     if not form:
         raise HTTPException(status_code=404, detail="Formulaire introuvable")
