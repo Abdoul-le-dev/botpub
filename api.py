@@ -85,21 +85,22 @@ app.include_router(trading_router)
 app.include_router(growth_router)
 app.include_router(ai_router)
 app.include_router(subscription_router)
-ALLOWED_IPS = {"3.95.185.12", "77.131.12.123"}
+# ALLOWED_IPS = {"3.95.185.12", "77.131.12.123"}
 
-@app.middleware("http")
-async def ip_whitelist(request: Request, call_next):
-    client_ip = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
-    if client_ip not in ALLOWED_IPS:
-        return JSONResponse(status_code=403, content={"detail": "Accès refusé"})
-    return await call_next(request)
+# @app.middleware("http")
+# async def ip_whitelist(request: Request, call_next):
+#     client_ip = request.headers.get("x-forwarded-for", request.client.host).split(",")[0].strip()
+#     if client_ip not in ALLOWED_IPS:
+#         return JSONResponse(status_code=403, content={"detail": "Accès refusé"})
+#     return await call_next(request)
 
 origins = [
-    "http://3.95.185.12",
-    "https://3.95.185.12",
-    "https://admin.fdksignal.com",   # ← ton domaine commenté plus haut
-    "http://77.131.12.123",
-    "https://77.131.12.123",
+    "*"
+    # "http://3.95.185.12",
+    # "https://3.95.185.12",
+    # "https://admin.fdksignal.com",   # ← ton domaine commenté plus haut
+    # "http://77.131.12.123",
+    # "https://77.131.12.123",
 ]
 
 
