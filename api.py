@@ -204,7 +204,7 @@ async def api_delete_category(name_categorie: str):
     """
     Supprime la catégorie + tous ses membres + ses règles.
     """
-    return await drop_category(name_categorie)
+    return #await drop_category(name_categorie)
  
  
 # ────────────────────────────────────────────────────────────────────────

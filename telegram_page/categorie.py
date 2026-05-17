@@ -1,21 +1,7 @@
-# categories.py — compatible SQLite
-# Différences vs MySQL :
-#   - conn.row_factory = sqlite3.Row  au lieu de cursor(dictionary=True)
-#   - dict(row) pour convertir une Row en dict mutable
-#   - ? au lieu de %s pour les paramètres
-#   - INSERT OR IGNORE au lieu de INSERT IGNORE
-#   - NULLIF() → remplacé par CASE WHEN pour compatibilité SQLite
+# categories.py — SQLite + get_db() centralisé
 
-import sqlite3
 from datetime import datetime, timedelta
-
-DB_PATH = "preinscriptions.db"
-
-def get_conn():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row   # accès par nom de colonne : row["name"]
-    conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+from db import get_db
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -34,8 +20,7 @@ def _bulk_insert_members(conn, name_categorie: str, user_ids: list, added_by: st
 
 def _ensure_meta_exists(conn, name_categorie: str):
     conn.execute("""
-        INSERT OR IGNORE INTO categories_meta (name_categorie)
-        VALUES (?)
+        INSERT OR IGNORE INTO categories_meta (name_categorie) VALUES (?)
     """, (name_categorie,))
 
 
@@ -44,19 +29,16 @@ def _ensure_meta_exists(conn, name_categorie: str):
 # ────────────────────────────────────────────────────────────────────────
 
 async def get_categories_stats():
-    conn = get_conn()
-    try:
+    with get_db() as conn:
         total_cats = conn.execute("SELECT COUNT(*) FROM categories_meta").fetchone()[0]
         tagged     = conn.execute("SELECT COUNT(DISTINCT id_user) FROM categories").fetchone()[0]
         total_tags = conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
-        avg_tags   = round(total_tags / tagged, 1) if tagged > 0 else 0
-    finally:
-        conn.close()
 
+    avg_tags = round(total_tags / tagged, 1) if tagged > 0 else 0
     return {
         "total_categories":    total_cats,
         "tagged_members":      tagged,
-        "avg_tags_per_member": avg_tags
+        "avg_tags_per_member": avg_tags,
     }
 
 
@@ -65,17 +47,13 @@ async def get_categories_stats():
 # ────────────────────────────────────────────────────────────────────────
 
 async def get_categories():
-    conn      = get_conn()
     month_ago = (datetime.now() - timedelta(days=30)).isoformat()
-    try:
+
+    with get_db() as conn:
         rows = conn.execute("""
             SELECT
-                cm.id,
-                cm.name_categorie,
-                cm.color,
-                cm.description,
-                cm.created_at,
-                COALESCE(COUNT(c.id), 0)                                         AS member_count,
+                cm.id, cm.name_categorie, cm.color, cm.description, cm.created_at,
+                COALESCE(COUNT(c.id), 0) AS member_count,
                 COALESCE(SUM(CASE WHEN c.created_at >= ? THEN 1 ELSE 0 END), 0) AS new_this_month
             FROM categories_meta cm
             LEFT JOIN categories c ON c.name_categorie = cm.name_categorie
@@ -87,25 +65,18 @@ async def get_categories():
 
         for cat in categories:
             rules = conn.execute("""
-                SELECT id, trigger_type, trigger_value
-                FROM category_rules
+                SELECT id, trigger_type, trigger_value FROM category_rules
                 WHERE name_categorie = ? AND is_active = 1
             """, (cat["name_categorie"],)).fetchall()
             cat["rules"] = [dict(r) for r in rules]
-
-    finally:
-        conn.close()
 
     return categories
 
 
 async def get_category_by_name(name_categorie: str):
-    conn = get_conn()
-    try:
+    with get_db() as conn:
         row = conn.execute("""
-            SELECT
-                cm.*,
-                COUNT(c.id) AS member_count
+            SELECT cm.*, COUNT(c.id) AS member_count
             FROM categories_meta cm
             LEFT JOIN categories c ON c.name_categorie = cm.name_categorie
             WHERE cm.name_categorie = ?
@@ -116,30 +87,24 @@ async def get_category_by_name(name_categorie: str):
             return None
 
         category = dict(row)
-
-        rules = conn.execute("""
+        rules    = conn.execute("""
             SELECT * FROM category_rules
             WHERE name_categorie = ? AND is_active = 1
         """, (name_categorie,)).fetchall()
         category["rules"] = [dict(r) for r in rules]
 
-    finally:
-        conn.close()
-
     return category
 
 
 async def create_category(payload: dict):
-    conn  = get_conn()
-    added = 0
-    try:
+    with get_db() as conn:
         conn.execute("""
             INSERT INTO categories_meta (name_categorie, color, description)
             VALUES (?, ?, ?)
         """, (
             payload["name_categorie"],
             payload.get("color", "#38bdf8"),
-            payload.get("description", "")
+            payload.get("description", ""),
         ))
 
         if payload.get("rule"):
@@ -147,25 +112,17 @@ async def create_category(payload: dict):
             conn.execute("""
                 INSERT INTO category_rules (name_categorie, trigger_type, trigger_value)
                 VALUES (?, ?, ?)
-            """, (
-                payload["name_categorie"],
-                rule["trigger_type"],
-                rule.get("trigger_value", "")
-            ))
+            """, (payload["name_categorie"], rule["trigger_type"], rule.get("trigger_value", "")))
 
+        added = 0
         if payload.get("member_ids"):
             added = _bulk_insert_members(conn, payload["name_categorie"], payload["member_ids"])
-
-        conn.commit()
-    finally:
-        conn.close()
 
     return {"status": "created", "name_categorie": payload["name_categorie"], "members_added": added}
 
 
 async def update_category(name_categorie: str, payload: dict):
     fields, values = [], []
-
     if "new_name"    in payload: fields.append("name_categorie = ?"); values.append(payload["new_name"])
     if "color"       in payload: fields.append("color = ?");          values.append(payload["color"])
     if "description" in payload: fields.append("description = ?");    values.append(payload["description"])
@@ -174,40 +131,31 @@ async def update_category(name_categorie: str, payload: dict):
         return {"status": "nothing_to_update"}
 
     values.append(name_categorie)
-    conn = get_conn()
     try:
-        conn.execute(
-            f"UPDATE categories_meta SET {', '.join(fields)} WHERE name_categorie = ?",
-            values
-        )
-        conn.commit()
-    except sqlite3.IntegrityError:
-        conn.close()
+        with get_db() as conn:
+            conn.execute(
+                f"UPDATE categories_meta SET {', '.join(fields)} WHERE name_categorie = ?",
+                values,
+            )
+    except Exception:
         return {"status": "error", "detail": "Ce nom de catégorie existe déjà"}
-    finally:
-        conn.close()
 
     return {"status": "updated"}
 
 
 # ────────────────────────────────────────────────────────────────────────
-# MEMBRES D'UNE CATÉGORIE
+# MEMBRES
 # ────────────────────────────────────────────────────────────────────────
 
 async def get_category_members(name_categorie: str, filters: dict = None):
-    conn   = get_conn()
     f      = filters or {}
-    limit  = int(f.get("limit",  50))
+    limit  = int(f.get("limit", 50))
     offset = int(f.get("offset",  0))
 
     query  = """
         SELECT
-            c.id,
-            c.id_user         AS telegram_id,
-            c.created_at      AS added_at,
-            u.name,
-            u.phone,
-            u.email,
+            c.id, c.id_user AS telegram_id, c.created_at AS added_at,
+            u.name, u.phone, u.email,
             MAX(m.created_at) AS last_activity
         FROM categories c
         LEFT JOIN users    u ON u.telegram_id = c.id_user
@@ -231,55 +179,43 @@ async def get_category_members(name_categorie: str, filters: dict = None):
 
     query += f" GROUP BY c.id ORDER BY c.created_at DESC LIMIT {limit} OFFSET {offset}"
 
-    try:
+    with get_db() as conn:
         members = [dict(r) for r in conn.execute(query, params).fetchall()]
         total   = conn.execute(
-            "SELECT COUNT(*) FROM categories WHERE name_categorie = ?",
-            (name_categorie,)
+            "SELECT COUNT(*) FROM categories WHERE name_categorie = ?", (name_categorie,)
         ).fetchone()[0]
-    finally:
-        conn.close()
 
     return {"members": members, "total": total, "limit": limit, "offset": offset}
 
 
 async def add_members_to_category(name_categorie: str, user_ids: list, added_by: str = "manual"):
-    conn = get_conn()
-    try:
+    with get_db() as conn:
         _ensure_meta_exists(conn, name_categorie)
         added = _bulk_insert_members(conn, name_categorie, user_ids, added_by)
-        conn.commit()
-    finally:
-        conn.close()
 
     return {
         "status":          "ok",
         "added":           added,
         "ignored":         len(user_ids) - added,
-        "total_submitted": len(user_ids)
+        "total_submitted": len(user_ids),
     }
 
 
 async def remove_member_from_category(name_categorie: str, telegram_id: int):
-    conn = get_conn()
-    try:
+    with get_db() as conn:
         conn.execute(
             "DELETE FROM categories WHERE name_categorie = ? AND id_user = ?",
-            (name_categorie, telegram_id)
+            (name_categorie, telegram_id),
         )
-        conn.commit()
-    finally:
-        conn.close()
     return {"status": "removed", "telegram_id": telegram_id}
 
 
 async def move_members(payload: dict):
-    conn        = get_conn()
     source      = payload["source"]
     destination = payload["destination"]
     action      = payload.get("action", "copy")
 
-    try:
+    with get_db() as conn:
         if payload["user_ids"] == "all":
             ids = [r[0] for r in conn.execute(
                 "SELECT id_user FROM categories WHERE name_categorie = ?", (source,)
@@ -294,26 +230,15 @@ async def move_members(payload: dict):
             placeholders = ",".join(["?"] * len(ids))
             conn.execute(
                 f"DELETE FROM categories WHERE name_categorie = ? AND id_user IN ({placeholders})",
-                [source] + ids
+                [source] + ids,
             )
 
-        conn.commit()
-    finally:
-        conn.close()
-
-    return {
-        "status":  "ok",
-        "action":  action,
-        "count":   len(ids),
-        "added":   added,
-        "ignored": len(ids) - added
-    }
+    return {"status": "ok", "action": action, "count": len(ids), "added": added, "ignored": len(ids) - added}
 
 
 async def merge_categories(target: str, sources: list):
-    conn        = get_conn()
     total_added = 0
-    try:
+    with get_db() as conn:
         for source in sources:
             ids = [r[0] for r in conn.execute(
                 "SELECT id_user FROM categories WHERE name_categorie = ?", (source,)
@@ -322,12 +247,8 @@ async def merge_categories(target: str, sources: list):
             if ids:
                 total_added += _bulk_insert_members(conn, target, ids, added_by="merge")
 
-            conn.execute("DELETE FROM categories WHERE name_categorie = ?",     (source,))
+            conn.execute("DELETE FROM categories WHERE name_categorie = ?",      (source,))
             conn.execute("DELETE FROM categories_meta WHERE name_categorie = ?", (source,))
-
-        conn.commit()
-    finally:
-        conn.close()
 
     return {"status": "merged", "target": target, "sources_deleted": len(sources), "members_added": total_added}
 
@@ -337,58 +258,45 @@ async def import_members_csv(name_categorie: str, user_ids: list):
 
 
 # ────────────────────────────────────────────────────────────────────────
-# RÈGLES D'ATTRIBUTION
+# RÈGLES
 # ────────────────────────────────────────────────────────────────────────
 
 async def get_category_rules(name_categorie: str):
-    conn = get_conn()
-    try:
+    with get_db() as conn:
         rows = conn.execute("""
             SELECT * FROM category_rules
             WHERE name_categorie = ? AND is_active = 1
             ORDER BY created_at ASC
         """, (name_categorie,)).fetchall()
-    finally:
-        conn.close()
     return [dict(r) for r in rows]
 
 
 async def add_category_rule(name_categorie: str, rule: dict):
-    conn = get_conn()
-    try:
+    with get_db() as conn:
         cur     = conn.execute("""
             INSERT INTO category_rules (name_categorie, trigger_type, trigger_value)
             VALUES (?, ?, ?)
         """, (name_categorie, rule["trigger_type"], rule.get("trigger_value", "")))
         rule_id = cur.lastrowid
-        conn.commit()
-    finally:
-        conn.close()
     return {"id": rule_id, "status": "created"}
 
 
 async def delete_category_rule(rule_id: int):
-    conn = get_conn()
-    try:
+    with get_db() as conn:
         conn.execute("DELETE FROM category_rules WHERE id = ?", (rule_id,))
-        conn.commit()
-    finally:
-        conn.close()
     return {"status": "deleted", "rule_id": rule_id}
 
 
 # ────────────────────────────────────────────────────────────────────────
-# STATS D'UNE CATÉGORIE
+# STATS
 # ────────────────────────────────────────────────────────────────────────
 
 async def get_category_stats(name_categorie: str):
-    conn         = get_conn()
     active_since = (datetime.now() - timedelta(days=7)).isoformat()
 
-    try:
+    with get_db() as conn:
         member_count = conn.execute(
-            "SELECT COUNT(*) FROM categories WHERE name_categorie = ?",
-            (name_categorie,)
+            "SELECT COUNT(*) FROM categories WHERE name_categorie = ?", (name_categorie,)
         ).fetchone()[0]
 
         active_7d = conn.execute("""
@@ -401,11 +309,8 @@ async def get_category_stats(name_categorie: str):
         multi_cat = conn.execute("""
             SELECT COUNT(*) FROM (
                 SELECT id_user FROM categories
-                WHERE id_user IN (
-                    SELECT id_user FROM categories WHERE name_categorie = ?
-                )
-                GROUP BY id_user
-                HAVING COUNT(DISTINCT name_categorie) > 1
+                WHERE id_user IN (SELECT id_user FROM categories WHERE name_categorie = ?)
+                GROUP BY id_user HAVING COUNT(DISTINCT name_categorie) > 1
             )
         """, (name_categorie,)).fetchone()[0]
 
@@ -432,9 +337,6 @@ async def get_category_stats(name_categorie: str):
         except Exception:
             pass
 
-    finally:
-        conn.close()
-
     return {
         "name_categorie":   name_categorie,
         "member_count":     member_count,
@@ -442,7 +344,7 @@ async def get_category_stats(name_categorie: str):
         "multi_categories": multi_cat,
         "last_broadcast":   last_broadcast,
         "win_rate":         win_rate,
-        "open_rate":        None
+        "open_rate":        None,
     }
 
 
@@ -451,16 +353,12 @@ async def get_category_stats(name_categorie: str):
 # ────────────────────────────────────────────────────────────────────────
 
 async def get_category_intersections(name_categorie: str):
-    conn = get_conn()
-    try:
+    with get_db() as conn:
         rows = conn.execute("""
-            SELECT
-                c2.name_categorie,
-                cm.color,
-                COUNT(*) AS shared_count
+            SELECT c2.name_categorie, cm.color, COUNT(*) AS shared_count
             FROM categories c1
             JOIN categories c2
-                ON  c1.id_user         = c2.id_user
+                ON  c1.id_user = c2.id_user
                 AND c2.name_categorie != c1.name_categorie
             LEFT JOIN categories_meta cm ON cm.name_categorie = c2.name_categorie
             WHERE c1.name_categorie = ?
@@ -468,22 +366,16 @@ async def get_category_intersections(name_categorie: str):
             ORDER BY shared_count DESC
             LIMIT 10
         """, (name_categorie,)).fetchall()
-    finally:
-        conn.close()
     return [dict(r) for r in rows]
 
 
 # ────────────────────────────────────────────────────────────────────────
-# PROFIL MEMBRE (drawer)
+# PROFIL MEMBRE
 # ────────────────────────────────────────────────────────────────────────
 
 async def get_member_profile(telegram_id: int):
-    conn = get_conn()
-    try:
-        row = conn.execute(
-            "SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)
-        ).fetchone()
-
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)).fetchone()
         if not row:
             return None
 
@@ -521,15 +413,11 @@ async def get_member_profile(telegram_id: int):
         except Exception:
             user["trading_stats"] = None
 
-    finally:
-        conn.close()
-
     return user
 
 
 async def get_member_categories(telegram_id: int):
-    conn = get_conn()
-    try:
+    with get_db() as conn:
         rows = conn.execute("""
             SELECT c.name_categorie, cm.color, c.created_at AS added_at
             FROM categories c
@@ -537,6 +425,4 @@ async def get_member_categories(telegram_id: int):
             WHERE c.id_user = ?
             ORDER BY c.created_at DESC
         """, (telegram_id,)).fetchall()
-    finally:
-        conn.close()
     return [dict(r) for r in rows]
