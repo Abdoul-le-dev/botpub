@@ -51,6 +51,8 @@ async def wait_5_seconds():
 
 WHO, CHOOSE_FORMAT,GET_MEDIA, GET_TEXT = range(4)
 
+CATEGORIE = "USER_PUB_1_NON_ACHAT"
+
 def build_answer_keyboards():
     keyboard = [
         [
@@ -81,15 +83,29 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
             print("Déjà membre, il est membre.") 
             print(e)     
             return
+        
+    try:
+        from telegram_page.categorie import add_members_to_category
+        await add_members_to_category(CATEGORIE, [user_id])
+        print(f"[validation] catégorie ajoutée")
+    except Exception as e:
+        print(f"[validation] categorie error: {e}")
+        
     await Context.bot.send_message(
-        chat_id=user_id,
-        text=(
-                "👌 **C'est bon je t'ai intégré au canal ✅**\n"
-                "*C'est pour bientôt et prépare toi, je te dirai tout !*\n\n"
-                "📌 *Épingle ce canal* pour rester à l'affût des **nouvelles informations**."
-            ),
-            parse_mode="Markdown"
-        )
+    chat_id=user_id,
+    text=(
+        "Bonjour l'ami 👋\n\n"
+        "Je suis *Fiacre KPANOU* et j’échangerai directement avec toi via mon assistant bot.\n\n"
+        "J’ai remarqué que tu n’as pas profité de l’offre disponible sur la plateforme, mais ce n’est absolument pas grave. "
+        "Je salue d’ailleurs ton initiative d’avoir quand même rejoint mon canal 🙌\n\n"
+        "D’autres opportunités arriveront très bientôt. "
+        "J’organise régulièrement des sessions de formation où je montre les différents métiers liés au trading ainsi que les meilleures façons de se lancer.\n\n"
+        "Clique ici pour t’enregistrer en avant-première : /Je_MEnregistre\n\n"
+        "Reste connecté et bien branché 🔥\n"
+        "Je t’enverrai toutes les informations importantes directement via mon assistant.\n\n"
+        "Merci l’ami 🤝"
+    ),
+    parse_mode="Markdown")
 
     try:
         video_name = "welcomes"
