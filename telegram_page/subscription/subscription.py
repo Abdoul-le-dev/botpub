@@ -3,9 +3,10 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-
+from telegram_page.subscription import bot, _notify_admin
 from db import get_db
 
+ADMIN_ID = 1075516687
 router = APIRouter()
 
 
@@ -30,7 +31,7 @@ class SubscriptionPayload(BaseModel):
 
 
 @router.post("/subscription-info")
-def create_subscription(payload: SubscriptionPayload):
+async def create_subscription(payload: SubscriptionPayload):
     try:
         with get_db() as conn:
             # Vérifier si déjà enregistré (même email + paid_at)
@@ -57,6 +58,7 @@ def create_subscription(payload: SubscriptionPayload):
                 payload.currency, payload.amount_local, payload.aggregator, payload.paid_at,
             ))
             print(f"[subscription] Nouveau paiement — email={payload.email} | id={cur.lastrowid}")
+            await _notify_admin(bot, ADMIN_ID, f"[subscription] Nouveau paiement — email={payload.email} | id={cur.lastrowid}")
             return {"id": cur.lastrowid, "message": "subscription enregistrée"}
 
     except Exception as e:
