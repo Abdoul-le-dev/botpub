@@ -3,7 +3,9 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-from telegram_page.subscription import bot, _notify_admin
+from telegram_page.broadcast_engine import _notify_admin
+
+from api import bot
 from db import get_db
 
 ADMIN_ID = 1075516687
