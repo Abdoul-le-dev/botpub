@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 load_dotenv()
 bot = Bot(token=os.getenv("tokens"))
 
-from api import bot
 from db import get_db
 
 ADMIN_ID = 1075516687
