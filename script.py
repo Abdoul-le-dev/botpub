@@ -103,7 +103,7 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
         "📊 Comment aborder les marchés avec méthode\n"
         "🏆 Les résultats concrets de mes apprenants\n"
         "💡 Des success stories qui vont t'inspirer et te donner envie de te lancer\n\n"
-        "Clique ici pour t'enregistrer en avant-première : /Je_MEnregistre_en_avant_premiere_pour_la_prochaine_masterclass\n\n"
+        "Clique ici pour t'enregistrer en avant-première : /je_menregistre_en_avant_premiere_pour_la_prochaine_masterclass\n\n"
         "Reste connecté et bien branché 🔥\n"
         "Je t'enverrai toutes les informations importantes directement via mon assistant.\n\n"
         "Merci l'ami 🤝"
