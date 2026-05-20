@@ -110,38 +110,38 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
     ),
     parse_mode="HTML")
 
-    try:
-        video_name = "welcomes"
+    # try:
+    #     video_name = "welcomes"
 
-        file_id = get_file_id(video_name)
+    #     file_id = get_file_id(video_name)
 
-        if file_id:
-                # Réutiliser le file_id
-                await Context.bot.send_video(chat_id=user_id , video=file_id, reply_markup= build_answer_keyboards())
+    #     if file_id:
+    #             # Réutiliser le file_id
+    #             await Context.bot.send_video(chat_id=user_id , video=file_id, reply_markup= build_answer_keyboards())
                 
 
                 
 
 
                 
-        else:
+    #     else:
             
-            video_path = "welcomes.mp4"
-            msg = await Context.bot.send_video(chat_id=user_id , video=video_path, reply_markup= build_answer_keyboards())
-            new_file_id = msg.video.file_id
-            save_file_id(video_name, new_file_id)
+    #         video_path = "welcomes.mp4"
+    #         msg = await Context.bot.send_video(chat_id=user_id , video=video_path, reply_markup= build_answer_keyboards())
+    #         new_file_id = msg.video.file_id
+    #         save_file_id(video_name, new_file_id)
                 
                 
-
-            
-            #await Context.bot.send_message(
-            #chat_id=user_id,
-            #text="🔥🔥✍️  Clique sur /JeMEnregistre Maintenant"
-            #)
 
             
-    except Exception as e:
-        print(f"Impossible d’envoyer un message à {user_id} : {e}")
+    #         #await Context.bot.send_message(
+    #         #chat_id=user_id,
+    #         #text="🔥🔥✍️  Clique sur /JeMEnregistre Maintenant"
+    #         #)
+
+            
+    # except Exception as e:
+    #     print(f"Impossible d’envoyer un message à {user_id} : {e}")
      
 async def cancel(update: Update, Context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("❌ Annulé.")
