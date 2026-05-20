@@ -4,6 +4,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from telegram_page.broadcast_engine import _notify_admin
+import os
+from telegram import Bot
+from dotenv import load_dotenv
+load_dotenv()
+bot = Bot(token=os.getenv("tokens"))
 
 from api import bot
 from db import get_db
