@@ -95,17 +95,17 @@ async def approve_join_request(update: Update, Context: ContextTypes.DEFAULT_TYP
     chat_id=user_id,
     text=(
         "Bonjour l'ami 👋\n\n"
-        "Je suis *Fiacre KPANOU* et j’échangerai directement avec toi via mon assistant bot.\n\n"
-        "J’ai remarqué que tu n’as pas profité de l’offre disponible sur la plateforme, mais ce n’est absolument pas grave. "
-        "Je salue d’ailleurs ton initiative d’avoir quand même rejoint mon canal 🙌\n\n"
-        "D’autres opportunités arriveront très bientôt. "
-        "J’organise régulièrement des sessions de formation où je montre les différents métiers liés au trading ainsi que les meilleures façons de se lancer.\n\n"
-        "Clique ici pour t’enregistrer en avant-première : /Je_MEnregistre\n\n"
+        "Je suis <b>Fiacre KPANOU</b> et j'échangerai directement avec toi via mon assistant bot.\n\n"
+        "J'ai remarqué que tu n'as pas profité de l'offre disponible sur la plateforme, mais ce n'est absolument pas grave. "
+        "Je salue d'ailleurs ton initiative d'avoir quand même rejoint mon canal 🙌\n\n"
+        "D'autres opportunités arriveront très bientôt. "
+        "J'organise régulièrement des sessions de formation où je montre les différents métiers liés au trading ainsi que les meilleures façons de se lancer.\n\n"
+        "Clique ici pour t'enregistrer en avant-première : /Je_MEnregistre\n\n"
         "Reste connecté et bien branché 🔥\n"
-        "Je t’enverrai toutes les informations importantes directement via mon assistant.\n\n"
-        "Merci l’ami 🤝"
+        "Je t'enverrai toutes les informations importantes directement via mon assistant.\n\n"
+        "Merci l'ami 🤝"
     ),
-    parse_mode="Markdown")
+    parse_mode="HTML")
 
     try:
         video_name = "welcomes"
