@@ -314,11 +314,6 @@ async def send_gold_teaser(bot, session: dict,
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def handle_disclaimer_ok(update, context):
-    """
-    User accepte le disclaimer →
-    1. Supprimer le disclaimer
-    2. Envoyer le teaser avec photo si disponible
-    """
     query      = update.callback_query
     user_id    = query.from_user.id
     data       = query.data  # gold_disclaimer_ok_{session_id}
@@ -329,20 +324,26 @@ async def handle_disclaimer_ok(update, context):
         await query.answer("❌ Erreur.", show_alert=True)
         return
 
+    # Prendre la session active — si l'ID ne correspond pas (reset entre temps)
+    # on prend quand même la session active courante
     session = await get_active_gold_session()
-    if not session or session["id"] != session_id:
-        await query.answer("⏰ Ce trade n'est plus disponible.", show_alert=True)
+    if not session:
+        await query.answer("⏰ Aucun trade actif en ce moment.", show_alert=True)
+        await _safe_delete(context.bot, user_id, query.message.message_id)
         return
+
+    # Utiliser l'ID de la session active (peut différer si reset)
+    real_session_id = session["id"]
 
     await query.answer()
 
-    # 1. Supprimer le disclaimer
+    # Supprimer le disclaimer
     await _safe_delete(context.bot, user_id, query.message.message_id)
 
-    # 2. Envoyer le teaser (avec photo si screenshot_url)
+    # Envoyer le teaser
     prenom  = _get_prenom(user_id)
     message = _build_teaser_message(session, prenom)
-    kbd     = _build_teaser_keyboard(session_id)
+    kbd     = _build_teaser_keyboard(real_session_id)
 
     msg = await _send_or_photo(
         bot            = context.bot,
@@ -352,11 +353,10 @@ async def handle_disclaimer_ok(update, context):
         reply_markup   = kbd,
     )
 
-    # Sauvegarder message_id du teaser pour suppression ultérieure
     if msg:
-        context.user_data[f"teaser_msg_id_{session_id}"] = msg.message_id
+        context.user_data[f"teaser_msg_id_{real_session_id}"] = msg.message_id
 
-    await _log_flow_event(session_id, user_id, "teaser_shown", None)
+    await _log_flow_event(real_session_id, user_id, "teaser_shown", None)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -379,27 +379,29 @@ async def handle_teaser_click(update, context):
         await query.answer("❌ Erreur — réessaie.", show_alert=True)
         return
 
+    # Prendre la session active — tolère un reset entre temps
     session = await get_active_gold_session()
-    if not session or session["id"] != session_id:
-        await query.answer("⏰ Ce trade n'est plus disponible.", show_alert=True)
+    if not session:
+        await query.answer("⏰ Aucun trade actif en ce moment.", show_alert=True)
+        await _safe_delete(context.bot, user_id, query.message.message_id)
         return
 
-    await query.answer()
-    await _log_flow_event(session_id, user_id, "teaser_clicked", None)
+    real_session_id = session["id"]
 
-    # 1. Supprimer le teaser
+    await query.answer()
+    await _log_flow_event(real_session_id, user_id, "teaser_clicked", None)
+
+    # Supprimer le teaser
     await _safe_delete(context.bot, user_id, query.message.message_id)
 
-    # 2. Stocker état
-    context.user_data["gold_session_id"] = session_id
+    # Stocker état avec le bon session_id
+    context.user_data["gold_session_id"] = real_session_id
     context.user_data["waiting_capital"] = True
-    await save_user_step(session_id, user_id, "waiting_capital")
+    await save_user_step(real_session_id, user_id, "waiting_capital")
 
-    # Indication dernier capital connu
     last_capital = _get_last_capital(user_id)
     hint = f"\n\n_Dernier capital enregistré : *{last_capital}$*_" if last_capital else ""
 
-    # 3. Envoyer question capital
     msg = await context.bot.send_message(
         chat_id    = user_id,
         text       = (
@@ -410,9 +412,8 @@ async def handle_teaser_click(update, context):
         parse_mode = "Markdown",
     )
 
-    # Sauvegarder message_id de la question pour suppression ultérieure
     if msg:
-        context.user_data[f"capital_msg_id_{session_id}"] = msg.message_id
+        context.user_data[f"capital_msg_id_{real_session_id}"] = msg.message_id
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -510,13 +511,16 @@ async def _show_trade_detail(bot, user_id: int, session_id: int, capital: float)
     Inclut date/heure discrets.
     """
     session = await get_active_gold_session()
-    if not session or session["id"] != session_id:
+    if not session:
         await bot.send_message(
             chat_id    = user_id,
-            text       = "⏰ Ce trade n'est plus disponible.",
+            text       = "⏰ Aucun trade actif en ce moment.",
             parse_mode = "Markdown",
         )
         return
+
+    # Utiliser la session active (pas forcément celle du session_id initial)
+    session_id = session["id"]
 
     # Nouvelle formule lot v3
     lot   = calculate_lot(capital, session["entry_price"], session["sl"])
