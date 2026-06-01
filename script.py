@@ -41,7 +41,7 @@ ADMIN_ID = 571718066
 
 CANAL_B_ID = -1002705005402
 ASK_BROADCAST = 99
-token = os.getenv("tokenss")
+token = os.getenv("tokens")
 
 
 CHOOSE_TYPES =range(1)
