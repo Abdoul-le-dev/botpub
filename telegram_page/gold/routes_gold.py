@@ -136,34 +136,46 @@ async def api_session_detail(session_id: int):
 async def api_create_session(payload: dict):
     """
     Crée une nouvelle session Gold et envoie le teaser.
-
-    payload: {
-        direction*,        entry_price*,  sl*,
-        tp1?,              tp2?,          tp3?,
-        timeframe?,        confidence_level? (1-5),
-        note?,             screenshot_url?,
-        category?          (défaut: clients_actifs),
-        send_teaser?       (bool, défaut: true)
-    }
     """
+    print(f"[DEBUG] >>> api_create_session appelé")
+    print(f"[DEBUG] payload reçu: {payload}")
+
     required = ("direction", "entry_price", "sl")
     for f in required:
         if payload.get(f) is None:
+            print(f"[DEBUG] ERREUR: champ requis manquant: {f}")
             raise HTTPException(400, f"{f} requis")
 
+    print(f"[DEBUG] Champs requis OK")
+
     if payload["direction"] not in ("buy", "sell"):
+        print(f"[DEBUG] ERREUR: direction invalide: {payload['direction']}")
         raise HTTPException(400, "direction doit être 'buy' ou 'sell'")
 
+    print(f"[DEBUG] direction OK: {payload['direction']}")
+
     if payload.get("confidence_level") and not (1 <= int(payload["confidence_level"]) <= 5):
+        print(f"[DEBUG] ERREUR: confidence_level invalide: {payload['confidence_level']}")
         raise HTTPException(400, "confidence_level doit être entre 1 et 5")
 
     if not payload.get("tp1"):
+        print(f"[DEBUG] ERREUR: tp1 manquant")
         raise HTTPException(400, "tp1 requis")
 
-    session = await create_gold_session(payload)
+    print(f"[DEBUG] Validations passées. Appel create_gold_session...")
+    try:
+        session = await create_gold_session(payload)
+        print(f"[DEBUG] create_gold_session OK: {session}")
+    except Exception as e:
+        print(f"[DEBUG] ERREUR dans create_gold_session: {type(e).__name__}: {e}")
+        raise
 
-    if payload.get("send_teaser", True):
+    send_teaser_flag = payload.get("send_teaser", True)
+    print(f"[DEBUG] send_teaser={send_teaser_flag}, _bot={_bot}")
+
+    if send_teaser_flag:
         if _bot:
+            print(f"[DEBUG] Appel send_gold_teaser avec category={payload.get('category', 'clients_actifs')}...")
             try:
                 report = await send_gold_teaser(
                     bot      = _bot,
@@ -171,12 +183,20 @@ async def api_create_session(payload: dict):
                     category = payload.get("category", "clients_actifs"),
                     delay    = 0.08,
                 )
+                print(f"[DEBUG] send_gold_teaser OK: {report}")
                 session["broadcast_report"] = report
             except Exception as e:
+                print(f"[DEBUG] ERREUR dans send_gold_teaser: {type(e).__name__}: {e}")
+                import traceback
+                traceback.print_exc()
                 session["broadcast_warning"] = str(e)
+        else:
+            print(f"[DEBUG] _bot est None/falsy, teaser non envoyé")
+    else:
+        print(f"[DEBUG] send_teaser=False, teaser skippé")
 
+    print(f"[DEBUG] <<< api_create_session terminé, retour: {session}")
     return session
-
 
 @router.post("/sessions/{session_id}/close")
 async def api_close_session(session_id: int, payload: dict):
