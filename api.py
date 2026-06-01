@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
  
 
 load_dotenv()
-bot = Bot(token=os.getenv("tokens"))
+bot = Bot(token=os.getenv("tokenss"))
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(chat_router)
