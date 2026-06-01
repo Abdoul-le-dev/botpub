@@ -1204,13 +1204,40 @@ async def close_gold_session(session_id: int, payload: dict) -> dict:
 # SECTION 6 — PRIX LIVE & SURVEILLANCE
 # ══════════════════════════════════════════════════════════════════════════════
 
-TWELVE_DATA_KEY = "f5652ad530f04fbaa23412f87658180d"
+import time as _time
+
+TWELVE_DATA_KEY_1 = "f5652ad530f04fbaa23412f87658180d"
+TWELVE_DATA_KEY   = "db6836eaf4ae4cb68faea2443554929f"
+
+# Cache prix — évite de dépasser la limite API
+_price_cache: dict = {"price": None, "ts": 0.0}
+
+
+def _watch_interval() -> int:
+    """
+    Intervalle de surveillance selon l'heure locale :
+      00h–07h59 → 1800s (30 min)  — marché peu actif, nuit
+      08h–19h59 →  120s  (2 min)  — heures de trading actives
+      20h–23h59 →  300s  (5 min)  — soirée, activité réduite
+    """
+    h = datetime.now().hour
+    if 8 <= h < 20:
+        return 90    # 2 min
+    elif h < 8:
+        return 1800   # 30 min
+    else:
+        return 300    # 5 min
 
 
 async def get_live_gold_price() -> float | None:
     """
-    CORRECTION v3 : Twelve Data — XAU/USD natif (Binance ne liste pas XAU/USD).
+    Prix live XAU/USD via Twelve Data avec cache intelligent.
+    Le TTL du cache suit la même logique que l'intervalle du watcher.
+    Retourne le dernier prix connu si l'API échoue (429, timeout...).
     """
+    ttl = _watch_interval()
+    if _price_cache["price"] and _time.time() - _price_cache["ts"] < ttl:
+        return _price_cache["price"]
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
@@ -1219,18 +1246,24 @@ async def get_live_gold_price() -> float | None:
             )
             data = resp.json()
             if "price" in data:
-                return float(data["price"])
-            logger.warning(f"[gold_price] Réponse inattendue: {data}")
-            return None
+                _price_cache["price"] = float(data["price"])
+                _price_cache["ts"]    = _time.time()
+                return _price_cache["price"]
+            # 429 ou autre erreur → retourner dernier prix connu sans crasher
+            logger.warning(f"[gold_price] {data.get('message', data)}")
+            return _price_cache["price"]
     except Exception as e:
         logger.warning(f"[gold_price] {e}")
-        return None
+        return _price_cache["price"]
 
 
 async def watch_gold_price(session_id: int):
     """
-    Surveillance prix toutes les 60s.
-    CORRECTION v3 : clôture complète après TP3 (break + close_gold_session).
+    Surveillance prix avec intervalle adaptatif selon l'heure :
+      Nuit (00-08h) → toutes les 30 min
+      Jour (08-20h) → toutes les 2 min
+      Soirée (20-24h) → toutes les 5 min
+    Clôture complète après TP3.
     """
     logger.info(f"[gold_watch] Démarrage session {session_id}")
 
@@ -1255,8 +1288,10 @@ async def watch_gold_price(session_id: int):
                 break
 
             price = await get_live_gold_price()
+            interval = _watch_interval()
+
             if price is None:
-                await asyncio.sleep(60)
+                await asyncio.sleep(interval)
                 continue
 
             conn2 = get_conn()
@@ -1270,9 +1305,9 @@ async def watch_gold_price(session_id: int):
             finally:
                 conn2.close()
 
-            direction       = session["direction"]
-            tp1, tp2, tp3   = session.get("tp1"), session.get("tp2"), session.get("tp3")
-            sl              = session["sl"]
+            direction     = session["direction"]
+            tp1, tp2, tp3 = session.get("tp1"), session.get("tp2"), session.get("tp3")
+            sl            = session["sl"]
 
             # SL touché
             if (direction == "buy"  and price <= sl) or \
@@ -1280,7 +1315,7 @@ async def watch_gold_price(session_id: int):
                 await trigger_sl_touched(session_id)
                 break
 
-            # TP3 — CORRECTION v3 : clôture complète + break
+            # TP3 — clôture complète + break
             if tp3 and phase not in ("tp3_reached", "closed"):
                 if (direction == "buy"  and price >= tp3) or \
                    (direction == "sell" and price <= tp3):
@@ -1292,7 +1327,7 @@ async def watch_gold_price(session_id: int):
                 if (direction == "buy"  and price >= tp2) or \
                    (direction == "sell" and price <= tp2):
                     await trigger_tp_reached(session_id, 2)
-                    await asyncio.sleep(60)
+                    await asyncio.sleep(interval)
                     continue
 
             # TP1
@@ -1304,7 +1339,7 @@ async def watch_gold_price(session_id: int):
         except Exception as e:
             logger.error(f"[gold_watch] Session {session_id}: {e}")
 
-        await asyncio.sleep(60)
+        await asyncio.sleep(_watch_interval())
 
 
 # ══════════════════════════════════════════════════════════════════════════════

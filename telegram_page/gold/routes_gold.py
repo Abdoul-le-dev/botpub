@@ -51,8 +51,11 @@ from telegram_page.gold.gold_engine import (
     calculate_gains_losses,
     get_tp_level_for_capital,
     get_conn,
-    _bot,
+
 )
+
+import telegram_page.gold.gold_engine as gold_engine
+
 from telegram_page.gold.gold_broadcast import send_gold_teaser
 
 router = APIRouter(prefix="/gold", tags=["gold"])
@@ -174,11 +177,12 @@ async def api_create_session(payload: dict):
     print(f"[DEBUG] send_teaser={send_teaser_flag}, _bot={_bot}")
 
     if send_teaser_flag:
-        if _bot:
+        if gold_engine._bot:
+   
             print(f"[DEBUG] Appel send_gold_teaser avec category={payload.get('category', 'clients_actifs')}...")
             try:
                 report = await send_gold_teaser(
-                    bot      = _bot,
+                    bot      = gold_engine._bot,
                     session  = session,
                     category = payload.get("category", "clients_actifs"),
                     delay    = 0.08,
