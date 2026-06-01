@@ -195,8 +195,8 @@ async def api_create_session(payload: dict):
     for f in required:
         if payload.get(f) is None:
             raise HTTPException(400, f"{f} requis")
-    if payload["direction"] not in ("long", "short"):
-        raise HTTPException(400, "direction doit être long | short")
+    if payload["direction"] not in ("buy", "sell"):   
+        raise HTTPException(400, "direction doit être 'buy' ou 'sell'")
     if payload.get("confidence_level") and not (1 <= int(payload["confidence_level"]) <= 5):
         raise HTTPException(400, "confidence_level doit être entre 1 et 5")
 
@@ -204,7 +204,7 @@ async def api_create_session(payload: dict):
 
     # Envoyer le teaser si demandé (défaut True)
     if payload.get("send_teaser", True):
-        from gold_engine import _bot
+        from telegram_page.gold.gold_engine import _bot
         if _bot:
             try:
                 report = await send_gold_teaser(

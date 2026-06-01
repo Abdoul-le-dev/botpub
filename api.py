@@ -15,6 +15,10 @@ from form.form_route import router as forms_router
 from form.form import init_forms_db
 
 from telegram_page.gold.routes_gold import router as gold_router
+from telegram_page.gold.gold_engine import (
+    set_bot as set_gold_bot,
+
+)
 
 from telegram_page.subscription.subscription import router as subscription_router
 from form.form_scheduler import start_scheduler, stop_scheduler
@@ -65,6 +69,7 @@ async def lifespan(app: FastAPI):
     init_forms_db()                          
     start_scheduler(bot, admin_id=571718066)
     set_trading_bot(bot)
+    set_gold_bot(bot) 
     init_growth_tables()
     init_ia_config_tables()
     #reset_problem_tables()
@@ -214,7 +219,7 @@ async def api_delete_category(name_categorie: str):
     """
     return #await drop_category(name_categorie)
  
- 
+
 # ────────────────────────────────────────────────────────────────────────
 # MEMBRES
 # ────────────────────────────────────────────────────────────────────────
