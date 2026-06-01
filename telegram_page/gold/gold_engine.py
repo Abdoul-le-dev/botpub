@@ -1170,25 +1170,42 @@ async def close_gold_session(session_id: int, payload: dict) -> dict:
         async with _db_write_lock:
             conn = get_conn()
             try:
+                # Clôturer la session
                 conn.execute("""
                     UPDATE gold_trade_sessions
                     SET current_phase = 'closed', closed_at = ?
                     WHERE id = ?
                 """, (_now(), session_id))
+
+                # CORRECTION : chaque membre sort au meilleur TP qu'il peut atteindre
+                # Ex : TP3 atteint, user assigné TP2 → sort au gain_tp2 (pas gain_tp1)
+                #      TP3 atteint, user assigné TP1 → sort au gain_tp1
+                #      TP3 atteint, user assigné TP3 → sort au gain_tp3
                 conn.execute(f"""
                     UPDATE gold_member_entries
                     SET result_usd = CASE
-                            WHEN tp_level_assigned >= {tp_num} THEN gain_tp{tp_num}
-                            ELSE gain_tp1 END,
+                            WHEN tp_level_assigned >= {tp_num} AND gain_tp{tp_num} IS NOT NULL
+                                THEN gain_tp{tp_num}
+                            WHEN tp_level_assigned >= 2 AND {tp_num} >= 2 AND gain_tp2 IS NOT NULL
+                                THEN gain_tp2
+                            ELSE gain_tp1
+                        END,
                         exit_tp_level = CASE
                             WHEN tp_level_assigned >= {tp_num} THEN {tp_num}
-                            ELSE 1 END,
+                            WHEN tp_level_assigned >= 2 AND {tp_num} >= 2 THEN 2
+                            ELSE 1
+                        END,
                         capital_after = capital_before + CASE
-                            WHEN tp_level_assigned >= {tp_num} THEN gain_tp{tp_num}
-                            ELSE gain_tp1 END,
+                            WHEN tp_level_assigned >= {tp_num} AND gain_tp{tp_num} IS NOT NULL
+                                THEN gain_tp{tp_num}
+                            WHEN tp_level_assigned >= 2 AND {tp_num} >= 2 AND gain_tp2 IS NOT NULL
+                                THEN gain_tp2
+                            ELSE gain_tp1
+                        END,
                         exited_at = ?
                     WHERE session_id = ?
                 """, (_now(), session_id))
+
                 conn.commit()
             finally:
                 conn.close()
@@ -1206,8 +1223,7 @@ async def close_gold_session(session_id: int, payload: dict) -> dict:
 
 import time as _time
 
-TWELVE_DATA_KEY_1 = "f5652ad530f04fbaa23412f87658180d"
-TWELVE_DATA_KEY   = "db6836eaf4ae4cb68faea2443554929f"
+TWELVE_DATA_KEY = "f5652ad530f04fbaa23412f87658180d"
 
 # Cache prix — évite de dépasser la limite API
 _price_cache: dict = {"price": None, "ts": 0.0}
@@ -1222,7 +1238,7 @@ def _watch_interval() -> int:
     """
     h = datetime.now().hour
     if 8 <= h < 20:
-        return 90    # 2 min
+        return 120    # 2 min
     elif h < 8:
         return 1800   # 30 min
     else:
@@ -1283,8 +1299,15 @@ async def watch_gold_price(session_id: int):
             session = dict(session)
             phase   = session["current_phase"]
 
+            # Arrêt si session terminée
             if phase in ("closed", "cancelled", "sl_touched"):
                 logger.info(f"[gold_watch] Session {session_id} terminée ({phase})")
+                break
+
+            # CORRECTION : si TP3 déjà atteint mais pas encore clôturé → clôturer
+            if phase == "tp3_reached":
+                logger.info(f"[gold_watch] Session {session_id} TP3 atteint, clôture...")
+                await close_gold_session(session_id, {"close_type": "tp3"})
                 break
 
             price = await get_live_gold_price()

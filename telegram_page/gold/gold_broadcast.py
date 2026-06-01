@@ -249,7 +249,26 @@ async def send_gold_teaser(bot, session: dict,
         try:
             prenom = _get_prenom(user_id)
 
-            # Étape 0 — Disclaimer
+            # ── Séparateur visuel ─────────────────────────────────────────
+            # Isole le nouveau flux des anciens messages dans le chat
+            date_str = _fmt_now_discrete()
+            dir_label = "Achat (Buy)" if session["direction"] == "buy" else "Vente (Sell)"
+            separateur = (
+                f"🔔 ─────────────────────\n"
+                f"*Signal Gold disponible*\n"
+                f"_{dir_label} · {date_str}_\n"
+                f"─────────────────────"
+            )
+            try:
+                await bot.send_message(
+                    chat_id    = user_id,
+                    text       = separateur,
+                    parse_mode = "Markdown",
+                )
+            except Exception:
+                pass  # ne pas bloquer si le séparateur échoue
+
+            # ── Disclaimer ───────────────────────────────────────────────
             await bot.send_message(
                 chat_id      = user_id,
                 text         = DISCLAIMER_TEXT,
