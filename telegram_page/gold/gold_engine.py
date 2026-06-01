@@ -1223,7 +1223,7 @@ async def close_gold_session(session_id: int, payload: dict) -> dict:
 
 import time as _time
 
-TWELVE_DATA_KEY = "f5652ad530f04fbaa23412f87658180d"
+TWELVE_DATA_KEY = "db6836eaf4ae4cb68faea2443554929f"
 
 # Cache prix — évite de dépasser la limite API
 _price_cache: dict = {"price": None, "ts": 0.0}
