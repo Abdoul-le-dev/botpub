@@ -14,6 +14,8 @@ import csv
 from form.form_route import router as forms_router
 from form.form import init_forms_db
 
+from telegram_page.gold.routes_gold import router as gold_router
+
 from telegram_page.subscription.subscription import router as subscription_router
 from form.form_scheduler import start_scheduler, stop_scheduler
 from telegram_page.categorie import (
@@ -80,6 +82,7 @@ bot = Bot(token=os.getenv("tokens"))
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(chat_router)
+app.include_router(gold_router)
 app.include_router(forms_router) 
 app.include_router(trading_router) 
 app.include_router(growth_router)

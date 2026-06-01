@@ -1,15 +1,8 @@
 import os
 from telegram import Update
-import  threading
 
-from database.database import get_user_categories
-
-from database.database import add_new_user
 from ai_agent import set_bot, log_unhandled_message
-from database.database import save_user_default,delete_all_exercices
-
-from database.database import get_file_id
-from database.database import save_file_id
+from database.database import save_user_default
 from validation_handler import register_validation_handler
 
 from form.form import init_forms_db
@@ -30,14 +23,21 @@ import asyncio
 
 
 from telegram_page.signal_broadcast import register_signal_handlers
-#new 
-#from message.save_message import log_unhandled_message
 type =""
 load_dotenv()
 
+from telegram_page.gold.gold_engine import (
+    init_gold_tables,
+    set_bot as set_gold_bot,
+    daily_cramed_check,
+)
+from telegram_page.gold.gold_broadcast import register_gold_handlers
+
+import asyncio
+from datetime import datetime, time as dtime
 
 
-ADMIN_ID = 571718066  # Remplace par ton ID Telegram
+ADMIN_ID = 571718066 
 
 CANAL_B_ID = -1002705005402
 ASK_BROADCAST = 99
@@ -147,11 +147,45 @@ async def cancel(update: Update, Context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("❌ Annulé.")
     return ConversationHandler.END
 
+async def schedule_daily_check(bot):
+    """
+    Tâche qui tourne en arrière-plan — vérifie les comptes
+    en danger chaque soir à 20h00.
+    Lance daily_cramed_check() et notifie l'admin.
+    """
+    while True:
+        now = datetime.now()
+        # Calculer les secondes jusqu'à 20h00
+        target = now.replace(hour=20, minute=0, second=0, microsecond=0)
+        if now >= target:
+            # Si 20h déjà passé aujourd'hui, attendre demain
+            target = target.replace(day=target.day + 1)
+        wait_seconds = (target - now).total_seconds()
+ 
+        await asyncio.sleep(wait_seconds)
+ 
+        try:
+            results = await daily_cramed_check()
+            total_danger = sum(r.get("total_danger", 0) for r in results)
+            if total_danger > 0:
+                await bot.send_message(
+                    chat_id=571718066,
+                    text=(f"📋 *Bilan fin de journée — {datetime.now().strftime('%d/%m/%Y')}*\n\n"
+                          f"Comptes en danger : *{total_danger}*\n"
+                          f"Sessions surveillées : {len(results)}\n\n"
+                          f"_Consultez le dashboard pour le détail._"),
+                    parse_mode="Markdown"
+                )
+        except Exception as e:
+            print(f"[daily_check] Erreur: {e}")
+ 
+
 
 if __name__ == '__main__':
 
     
     init_forms_db()
+    init_gold_tables()
 
     
     app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
@@ -164,15 +198,23 @@ if __name__ == '__main__':
     
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
 
+    # Forms Gold ───────────────────────────────────────
     register_validation_handler(app)  
 
     register_form_handlers(app, app.bot, ADMIN_ID)
+
+    # Handlers Gold ───────────────────────────────────────
+    register_gold_handlers(app)
+    
 
     
     
 
 
     register_signal_handlers(app)
+
+    async def _post_start(app):
+        asyncio.create_task(schedule_daily_check(app.bot))
     
 
 
@@ -180,7 +222,8 @@ if __name__ == '__main__':
 
     app.add_handler(MessageHandler(filters.TEXT, log_unhandled_message))
 
-    set_bot(app.bot) 
+    set_bot(app.bot)
+    set_gold_bot(app.bot) 
 
    
     print('running...')
