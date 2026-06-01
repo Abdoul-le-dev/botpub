@@ -11,7 +11,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 DB_PATH    = "preinscriptions.db"
-MEDIA_DIR  = Path("media")
+# MEDIA_DIR  = Path("media")
+
+MEDIA_DIR = Path(__file__).parent.parent / "media"
 
 # Instance du bot Telegram — injectée depuis api.py via set_bot()
 _bot = None
