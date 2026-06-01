@@ -320,6 +320,28 @@ async def api_simulation_detail(account_id: int):
     return account
 
 
+@router.delete("/simulations/{account_id}")
+async def api_delete_simulation(account_id: int):
+    """
+    Hard delete — supprime le compte simulation + tous ses trades.
+    """
+    conn = get_conn()
+    try:
+        account = conn.execute(
+            "SELECT id, name FROM simulation_accounts WHERE id = ?", (account_id,)
+        ).fetchone()
+        if not account:
+            raise HTTPException(404, "Compte simulation introuvable")
+
+        conn.execute("DELETE FROM simulation_trades WHERE account_id = ?", (account_id,))
+        conn.execute("DELETE FROM simulation_accounts WHERE id = ?", (account_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"deleted": True, "account_id": account_id, "name": account["name"]}
+
+
 @router.patch("/simulations/{account_id}")
 async def api_update_simulation(account_id: int, payload: dict):
     """
