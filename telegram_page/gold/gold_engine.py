@@ -1187,12 +1187,13 @@ async def close_gold_session(session_id: int, payload: dict) -> dict:
 
 async def get_live_gold_price() -> float | None:
     try:
-        async with httpx.AsyncClient(timeout=5) as client:
+        async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.get(
-                "https://api.binance.com/api/v3/ticker/price",
-                params={"symbol": "XAUUSDT"}
+                "https://api.twelvedata.com/price",
+                params={"symbol": "XAU/USD", "apikey": "f5652ad530f04fbaa23412f87658180d"}
             )
             return float(resp.json()["price"])
+           
     except Exception as e:
         logger.warning(f"[gold_price] {e}")
         return None
