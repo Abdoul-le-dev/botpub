@@ -174,7 +174,7 @@ async def api_create_session(payload: dict):
         raise
 
     send_teaser_flag = payload.get("send_teaser", True)
-    print(f"[DEBUG] send_teaser={send_teaser_flag}, _bot={_bot}")
+   
 
     if send_teaser_flag:
         if gold_engine._bot:
