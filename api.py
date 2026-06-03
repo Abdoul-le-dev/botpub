@@ -13,6 +13,8 @@ from fastapi import HTTPException, UploadFile, File
 import csv  
 from form.form_route import router as forms_router
 from form.form import init_forms_db
+from routes.routes_dashboard import router as dashboard_router
+    
 
 from telegram_page.gold.routes_gold import router as gold_router
 from telegram_page.gold.gold_engine import (
@@ -93,6 +95,7 @@ app.include_router(trading_router)
 app.include_router(growth_router)
 app.include_router(ai_router)
 app.include_router(subscription_router)
+app.include_router(dashboard_router)
 # ALLOWED_IPS = {"3.95.185.12", "77.131.12.123"}
 
 # @app.middleware("http")
@@ -340,6 +343,28 @@ async def api_delete_rule(rule_id: int):
 # ────────────────────────────────────────────────────────────────────────
 # STATS & INTERSECTIONS
 # ────────────────────────────────────────────────────────────────────────
+
+# À ajouter dans api.py
+@app.get("/dashboard/stats")
+async def api_dashboard_stats():
+    from telegram_page.chat import get_conversation_stats
+    from telegram_page.chat import get_subscriptions_stats
+    from telegram_page.trading_journal import get_dashboard_stats
+
+    chat   = await get_conversation_stats()
+    subs   = await get_subscriptions_stats()
+    trades = await get_dashboard_stats("month")
+
+    return {
+        "total_membres":        chat.get("total", 0),
+        "actifs_7j":            chat.get("active_today", 0),
+        "abonnements_actifs":   subs.get("actifs", 0),
+        "trades_journalises":   trades.get("journals_collected", 0),
+        "nouveaux_7j":          chat.get("new_7j", 0),
+        "expirations_proches":  subs.get("expiring_7j", 0),
+        "escalades_ia":         chat.get("escalades", 0),
+        "membres_inactifs_21j": chat.get("inactive_21j", 0),
+    }
  
 @app.get("/categories/{name_categorie}/stats")
 async def api_category_stats(name_categorie: str):
