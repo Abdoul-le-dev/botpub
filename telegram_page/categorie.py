@@ -151,7 +151,6 @@ async def update_category(name_categorie: str, payload: dict):
 # ────────────────────────────────────────────────────────────────────────
 # MEMBRES
 # ────────────────────────────────────────────────────────────────────────
-
 async def get_category_members(name_categorie: str, filters: dict = None):
     f      = filters or {}
     limit  = int(f.get("limit", 50))
@@ -191,6 +190,47 @@ async def get_category_members(name_categorie: str, filters: dict = None):
         ).fetchone()["n"]
 
     return {"members": members, "total": total, "limit": limit, "offset": offset}
+
+async def get_category_members_(name_categorie: str, filters: dict = None):
+    f      = filters or {}
+    limit  = int(f.get("limit", 50))
+    offset = int(f.get("offset",  0))
+
+    query  = """
+        SELECT
+            c.id, c.id_user AS telegram_id, c.created_at AS added_at,
+            u.name, u.phone, u.email,
+            MAX(m.created_at) AS last_activity
+        FROM categories c
+        LEFT JOIN users    u ON u.telegram_id = c.id_user
+        LEFT JOIN messages m ON m.user_id     = c.id_user
+        WHERE c.name_categorie = ?
+    """
+    params = [name_categorie]
+
+    if f.get("search"):
+        query  += " AND (u.name LIKE ? OR CAST(c.id_user AS CHAR) LIKE ?)"
+        term    = f"%{f['search']}%"
+        params += [term, term]
+
+    if f.get("active_only"):
+        query  += " AND m.created_at >= ?"
+        params.append((datetime.now() - timedelta(days=7)).isoformat())
+
+    if f.get("inactive_only"):
+        query  += " AND (m.created_at < ? OR m.created_at IS NULL)"
+        params.append((datetime.now() - timedelta(days=21)).isoformat())
+
+    query += f" GROUP BY c.id ORDER BY c.created_at DESC LIMIT {limit} OFFSET {offset}"
+
+    with get_db() as conn:
+        members = [dict(r) for r in conn.execute(query, params).fetchall()]
+        total   = conn.execute(
+            "SELECT COUNT(*) as n FROM categories WHERE name_categorie = ?", (name_categorie,)
+        ).fetchone()["n"]
+
+    return {"members": members, "total": total, "limit": limit, "offset": offset}
+
 
 async def add_members_to_category(name_categorie: str, user_ids: list, added_by: str = "manual"):
     with get_db() as conn:
