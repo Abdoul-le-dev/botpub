@@ -220,7 +220,8 @@ if __name__ == '__main__':
 
    
 
-    app.add_handler(MessageHandler(filters.TEXT, log_unhandled_message))
+    # app.add_handler(MessageHandler(filters.TEXT, log_unhandled_message))
+    app.add_handler(MessageHandler(filters.TEXT, log_unhandled_message), group=99)
 
     set_bot(app.bot)
     set_gold_bot(app.bot) 
