@@ -190,8 +190,7 @@ async def get_category_members(name_categorie: str, filters: dict = None):
         ).fetchone()["n"]
 
     return {"members": members, "total": total, "limit": limit, "offset": offset}
-
-async def get_category_members_(name_categorie: str, filters: dict = None):
+async def get_category_members(name_categorie: str, filters: dict = None):
     f      = filters or {}
     limit  = int(f.get("limit", 50))
     offset = int(f.get("offset",  0))
@@ -406,12 +405,10 @@ async def get_category_intersections(name_categorie: str):
                 AND c2.name_categorie != c1.name_categorie
             LEFT JOIN categories_meta cm ON cm.name_categorie = c2.name_categorie
             WHERE c1.name_categorie = ?
-            GROUP BY c2.name_categorie, cm.color
+            GROUP BY c2.name_categorie
             ORDER BY shared_count DESC
             LIMIT 10
         """, (name_categorie,)).fetchall()
-
-        print(rows)
     return [dict(r) for r in rows]
 
 
