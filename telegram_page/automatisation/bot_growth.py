@@ -1,13 +1,13 @@
 """
-telegram_page/bot_growth.py
+telegram_page/bot_growth.py — v4 MySQL
 Logique bot pour le Growth Hub : automations, rapports.
 """
 
-import sqlite3
 import json
 from datetime import datetime, timedelta
 
-DB = "preinscriptions.db"
+from db import get_db   # ← pool MySQL, remplace get_conn()
+
 ADMIN_ID = 571718066
 _bot = None
 
@@ -17,22 +17,13 @@ def set_growth_bot(b):
     _bot = b
 
 
-def get_conn():
-    c = sqlite3.connect(DB, timeout=30)
-    c.row_factory = sqlite3.Row
-    c.execute("PRAGMA foreign_keys = ON")
-    c.execute("PRAGMA journal_mode=WAL")
-    return c
-
-
 # ─────────────────────────────────────────────────────────────
 # resolve_job_targets
 # ─────────────────────────────────────────────────────────────
 
 async def resolve_job_targets(job: dict) -> list:
     t = job.get("target", "all")
-    conn = get_conn()
-    try:
+    with get_db() as conn:
         if t == "all":
             rows = conn.execute(
                 "SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL"
@@ -40,17 +31,13 @@ async def resolve_job_targets(job: dict) -> list:
         elif t == "admin":
             return [ADMIN_ID]
         elif t.startswith("cat:"):
-            # Table categories : colonne id_user (pas user_id)
-            cat = t.replace("cat:", "")
+            cat  = t.replace("cat:", "")
             rows = conn.execute(
-                "SELECT id_user FROM categories WHERE name_categorie=?", (cat,)
+                "SELECT id_user FROM categories WHERE name_categorie = ?", (cat,)
             ).fetchall()
-       
         else:
             return []
-        return [r[0] for r in rows if r[0]]
-    finally:
-        conn.close()
+    return [r[0] for r in rows if r[0]]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -59,19 +46,19 @@ async def resolve_job_targets(job: dict) -> list:
 
 async def execute_automation_job(bot, job: dict) -> dict:
     user_ids = await resolve_job_targets(job)
-    total = len(user_ids)
+    total    = len(user_ids)
     sent = errors = 0
-    action = job.get("action_type", "")
+    action  = job.get("action_type", "")
     content = job.get("action_content", "") or ""
 
     if action == "send_message":
         from telegram_page.broadcast_engine import broadcast_engine
         r = await broadcast_engine(bot, {
-            "message": content,
-            "format": "text",
+            "message":  content,
+            "format":   "text",
             "user_ids": user_ids,
-            "tag": f"job_{job['id']}_{datetime.now().strftime('%Y%m%d%H%M')}",
-            "delay": 0.08,
+            "tag":      f"job_{job['id']}_{datetime.now().strftime('%Y%m%d%H%M')}",
+            "delay":    0.08,
         })
         sent, errors = r.get("sent", 0), r.get("errors", 0)
 
@@ -88,15 +75,15 @@ async def execute_automation_job(bot, job: dict) -> dict:
         mon = now - timedelta(days=now.weekday())
         r = await generate_weekly_bilans({
             "week_start": mon.replace(hour=0, minute=0, second=0).isoformat(),
-            "week_end": now.isoformat(),
+            "week_end":   now.isoformat(),
             "week_label": f"Semaine du {mon.strftime('%d %B')}",
-            "target": "journalised",
-            "send": True,
+            "target":     "journalised",
+            "send":       True,
             "admin_config": {
-                "include_perf": True,
-                "include_behavior": True,
+                "include_perf":           True,
+                "include_behavior":       True,
                 "include_recommendations": True,
-                "include_comparison": False,
+                "include_comparison":     False,
             },
         })
         sent, errors = r.get("sent", 0), r.get("errors", 0)
@@ -145,12 +132,12 @@ def compute_next_run(freq: str, run_time: str):
     except Exception:
         return None
     offsets = {
-        "daily": timedelta(days=1),
-        "every3d": timedelta(days=3),
-        "weekly_mon": timedelta(weeks=1),
-        "weekly_fri": timedelta(weeks=1),
-        "monthly_1": timedelta(days=30),
-        "monthly_15": timedelta(days=30),
+        "daily":       timedelta(days=1),
+        "every3d":     timedelta(days=3),
+        "weekly_mon":  timedelta(weeks=1),
+        "weekly_fri":  timedelta(weeks=1),
+        "monthly_1":   timedelta(days=30),
+        "monthly_15":  timedelta(days=30),
     }
     delta = offsets.get(freq)
     if not delta:
@@ -168,56 +155,46 @@ def compute_next_run(freq: str, run_time: str):
 
 async def check_and_run_jobs(bot):
     now = datetime.now().isoformat()
-    conn = get_conn()
-    try:
-        jobs = conn.execute(
-            """
+
+    with get_db() as conn:
+        jobs = conn.execute("""
             SELECT * FROM automation_jobs
-            WHERE is_active=1 AND trig_type='time'
+            WHERE is_active = 1 AND trig_type = 'time'
               AND next_run_at IS NOT NULL AND next_run_at <= ?
-            """,
-            (now,),
-        ).fetchall()
-    finally:
-        conn.close()
+        """, (now,)).fetchall()
 
     for job in [dict(j) for j in jobs]:
-        conn2 = get_conn()
-        log_id = conn2.execute(
-            "INSERT INTO automation_logs (job_id, started_at) VALUES (?,?)",
-            (job["id"], datetime.now().isoformat()),
-        ).lastrowid
-        conn2.commit()
-        conn2.close()
+
+        # Créer le log
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO automation_logs (job_id, started_at) VALUES (?, NOW())",
+                (job["id"],)
+            )
+            log_id = conn.execute("SELECT LAST_INSERT_ID() as id").fetchone()["id"]
 
         try:
-            r = await execute_automation_job(bot, job)
+            r  = await execute_automation_job(bot, job)
             st = "success" if r["errors"] == 0 else "partial"
         except Exception:
-            r = {"total": 0, "sent": 0, "errors": 1}
+            r  = {"total": 0, "sent": 0, "errors": 1}
             st = "failed"
 
         next_run = compute_next_run(job.get("freq"), job.get("run_time"))
-        conn3 = get_conn()
-        conn3.execute(
-            """
-            UPDATE automation_logs
-            SET finished_at=?, total=?, sent=?, errors=?, status=?
-            WHERE id=?
-            """,
-            (datetime.now().isoformat(), r["total"], r["sent"], r["errors"], st, log_id),
-        )
-        conn3.execute(
-            """
-            UPDATE automation_jobs
-            SET last_run_at=?, next_run_at=?,
-                exec_count=exec_count+1, err_count=err_count+?
-            WHERE id=?
-            """,
-            (datetime.now().isoformat(), next_run, r["errors"], job["id"]),
-        )
-        conn3.commit()
-        conn3.close()
+
+        with get_db() as conn:
+            conn.execute("""
+                UPDATE automation_logs
+                SET finished_at = NOW(), total = ?, sent = ?, errors = ?, status = ?
+                WHERE id = ?
+            """, (r["total"], r["sent"], r["errors"], st, log_id))
+            conn.execute("""
+                UPDATE automation_jobs
+                SET last_run_at = NOW(), next_run_at = ?,
+                    exec_count  = exec_count + 1,
+                    err_count   = err_count + ?
+                WHERE id = ?
+            """, (next_run, r["errors"], job["id"]))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -226,45 +203,39 @@ async def check_and_run_jobs(bot):
 
 async def check_ia_trigger(user_id: int) -> bool:
     """Retourne True si l'IA peut démarrer la conversation."""
-    conn = get_conn()
-    try:
+    with get_db() as conn:
         cfg = conn.execute(
-            "SELECT * FROM ia_trigger_config WHERE id=1"
+            "SELECT * FROM ia_trigger_config WHERE id = 1"
         ).fetchone()
         if not cfg:
             return False
+
         t = cfg["trigger_type"]
 
         if t == "immediate":
             return True
 
         if t == "form":
-            # form_sessions utilise telegram_id
-            row = conn.execute(
-                "SELECT id FROM form_sessions WHERE telegram_id=? AND status='completed' LIMIT 1",
-                (user_id,),
-            ).fetchone()
+            row = conn.execute("""
+                SELECT id FROM form_sessions
+                WHERE telegram_id = ? AND status = 'completed' LIMIT 1
+            """, (user_id,)).fetchone()
             return row is not None
 
         if t == "messages":
-            # messages utilise user_id (= telegram_id)
-            row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM messages WHERE user_id=? AND direction='inbound'",
-                (user_id,),
-            ).fetchone()
+            row = conn.execute("""
+                SELECT COUNT(*) as cnt FROM messages
+                WHERE user_id = ? AND direction = 'inbound'
+            """, (user_id,)).fetchone()
             return (row["cnt"] if row else 0) >= (cfg["messages_count"] or 5)
 
         if t == "trade":
             row = conn.execute(
-                "SELECT id FROM trade_journal WHERE user_id=? LIMIT 1",
-                (user_id,),
+                "SELECT id FROM trade_journal WHERE user_id = ? LIMIT 1", (user_id,)
             ).fetchone()
             return row is not None
 
-    finally:
-        conn.close()
     return False
-
 
 
 # ─────────────────────────────────────────────────────────────
@@ -273,53 +244,53 @@ async def check_ia_trigger(user_id: int) -> bool:
 
 async def send_admin_report(bot, period="week"):
     """Rapport hebdomadaire envoyé à l'admin chaque lundi 09h."""
-    conn = get_conn()
-    try:
+    with get_db() as conn:
         mrr = conn.execute(
-            "SELECT COALESCE(SUM(price_paid),0) FROM growth_subscriptions WHERE status='active'"
-        ).fetchone()[0]
+            "SELECT COALESCE(SUM(price_paid), 0) as n FROM growth_subscriptions WHERE status = 'active'"
+        ).fetchone()["n"]
+
         actifs = conn.execute(
-            "SELECT COUNT(*) FROM growth_subscriptions WHERE status='active'"
-        ).fetchone()[0]
+            "SELECT COUNT(*) as n FROM growth_subscriptions WHERE status = 'active'"
+        ).fetchone()["n"]
+
         trials = conn.execute(
-            "SELECT COUNT(*) FROM growth_subscriptions WHERE status='trial'"
-        ).fetchone()[0]
-        expiring = conn.execute(
-            """
-            SELECT COUNT(*) FROM growth_subscriptions WHERE status='active'
-            AND expires_at <= datetime('now','+7 days')
-            """
-        ).fetchone()[0]
-        new7d = conn.execute(
-            "SELECT COUNT(*) FROM users WHERE created_at >= datetime('now','-7 days')"
-        ).fetchone()[0]
-        avg_cap = conn.execute(
-            """
-            SELECT AVG(capital) FROM (
+            "SELECT COUNT(*) as n FROM growth_subscriptions WHERE status = 'trial'"
+        ).fetchone()["n"]
+
+        expiring = conn.execute("""
+            SELECT COUNT(*) as n FROM growth_subscriptions
+            WHERE status = 'active'
+              AND expires_at <= DATE_ADD(NOW(), INTERVAL 7 DAY)
+        """).fetchone()["n"]
+
+        new7d = conn.execute("""
+            SELECT COUNT(*) as n FROM users
+            WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        """).fetchone()["n"]
+
+        avg_cap = conn.execute("""
+            SELECT AVG(capital) as n FROM (
                 SELECT user_id, MAX(capital) as capital
                 FROM member_capital GROUP BY user_id
-            )
-            """
-        ).fetchone()[0] or 0
-        risk = conn.execute(
-            """
-            SELECT COUNT(*) FROM growth_subscriptions gs
-            LEFT JOIN engagement_scores es ON es.user_id=gs.user_id
-            WHERE gs.status='active' AND (es.score IS NULL OR es.score < 30)
-            """
-        ).fetchone()[0]
-        top = conn.execute(
-            """
-            SELECT u.name, ROUND(SUM(tj.result_percent),1) as perf
+            ) t
+        """).fetchone()["n"] or 0
+
+        risk = conn.execute("""
+            SELECT COUNT(*) as n FROM growth_subscriptions gs
+            LEFT JOIN engagement_scores es ON es.user_id = gs.user_id
+            WHERE gs.status = 'active'
+              AND (es.score IS NULL OR es.score < 30)
+        """).fetchone()["n"]
+
+        top = conn.execute("""
+            SELECT u.name, ROUND(SUM(tj.result_percent), 1) as perf
             FROM trade_journal tj
-            JOIN users u ON u.telegram_id=tj.user_id
-            WHERE tj.participated=1 AND tj.status='closed'
-              AND tj.submitted_at >= datetime('now','-7 days')
-            GROUP BY tj.user_id ORDER BY perf DESC LIMIT 1
-            """
-        ).fetchone()
-    finally:
-        conn.close()
+            JOIN users u ON u.telegram_id = tj.user_id
+            WHERE tj.participated = 1 AND tj.status = 'closed'
+              AND tj.submitted_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+            GROUP BY tj.user_id
+            ORDER BY perf DESC LIMIT 1
+        """).fetchone()
 
     top_str = f"{top['name']} (+{top['perf']}%)" if top else "—"
     msg = (
@@ -329,7 +300,7 @@ async def send_admin_report(bot, period="week"):
         f"⚠ Expirent dans 7j : {expiring}\n\n"
         f"👥 *Communauté*\n"
         f"Nouveaux membres (7j) : +{new7d}\n"
-        f"Capital moyen : ${avg_cap:.0f} (dollars américains)\n"
+        f"Capital moyen : ${avg_cap:.0f}\n"
         f"Membres à risque (score<30) : {risk}\n\n"
         f"🏆 *Top performer* : {top_str}\n\n"
         f"_Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}_"

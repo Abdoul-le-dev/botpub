@@ -1,4 +1,4 @@
-# subscription.py
+# subscription.py — v4 MySQL
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -50,7 +50,7 @@ async def create_subscription(payload: SubscriptionPayload):
                 print(f"[subscription] Déjà sauvegardé — email={payload.email} | id={existing['id']}")
                 return {"id": existing["id"], "message": "déjà sauvegardé"}
 
-            cur = conn.execute("""
+            conn.execute("""
                 INSERT INTO subscription_info
                     (plan, duration_days, started_at, expires_at, status, note,
                      order_id, name, email, phone, country_code, billing_cycle,
@@ -63,9 +63,13 @@ async def create_subscription(payload: SubscriptionPayload):
                 payload.country_code, payload.billing_cycle, payload.amount_usd,
                 payload.currency, payload.amount_local, payload.aggregator, payload.paid_at,
             ))
-            print(f"[subscription] Nouveau paiement — email={payload.email} | id={cur.lastrowid}")
-            await _notify_admin(bot, ADMIN_ID, f"[subscription] Nouveau paiement — email={payload.email} | id={cur.lastrowid}")
-            return {"id": cur.lastrowid, "message": "subscription enregistrée"}
+
+            # Récupérer l'ID inséré via LAST_INSERT_ID()
+            new_id = conn.execute("SELECT LAST_INSERT_ID() as id").fetchone()["id"]
+
+        print(f"[subscription] Nouveau paiement — email={payload.email} | id={new_id}")
+        await _notify_admin(bot, ADMIN_ID, f"[subscription] Nouveau paiement — email={payload.email} | id={new_id}")
+        return {"id": new_id, "message": "subscription enregistrée"}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,4 +1,4 @@
-# categories.py — SQLite + get_db() centralisé
+# categories.py — v4 MySQL
 
 from datetime import datetime, timedelta
 from db import get_db
@@ -9,18 +9,23 @@ from db import get_db
 # ────────────────────────────────────────────────────────────────────────
 
 def _bulk_insert_members(conn, name_categorie: str, user_ids: list, added_by: str = "manual") -> int:
+    """Insère en boucle (mysql-connector ne supporte pas executemany via le wrapper)."""
     now    = datetime.now().isoformat()
-    values = [(uid, name_categorie, now) for uid in user_ids]
-    cur    = conn.executemany("""
-        INSERT OR IGNORE INTO categories (id_user, name_categorie, created_at)
-        VALUES (?, ?, ?)
-    """, values)
-    return cur.rowcount
+    added  = 0
+    for uid in user_ids:
+        conn.execute("""
+            INSERT IGNORE INTO categories (id_user, name_categorie, created_at)
+            VALUES (?, ?, ?)
+        """, (uid, name_categorie, now))
+        # ROW_COUNT() = 1 si inséré, 0 si ignoré
+        n = conn.execute("SELECT ROW_COUNT() as n").fetchone()["n"]
+        added += n
+    return added
 
 
 def _ensure_meta_exists(conn, name_categorie: str):
     conn.execute("""
-        INSERT OR IGNORE INTO categories_meta (name_categorie) VALUES (?)
+        INSERT IGNORE INTO categories_meta (name_categorie) VALUES (?)
     """, (name_categorie,))
 
 
@@ -30,9 +35,9 @@ def _ensure_meta_exists(conn, name_categorie: str):
 
 async def get_categories_stats():
     with get_db() as conn:
-        total_cats = conn.execute("SELECT COUNT(*) FROM categories_meta").fetchone()[0]
-        tagged     = conn.execute("SELECT COUNT(DISTINCT id_user) FROM categories").fetchone()[0]
-        total_tags = conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
+        total_cats = conn.execute("SELECT COUNT(*) as n FROM categories_meta").fetchone()["n"]
+        tagged     = conn.execute("SELECT COUNT(DISTINCT id_user) as n FROM categories").fetchone()["n"]
+        total_tags = conn.execute("SELECT COUNT(*) as n FROM categories").fetchone()["n"]
 
     avg_tags = round(total_tags / tagged, 1) if tagged > 0 else 0
     return {
@@ -165,7 +170,7 @@ async def get_category_members(name_categorie: str, filters: dict = None):
     params = [name_categorie]
 
     if f.get("search"):
-        query  += " AND (u.name LIKE ? OR CAST(c.id_user AS TEXT) LIKE ?)"
+        query  += " AND (u.name LIKE ? OR CAST(c.id_user AS CHAR) LIKE ?)"
         term    = f"%{f['search']}%"
         params += [term, term]
 
@@ -182,8 +187,8 @@ async def get_category_members(name_categorie: str, filters: dict = None):
     with get_db() as conn:
         members = [dict(r) for r in conn.execute(query, params).fetchall()]
         total   = conn.execute(
-            "SELECT COUNT(*) FROM categories WHERE name_categorie = ?", (name_categorie,)
-        ).fetchone()[0]
+            "SELECT COUNT(*) as n FROM categories WHERE name_categorie = ?", (name_categorie,)
+        ).fetchone()["n"]
 
     return {"members": members, "total": total, "limit": limit, "offset": offset}
 
@@ -217,7 +222,7 @@ async def move_members(payload: dict):
 
     with get_db() as conn:
         if payload["user_ids"] == "all":
-            ids = [r[0] for r in conn.execute(
+            ids = [r["id_user"] for r in conn.execute(
                 "SELECT id_user FROM categories WHERE name_categorie = ?", (source,)
             ).fetchall()]
         else:
@@ -227,7 +232,7 @@ async def move_members(payload: dict):
         added = _bulk_insert_members(conn, destination, ids, added_by="move")
 
         if action == "move" and ids:
-            placeholders = ",".join(["?"] * len(ids))
+            placeholders = ",".join(["%s"] * len(ids))
             conn.execute(
                 f"DELETE FROM categories WHERE name_categorie = ? AND id_user IN ({placeholders})",
                 [source] + ids,
@@ -240,7 +245,7 @@ async def merge_categories(target: str, sources: list):
     total_added = 0
     with get_db() as conn:
         for source in sources:
-            ids = [r[0] for r in conn.execute(
+            ids = [r["id_user"] for r in conn.execute(
                 "SELECT id_user FROM categories WHERE name_categorie = ?", (source,)
             ).fetchall()]
 
@@ -273,11 +278,11 @@ async def get_category_rules(name_categorie: str):
 
 async def add_category_rule(name_categorie: str, rule: dict):
     with get_db() as conn:
-        cur     = conn.execute("""
+        conn.execute("""
             INSERT INTO category_rules (name_categorie, trigger_type, trigger_value)
             VALUES (?, ?, ?)
         """, (name_categorie, rule["trigger_type"], rule.get("trigger_value", "")))
-        rule_id = cur.lastrowid
+        rule_id = conn.execute("SELECT LAST_INSERT_ID() as id").fetchone()["id"]
     return {"id": rule_id, "status": "created"}
 
 
@@ -296,29 +301,29 @@ async def get_category_stats(name_categorie: str):
 
     with get_db() as conn:
         member_count = conn.execute(
-            "SELECT COUNT(*) FROM categories WHERE name_categorie = ?", (name_categorie,)
-        ).fetchone()[0]
+            "SELECT COUNT(*) as n FROM categories WHERE name_categorie = ?", (name_categorie,)
+        ).fetchone()["n"]
 
         active_7d = conn.execute("""
-            SELECT COUNT(DISTINCT c.id_user)
+            SELECT COUNT(DISTINCT c.id_user) as n
             FROM categories c
             JOIN messages m ON m.user_id = c.id_user
             WHERE c.name_categorie = ? AND m.created_at >= ?
-        """, (name_categorie, active_since)).fetchone()[0]
+        """, (name_categorie, active_since)).fetchone()["n"]
 
         multi_cat = conn.execute("""
-            SELECT COUNT(*) FROM (
+            SELECT COUNT(*) as n FROM (
                 SELECT id_user FROM categories
                 WHERE id_user IN (SELECT id_user FROM categories WHERE name_categorie = ?)
                 GROUP BY id_user HAVING COUNT(DISTINCT name_categorie) > 1
-            )
-        """, (name_categorie,)).fetchone()[0]
+            ) t
+        """, (name_categorie,)).fetchone()["n"]
 
         last_bh = conn.execute("""
             SELECT started_at FROM broadcast_history
             WHERE category = ? ORDER BY started_at DESC LIMIT 1
         """, (name_categorie,)).fetchone()
-        last_broadcast = last_bh[0] if last_bh else None
+        last_broadcast = last_bh["started_at"] if last_bh else None
 
         win_rate = None
         try:
@@ -326,14 +331,14 @@ async def get_category_stats(name_categorie: str):
                 SELECT
                     CASE WHEN COUNT(*) = 0 THEN NULL
                     ELSE ROUND(
-                        CAST(SUM(CASE WHEN tj.result_pips > 0 THEN 1 ELSE 0 END) AS REAL)
+                        SUM(CASE WHEN tj.result_pips > 0 THEN 1 ELSE 0 END)
                         / COUNT(*) * 100, 1
-                    ) END
+                    ) END as n
                 FROM trade_journal tj
                 JOIN categories c ON c.id_user = tj.user_id
                 WHERE c.name_categorie = ? AND tj.status = 'closed'
             """, (name_categorie,)).fetchone()
-            win_rate = wr[0] if wr else None
+            win_rate = wr["n"] if wr else None
         except Exception:
             pass
 
@@ -394,7 +399,7 @@ async def get_member_profile(telegram_id: int):
             SELECT created_at FROM messages
             WHERE user_id = ? ORDER BY created_at DESC LIMIT 1
         """, (telegram_id,)).fetchone()
-        user["last_activity"] = last[0] if last else None
+        user["last_activity"] = last["created_at"] if last else None
 
         try:
             ts = conn.execute("""
@@ -402,7 +407,7 @@ async def get_member_profile(telegram_id: int):
                     COUNT(*) AS total_trades,
                     CASE WHEN COUNT(*) = 0 THEN NULL
                     ELSE ROUND(
-                        CAST(SUM(CASE WHEN result_pips > 0 THEN 1 ELSE 0 END) AS REAL)
+                        SUM(CASE WHEN result_pips > 0 THEN 1 ELSE 0 END)
                         / COUNT(*) * 100, 1
                     ) END AS win_rate,
                     ROUND(AVG(result_percent), 2) AS avg_percent
