@@ -18,7 +18,7 @@ import sys
 # ─────────────────────────────────────────────
 #  CONFIG  –  adapte ces valeurs
 # ─────────────────────────────────────────────
-SQLITE_FILE = "preincristion.db"
+SQLITE_FILE = "preinscriptions.db"
 
 MYSQL_CONFIG = {
     "host":     "localhost",
