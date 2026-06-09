@@ -24,7 +24,7 @@ MYSQL_CONFIG = {
     "host":     "localhost",
     "port":     3306,
     "user":     "fiacrefdksignal",   # ← ton utilisateur MySQL
-    "password": "Fiacre202@#",   # ← ton mot de passe MySQL
+    "password": "Fiacre2026@#",   # ← ton mot de passe MySQL
     "database": "fdkvip_db",
 }
 
