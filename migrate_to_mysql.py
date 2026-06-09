@@ -24,7 +24,7 @@ DB_CONFIG = {
     "database": "fdkvip_db",     # nom de ta base (doit déjà exister)
 }
 
-SQL_FILE = "/database/table.sql"   # chemin vers le fichier SQL généré
+SQL_FILE = "database/table.sql"   # chemin vers le fichier SQL généré
 # ─────────────────────────────────────────────
 
 
