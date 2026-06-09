@@ -1,17 +1,13 @@
 """
-form_engine.py — Moteur d'exécution des formulaires dynamiques via Telegram.
-- Connexions SQLite locales (une par appel) → thread-safe
-- Queue asyncio pour traiter les réponses sans saturer
-- Worker de fond pour les tâches lourdes (download média, actions post-soumission)
+form_engine.py — v4 MySQL
+Moteur d'exécution des formulaires dynamiques via Telegram.
 """
 
 import asyncio
 import json
-import sqlite3
 import os
 import uuid
 from pathlib import Path
-from contextlib import contextmanager
 
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton,
@@ -28,41 +24,22 @@ from form.form import (
     save_response, save_submission, get_session,
 )
 
-DB_PATH   = "preinscriptions.db"
+# ← Remplace la get_db() SQLite locale
+from db import get_db
+
 MEDIA_DIR = Path("media/forms")
 MEDIA_URL = "/media/forms"
 FORM_STEP = 200
 
-# ════════════════════════════════════════════════════════════════════════════
-# CONNEXION SQLite — toujours locale, jamais globale
-# ════════════════════════════════════════════════════════════════════════════
-
-@contextmanager
-def get_db():
-    """Connexion SQLite locale, fermée automatiquement."""
-    conn = sqlite3.connect(DB_PATH, timeout=10, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")   # ← plusieurs lecteurs simultanés
-    conn.execute("PRAGMA busy_timeout=5000")  # ← attendre 5s si verrou
-    try:
-        yield conn
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
-
 
 # ════════════════════════════════════════════════════════════════════════════
-# QUEUE ASYNCIO — tâches de fond (média, actions, notifications)
+# QUEUE ASYNCIO
 # ════════════════════════════════════════════════════════════════════════════
 
-_task_queue: asyncio.Queue = None   # initialisée dans setup_background_worker
+_task_queue: asyncio.Queue = None
 
 
 async def _background_worker():
-    """Worker unique qui consomme la queue — évite la saturation."""
     global _task_queue
     while True:
         try:
@@ -86,7 +63,6 @@ async def setup_background_worker(app=None):
 
 
 def enqueue(coro):
-    """Ajoute une coroutine à la queue sans bloquer."""
     if _task_queue is None:
         return
     try:
@@ -103,7 +79,7 @@ def _get_prenom(telegram_id: int) -> str:
     try:
         with get_db() as conn:
             row = conn.execute(
-                "SELECT name FROM users WHERE telegram_id=?", (telegram_id,)
+                "SELECT name FROM users WHERE telegram_id = ?", (telegram_id,)
             ).fetchone()
             if row and row["name"]:
                 p = row["name"].strip()
@@ -117,13 +93,11 @@ def _get_prenom(telegram_id: int) -> str:
 def _inject_vars(text: str, telegram_id: int, score: int = 0, total: int = 0) -> str:
     from datetime import date
     prenom = _get_prenom(telegram_id)
-    return (
-        text
-        .replace("+prenom", prenom)
-        .replace("+score",  str(score))
-        .replace("+total",  str(total))
-        .replace("+date",   date.today().strftime("%d/%m/%Y"))
-    )
+    return (text
+            .replace("+prenom", prenom)
+            .replace("+score",  str(score))
+            .replace("+total",  str(total))
+            .replace("+date",   date.today().strftime("%d/%m/%Y")))
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -131,59 +105,36 @@ def _inject_vars(text: str, telegram_id: int, score: int = 0, total: int = 0) ->
 # ════════════════════════════════════════════════════════════════════════════
 
 async def has_completed_form(form_id: int, telegram_id: int) -> bool:
-    """Connexion locale — thread-safe."""
     try:
         with get_db() as conn:
-            form = conn.execute(
-                "SELECT fields FROM forms WHERE id = ?", (form_id,)
-            ).fetchone()
-
+            form = conn.execute("SELECT fields FROM forms WHERE id = ?", (form_id,)).fetchone()
             if not form:
                 return False
-
             fields = json.loads(form["fields"])
-            required_fields = [
-                f for f in fields
-                if not f.get("optional", False) and f.get("id")
-            ]
-
+            required_fields = [f for f in fields if not f.get("optional", False) and f.get("id")]
             if not required_fields:
                 return False
-
             required_ids = {str(f["id"]) for f in required_fields}
-
             responses = conn.execute("""
-                SELECT field_id, value
-                FROM form_responses
+                SELECT field_id, value FROM form_responses
                 WHERE form_id = ? AND telegram_id = ?
             """, (form_id, telegram_id)).fetchall()
-
             if not responses:
                 return False
-
-            answered_ids = {
-                str(r["field_id"]) for r in responses
-                if r["value"] is not None and str(r["value"]).strip() != ""
-            }
-
+            answered_ids = {str(r["field_id"]) for r in responses
+                            if r["value"] is not None and str(r["value"]).strip() != ""}
             return required_ids.issubset(answered_ids)
-
     except Exception as e:
         print(f"[has_completed_form] Erreur: {e}")
         return False
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# TÉLÉCHARGEMENT MÉDIA — mis en queue pour ne pas bloquer
+# TÉLÉCHARGEMENT MÉDIA
 # ════════════════════════════════════════════════════════════════════════════
 
 async def _download_media(bot, file_id: str, field_type: str) -> str | None:
-    EXT_MAP = {
-        "photo":    "jpg",
-        "video":    "mp4",
-        "audio":    "ogg",
-        "document": "bin",
-    }
+    EXT_MAP = {"photo": "jpg", "video": "mp4", "audio": "ogg", "document": "bin"}
     try:
         MEDIA_DIR.mkdir(parents=True, exist_ok=True)
         tg_file   = await bot.get_file(file_id)
@@ -199,78 +150,49 @@ async def _download_media(bot, file_id: str, field_type: str) -> str | None:
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# ENVOI D'UN CHAMP (question)
+# ENVOI D'UN CHAMP
 # ════════════════════════════════════════════════════════════════════════════
 
 async def _send_field(bot, chat_id: int, field: dict, step: int, total_steps: int, progress: bool):
-    ftype = field.get("type", "text")
-    label = field.get("label") or "Réponds à cette question :"
+    ftype  = field.get("type", "text")
+    label  = field.get("label") or "Réponds à cette question :"
     prefix = f"[{step}/{total_steps}] " if total_steps > 1 and progress else ""
     text   = f"{prefix}{label}"
 
     if ftype == "qcm":
         opts = field.get("opts", [])
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(o["t"], callback_data=f"fopt_{o['t'][:40]}")]
-            for o in opts
-        ])
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(o["t"], callback_data=f"fopt_{o['t'][:40]}")] for o in opts])
         await bot.send_message(chat_id, text, reply_markup=kb)
-
     elif ftype == "multi":
         opts = field.get("opts", [])
         kb = InlineKeyboardMarkup(
-            [[InlineKeyboardButton(f"☐ {o['t']}", callback_data=f"fmul_{i}_{o['t'][:35]}")]
-             for i, o in enumerate(opts)]
-            + [[InlineKeyboardButton("✅ Valider ma sélection", callback_data="fmul_validate")]]
-        )
+            [[InlineKeyboardButton(f"☐ {o['t']}", callback_data=f"fmul_{i}_{o['t'][:35]}")] for i, o in enumerate(opts)]
+            + [[InlineKeyboardButton("✅ Valider ma sélection", callback_data="fmul_validate")]])
         await bot.send_message(chat_id, text, reply_markup=kb)
-
     elif ftype == "oui_non":
-        kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Oui", callback_data="fopt_Oui"),
-            InlineKeyboardButton("❌ Non", callback_data="fopt_Non"),
-        ]])
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("✅ Oui", callback_data="fopt_Oui"),
+                                     InlineKeyboardButton("❌ Non", callback_data="fopt_Non")]])
         await bot.send_message(chat_id, text, reply_markup=kb)
-
     elif ftype == "note5":
-        kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton(f"⭐{i}", callback_data=f"fopt_{i}")
-            for i in range(1, 6)
-        ]])
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton(f"⭐{i}", callback_data=f"fopt_{i}") for i in range(1, 6)]])
         await bot.send_message(chat_id, text, reply_markup=kb)
-
     elif ftype == "nps":
-        rows = [
-            [InlineKeyboardButton(str(i), callback_data=f"fopt_{i}") for i in range(0, 6)],
-            [InlineKeyboardButton(str(i), callback_data=f"fopt_{i}") for i in range(6, 11)],
-        ]
+        rows = [[InlineKeyboardButton(str(i), callback_data=f"fopt_{i}") for i in range(0, 6)],
+                [InlineKeyboardButton(str(i), callback_data=f"fopt_{i}") for i in range(6, 11)]]
         await bot.send_message(chat_id, text, reply_markup=InlineKeyboardMarkup(rows))
-
     elif ftype == "contact":
-        kb = ReplyKeyboardMarkup(
-            [[KeyboardButton("📱 Partager mon numéro", request_contact=True)]],
-            one_time_keyboard=True, resize_keyboard=True
-        )
+        kb = ReplyKeyboardMarkup([[KeyboardButton("📱 Partager mon numéro", request_contact=True)]],
+                                  one_time_keyboard=True, resize_keyboard=True)
         await bot.send_message(chat_id, text, reply_markup=kb)
-
     elif ftype in ("photo", "video", "audio", "document"):
-        hints = {
-            "photo":    "📸",
-            "video":    "🎬 (max 20 Mo).",
-            "audio":    "🎙️",
-            "document": "📄",
-        }
+        hints = {"photo": "📸", "video": "🎬 (max 20 Mo).", "audio": "🎙️", "document": "📄"}
         skip_btn = None
         if not field.get("required", True):
-            skip_btn = InlineKeyboardMarkup([[
-                InlineKeyboardButton("Passer →", callback_data="fopt__skip")
-            ]])
+            skip_btn = InlineKeyboardMarkup([[InlineKeyboardButton("Passer →", callback_data="fopt__skip")]])
         await bot.send_message(chat_id, f"{text}\n\n{hints[ftype]}", reply_markup=skip_btn)
-
     elif ftype == "info":
         kb = InlineKeyboardMarkup([[InlineKeyboardButton("Continuer →", callback_data="fopt__info")]])
         await bot.send_message(chat_id, text, reply_markup=kb)
-
     else:
         await bot.send_message(chat_id, text, reply_markup=ReplyKeyboardRemove())
 
@@ -282,7 +204,6 @@ async def _send_field(bot, chat_id: int, field: dict, step: int, total_steps: in
 def _evaluate_answer(field: dict, raw_answer: str) -> tuple[bool | None, int, str]:
     if not field.get("quiz"):
         return None, 0, ""
-
     ftype  = field.get("type", "text")
     pts_ok = int(field.get("pts", 10))
 
@@ -336,19 +257,17 @@ def _eval_conditions(conditions: list, responses_so_far: dict) -> list:
         op          = if_clause.get("op", "=")
         cond_val    = str(if_clause.get("value", "")).lower()
         actual_val  = str(responses_so_far.get(field_label, "")).lower()
-
         match = False
         if op == "=":          match = actual_val == cond_val
         elif op == "≠":        match = actual_val != cond_val
         elif op == "contient": match = cond_val in actual_val
-
         if match:
             actions.append(then_clause)
     return actions
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# ACTIONS POST-SOUMISSION — exécutées via la queue
+# ACTIONS POST-SOUMISSION
 # ════════════════════════════════════════════════════════════════════════════
 
 async def _run_actions(bot, telegram_id: int, actions: list, context_vars: dict):
@@ -358,8 +277,9 @@ async def _run_actions(bot, telegram_id: int, actions: list, context_vars: dict)
         value = str(action.get("value", ""))
         try:
             if atype == "Ajouter catégorie":
-                from database.database import add_categorie
-                await add_categorie(telegram_id, value)
+                # ← Correction : utilise categorie.py au lieu de database.database
+                from telegram_page.categorie import add_members_to_category
+                await add_members_to_category(value, [telegram_id])
                 done.append(f"categorie:{value}")
 
             elif atype == "Envoyer message":
@@ -392,14 +312,13 @@ async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: in
     with get_db() as conn:
         if form_id:
             sessions = conn.execute("""
-                SELECT s.id, s.telegram_id, s.form_id, s.step_index
-                FROM form_sessions s
-                WHERE s.status = 'in_progress' AND s.form_id = ?
+                SELECT id, telegram_id, form_id, step_index FROM form_sessions
+                WHERE status = 'in_progress' AND form_id = ?
             """, (form_id,)).fetchall()
         else:
             sessions = conn.execute("""
-                SELECT s.id, s.telegram_id, s.form_id, s.step_index
-                FROM form_sessions s WHERE s.status = 'in_progress'
+                SELECT id, telegram_id, form_id, step_index FROM form_sessions
+                WHERE status = 'in_progress'
             """).fetchall()
 
     if not sessions:
@@ -407,32 +326,26 @@ async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: in
             await bot.send_message(admin_id, "✅ Aucune session incomplète à relancer.")
         return
 
-    # Mettre les relances en queue pour ne pas tout envoyer d'un coup
     async def _send_relance(session):
-        sid, telegram_id, fid, step_index = session
+        sid = session["id"]; telegram_id = session["telegram_id"]
+        fid = session["form_id"]; step_index = session["step_index"]
         if telegram_id <= 0:
             return
         try:
             form = get_form_by_id(fid)
-            if not form:
-                return
-            fields  = form.get("fields", [])
-            title   = form.get("name", "le formulaire")
+            if not form: return
+            fields = form.get("fields", [])
+            title  = form.get("name", "le formulaire")
             command = form.get("command", "")
             q_actuelle = min(step_index + 1, len(fields))
-
             if command:
-                texte = (
-                    f"👋 Tu n'as pas encore terminé {title}.\n\n"
-                    f"Tu en es à la question {q_actuelle}/{len(fields)}.\n\n"
-                    f"Clique sur la commande ci-dessous pour reprendre 👇\n\n{command}"
-                )
+                texte = (f"👋 Tu n'as pas encore terminé {title}.\n\n"
+                         f"Tu en es à la question {q_actuelle}/{len(fields)}.\n\n"
+                         f"Clique sur la commande ci-dessous pour reprendre 👇\n\n{command}")
             else:
-                texte = (
-                    f"👋 Tu n'as pas encore terminé {title}.\n\n"
-                    f"Tu en es à la question {q_actuelle}/{len(fields)}.\n\n"
-                    f"Contacte-nous pour reprendre le formulaire. 🙏"
-                )
+                texte = (f"👋 Tu n'as pas encore terminé {title}.\n\n"
+                         f"Tu en es à la question {q_actuelle}/{len(fields)}.\n\n"
+                         f"Contacte-nous pour reprendre le formulaire. 🙏")
             await bot.send_message(telegram_id, texte)
             await asyncio.sleep(0.3)
         except Exception as e:
@@ -453,11 +366,11 @@ async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: in
 # ════════════════════════════════════════════════════════════════════════════
 
 async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user       = update.effective_user
-    user_id    = user.id
-    text       = update.message.text.strip()
-    command    = "/" + text.lstrip("/").split()[0]
-    args       = text.split()[1:] if len(text.split()) > 1 else []
+    user        = update.effective_user
+    user_id     = user.id
+    text        = update.message.text.strip()
+    command     = "/" + text.lstrip("/").split()[0]
+    args        = text.split()[1:] if len(text.split()) > 1 else []
     start_param = args[0] if args and command == "/start" else None
 
     if command == "/start":
@@ -470,10 +383,8 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if form_id == "__validation__":
             return FORM_STEP
-
         if not form_id:
             return ConversationHandler.END
-
         form = get_form_by_id(form_id)
     else:
         form = get_form_by_command(command)
@@ -482,7 +393,7 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     options        = form.get("options", {}) or {}
-    form_completed = await has_completed_form(form["id"], user_id)  # ← plus de conn global
+    form_completed = await has_completed_form(form["id"], user_id)
 
     if options.get("one_per_user") and form_completed:
         await update.message.reply_text(
@@ -493,21 +404,18 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     session = get_or_create_session(form["id"], user_id)
-
-    context.user_data["form_id"]    = form["id"]
-    context.user_data["session_id"] = session["id"]
-    context.user_data["step"]       = session["step_index"]
-    context.user_data["progress"]   = options.get("progress", False)
-    context.user_data["multi_sel"]  = []
-    context.user_data["responses"]  = {}
+    context.user_data.update({
+        "form_id": form["id"], "session_id": session["id"],
+        "step": session["step_index"], "progress": options.get("progress", False),
+        "multi_sel": [], "responses": {},
+    })
 
     fields = form.get("fields", [])
     if not fields:
         return ConversationHandler.END
 
     if form.get("intro"):
-        intro = _inject_vars(form["intro"], user_id)
-        await update.message.reply_text(intro)
+        await update.message.reply_text(_inject_vars(form["intro"], user_id))
         await asyncio.sleep(0.5)
 
     step = session["step_index"]
@@ -533,7 +441,6 @@ async def _form_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if context.user_data.get("in_validation"):
         return FORM_STEP
 
-    # Reconstruire le contexte si perdu
     if not form_id:
         with get_db() as conn:
             row = conn.execute("""
@@ -541,18 +448,12 @@ async def _form_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 WHERE telegram_id = ? AND status = 'in_progress'
                 ORDER BY updated_at DESC LIMIT 1
             """, (user_id,)).fetchone()
-
         if not row:
-            await update.message.reply_text("⚠️ Aucun formulaire en cours. Utilise la commande pour recommencer.")
+            await update.message.reply_text("⚠️ Aucun formulaire en cours.")
             return ConversationHandler.END
-
-        session_id = row["id"]
-        form_id    = row["form_id"]
-        step       = row["step_index"]
-        context.user_data.update({
-            "form_id": form_id, "session_id": session_id,
-            "step": step, "multi_sel": [], "responses": {}
-        })
+        session_id = row["id"]; form_id = row["form_id"]; step = row["step_index"]
+        context.user_data.update({"form_id": form_id, "session_id": session_id,
+                                   "step": step, "multi_sel": [], "responses": {}})
 
     form   = get_form_by_id(form_id)
     fields = form.get("fields", [])
@@ -564,10 +465,8 @@ async def _form_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if update.message.contact:
         raw_answer = update.message.contact.phone_number
 
-    return await _process_answer(
-        update, context, form, fields, field, step,
-        session_id, form_id, user_id, raw_answer, progress=progress
-    )
+    return await _process_answer(update, context, form, fields, field, step,
+                                  session_id, form_id, user_id, raw_answer, progress=progress)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -590,18 +489,12 @@ async def _form_receive_callback(update: Update, context: ContextTypes.DEFAULT_T
                 WHERE telegram_id = ? AND status = 'in_progress'
                 ORDER BY updated_at DESC LIMIT 1
             """, (user_id,)).fetchone()
-
         if not row:
             await query.message.reply_text("⚠️ Aucun formulaire en cours.")
             return ConversationHandler.END
-
-        session_id = row["id"]
-        form_id    = row["form_id"]
-        step       = row["step_index"]
-        context.user_data.update({
-            "form_id": form_id, "session_id": session_id,
-            "step": step, "multi_sel": [], "responses": {}
-        })
+        session_id = row["id"]; form_id = row["form_id"]; step = row["step_index"]
+        context.user_data.update({"form_id": form_id, "session_id": session_id,
+                                   "step": step, "multi_sel": [], "responses": {}})
 
     form   = get_form_by_id(form_id)
     fields = form.get("fields", [])
@@ -611,21 +504,16 @@ async def _form_receive_callback(update: Update, context: ContextTypes.DEFAULT_T
     field = fields[step]
     data  = query.data
 
-    # Gestion multi-select
     if data.startswith("fmul_") and data != "fmul_validate":
-        parts = data.split("_", 2)
-        idx   = int(parts[1])
+        parts = data.split("_", 2); idx = int(parts[1])
         sel   = context.user_data.setdefault("multi_sel", [])
         opts  = field.get("opts", [])
         if idx in sel: sel.remove(idx)
         else:          sel.append(idx)
         new_kb = InlineKeyboardMarkup(
-            [[InlineKeyboardButton(
-                ("✅ " if i in sel else "☐ ") + o["t"],
-                callback_data=f"fmul_{i}_{o['t'][:35]}"
-            )] for i, o in enumerate(opts)]
-            + [[InlineKeyboardButton("✅ Valider ma sélection", callback_data="fmul_validate")]]
-        )
+            [[InlineKeyboardButton(("✅ " if i in sel else "☐ ") + o["t"],
+                                    callback_data=f"fmul_{i}_{o['t'][:35]}")] for i, o in enumerate(opts)]
+            + [[InlineKeyboardButton("✅ Valider ma sélection", callback_data="fmul_validate")]])
         try:
             await query.edit_message_reply_markup(new_kb)
         except Exception:
@@ -633,28 +521,22 @@ async def _form_receive_callback(update: Update, context: ContextTypes.DEFAULT_T
         return FORM_STEP
 
     if data == "fmul_validate":
-        sel        = context.user_data.get("multi_sel", [])
-        opts       = field.get("opts", [])
+        sel = context.user_data.get("multi_sel", [])
+        opts = field.get("opts", [])
         raw_answer = ", ".join(opts[i]["t"] for i in sorted(sel) if i < len(opts)) or "—"
         context.user_data["multi_sel"] = []
-    elif data == "fopt__skip":
-        raw_answer = "__skip__"
-    elif data == "fopt__info":
-        raw_answer = "__info__"
-    elif data.startswith("fopt_"):
-        raw_answer = data[5:]
-    else:
-        return FORM_STEP
+    elif data == "fopt__skip":   raw_answer = "__skip__"
+    elif data == "fopt__info":   raw_answer = "__info__"
+    elif data.startswith("fopt_"): raw_answer = data[5:]
+    else: return FORM_STEP
 
-    return await _process_answer(
-        update, context, form, fields, field, step,
-        session_id, form_id, user_id, raw_answer,
-        is_callback=True, progress=progress
-    )
+    return await _process_answer(update, context, form, fields, field, step,
+                                  session_id, form_id, user_id, raw_answer,
+                                  is_callback=True, progress=progress)
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# RÉCEPTION MÉDIAS — téléchargement mis en queue
+# RÉCEPTION MÉDIAS
 # ════════════════════════════════════════════════════════════════════════════
 
 async def _form_receive_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -672,15 +554,12 @@ async def _form_receive_media(update: Update, context: ContextTypes.DEFAULT_TYPE
     if step >= len(fields):
         return ConversationHandler.END
 
-    field   = fields[step]
-    ftype   = field.get("type")
-    file_id = None
-
+    field = fields[step]; ftype = field.get("type"); file_id = None
     try:
-        if ftype == "photo"    and update.message.photo:    file_id = update.message.photo[-1].file_id
-        elif ftype == "video"  and update.message.video:    file_id = update.message.video.file_id
-        elif ftype == "audio"  and update.message.voice:    file_id = update.message.voice.file_id
-        elif ftype == "audio"  and update.message.audio:    file_id = update.message.audio.file_id
+        if ftype == "photo"    and update.message.photo:     file_id = update.message.photo[-1].file_id
+        elif ftype == "video"  and update.message.video:     file_id = update.message.video.file_id
+        elif ftype == "audio"  and update.message.voice:     file_id = update.message.voice.file_id
+        elif ftype == "audio"  and update.message.audio:     file_id = update.message.audio.file_id
         elif ftype == "document" and update.message.document: file_id = update.message.document.file_id
     except Exception:
         pass
@@ -689,63 +568,42 @@ async def _form_receive_media(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("❌ Fichier non reconnu, réessaie.")
         return FORM_STEP
 
-    # Télécharger en arrière-plan, répondre immédiatement
     await update.message.reply_text("⏳ Fichier reçu, traitement en cours...")
-
-    local_url = await _download_media(context.bot, file_id, ftype)
+    local_url  = await _download_media(context.bot, file_id, ftype)
     raw_answer = local_url if local_url else file_id
 
-    return await _process_answer(
-        update, context, form, fields, field, step,
-        session_id, form_id, user_id, raw_answer, progress=progress
-    )
+    return await _process_answer(update, context, form, fields, field, step,
+                                  session_id, form_id, user_id, raw_answer, progress=progress)
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # TRAITEMENT COMMUN D'UNE RÉPONSE
 # ════════════════════════════════════════════════════════════════════════════
 
-async def _process_answer(
-    update, context,
-    form, fields, field, step,
-    session_id, form_id, user_id,
-    raw_answer: str,
-    is_callback: bool = False,
-    progress: bool = False,
-):
+async def _process_answer(update, context, form, fields, field, step,
+                           session_id, form_id, user_id, raw_answer: str,
+                           is_callback: bool = False, progress: bool = False):
     bot = context.bot
-
     is_correct, points, feedback = _evaluate_answer(field, raw_answer)
 
     if raw_answer not in ("__skip__", "__info__"):
-        save_response(
-            session_id, form_id, user_id,
-            field_id   = field.get("id", step),
-            field_type = field.get("type", "text"),
-            field_label= field.get("label", ""),
-            value      = raw_answer,
-            is_correct = is_correct,
-            points     = points,
-        )
+        save_response(session_id, form_id, user_id,
+                      field_id=field.get("id", step), field_type=field.get("type", "text"),
+                      field_label=field.get("label", ""), value=raw_answer,
+                      is_correct=is_correct, points=points)
         context.user_data["responses"][field.get("label", "")] = raw_answer
 
     if feedback:
         await bot.send_message(user_id, feedback)
         await asyncio.sleep(0.4)
 
-    cond_actions = _eval_conditions(
-        form.get("conditions", []),
-        context.user_data.get("responses", {})
-    )
-
-    next_step = step + 1
+    cond_actions = _eval_conditions(form.get("conditions", []), context.user_data.get("responses", {}))
+    next_step    = step + 1
     advance_session(session_id, next_step, add_score=points)
 
     if next_step >= len(fields):
-        # Finir le formulaire en tâche de fond pour ne pas bloquer
         async def _finish_bg():
             await _finish_form(update, context, form, session_id, form_id, user_id, cond_actions)
-
         enqueue(_finish_bg())
         return ConversationHandler.END
 
@@ -760,7 +618,6 @@ async def _process_answer(
 
 async def _finish_form(update, context, form, session_id, form_id, user_id, extra_cond_actions):
     bot = context.bot
-
     complete_session(session_id)
 
     link_id = context.user_data.get("pending_link_id") if context else None
@@ -795,10 +652,7 @@ async def _finish_form(update, context, form, session_id, form_id, user_id, extr
 async def _form_fallback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("form_id"):
         return ConversationHandler.END
-    await update.message.reply_text(
-        "⚠️ Je n'ai pas compris ta réponse.\n"
-        "Réponds à la question ou tape /cancel pour annuler."
-    )
+    await update.message.reply_text("⚠️ Je n'ai pas compris ta réponse.\nRéponds à la question ou tape /cancel.")
     return FORM_STEP
 
 
@@ -820,40 +674,31 @@ async def _form_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# ENVOI DIRECT (scheduler / broadcast)
+# ENVOI DIRECT / BROADCAST
 # ════════════════════════════════════════════════════════════════════════════
 
 async def send_form_to_user(bot, telegram_id: int, form_id: int, context=None):
     form = get_form_by_id(form_id)
-    if not form:
-        return
+    if not form: return
     fields  = form.get("fields", [])
     options = form.get("options", {}) or {}
-    if not fields:
-        return
+    if not fields: return
 
     session = get_or_create_session(form_id, telegram_id)
-
     if form.get("intro"):
-        intro = _inject_vars(form["intro"], telegram_id)
-        await bot.send_message(telegram_id, intro)
+        await bot.send_message(telegram_id, _inject_vars(form["intro"], telegram_id))
         await asyncio.sleep(0.4)
 
     if context:
-        context.user_data.update({
-            "form_id":    form_id,
-            "session_id": session["id"],
-            "step":       session["step_index"],
-            "progress":   options.get("progress", False),
-            "multi_sel":  [],
-            "responses":  {},
-        })
+        context.user_data.update({"form_id": form_id, "session_id": session["id"],
+                                   "step": session["step_index"],
+                                   "progress": options.get("progress", False),
+                                   "multi_sel": [], "responses": {}})
 
     await _send_field(bot, telegram_id, fields[0], 1, len(fields), options.get("progress", False))
 
 
 async def broadcast_form(bot, form_id: int, user_ids: list[int], admin_id: int = None):
-    """Broadcast via queue — ne sature pas l'event loop."""
     sent = errors = 0
 
     async def _send_one(uid):
@@ -879,8 +724,6 @@ async def broadcast_form(bot, form_id: int, user_ids: list[int], admin_id: int =
 
 def register_form_handlers(app: Application, bot, admin_id: int):
     app.bot_data["admin_id"] = admin_id
-
-    # Démarrer le worker au lancement de l'app
     app.post_init = setup_background_worker
 
     conv = ConversationHandler(
@@ -907,9 +750,7 @@ def register_form_handlers(app: Application, bot, admin_id: int):
             MessageHandler(filters.COMMAND, _form_cancel),
             MessageHandler(filters.ALL,     _form_fallback),
         ],
-        per_chat=False,
-        per_user=True,
-        allow_reentry=True,
+        per_chat=False, per_user=True, allow_reentry=True,
         conversation_timeout=600,
     )
 
