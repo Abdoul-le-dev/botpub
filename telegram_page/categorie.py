@@ -410,6 +410,8 @@ async def get_category_intersections(name_categorie: str):
             ORDER BY shared_count DESC
             LIMIT 10
         """, (name_categorie,)).fetchall()
+
+        print(rows)
     return [dict(r) for r in rows]
 
 
