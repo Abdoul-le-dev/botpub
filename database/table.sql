@@ -1,6 +1,6 @@
 -- ============================================================
 --  SCHÉMA COMPLET  –  Migration SQLite → MySQL
---  Source : preinscriptions.db
+--  Source : preincristion.db
 --  Généré automatiquement
 -- ============================================================
 
@@ -395,13 +395,13 @@ CREATE TABLE IF NOT EXISTS forms (
     type          VARCHAR(50)  NOT NULL,
     trigger_type  VARCHAR(50)  NOT NULL DEFAULT 'command',
     trigger_value TEXT,
-    intro         TEXT         DEFAULT '',
-    outro         TEXT         DEFAULT '',
-    fields        LONGTEXT     NOT NULL DEFAULT '[]',
-    actions       LONGTEXT     NOT NULL DEFAULT '[]',
-    conditions    LONGTEXT     NOT NULL DEFAULT '[]',
-    quiz_config   LONGTEXT     NOT NULL DEFAULT '{}',
-    options       LONGTEXT     NOT NULL DEFAULT '{}',
+    intro         TEXT    DEFAULT NULL,
+    outro         TEXT    DEFAULT NULL,
+    fields        LONGTEXT,
+    actions       LONGTEXT,
+    conditions    LONGTEXT,
+    quiz_config   LONGTEXT,
+    options       LONGTEXT,
     actif         TINYINT(1)   NOT NULL DEFAULT 1,
     cree_le       DATETIME     DEFAULT NOW(),
     modifie_le    DATETIME     DEFAULT NOW(),
@@ -440,7 +440,7 @@ CREATE TABLE IF NOT EXISTS form_submissions (
     score_final  INT      DEFAULT 0,
     score_max    INT      DEFAULT 0,
     pct          INT      DEFAULT 0,
-    actions_done LONGTEXT DEFAULT '[]',
+    actions_done LONGTEXT    DEFAULT NULL,
     submitted_at DATETIME DEFAULT NOW(),
     PRIMARY KEY (id),
     INDEX idx_submissions_form (form_id),
@@ -461,7 +461,7 @@ CREATE TABLE IF NOT EXISTS form_responses (
     is_correct  TINYINT(1),
     points      INT          DEFAULT 0,
     answered_at DATETIME     DEFAULT NOW(),
-    field_label TEXT         DEFAULT '',
+    field_label TEXT    DEFAULT NULL,
     created_at  DATETIME     DEFAULT NOW(),
     PRIMARY KEY (id),
     INDEX idx_responses_sess (session_id),
@@ -641,7 +641,7 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
     price_usd     FLOAT        NOT NULL,
     duration_days INT          NOT NULL DEFAULT 30,
     trial_days    INT          DEFAULT 0,
-    categories    TEXT         DEFAULT '[]',
+    categories    TEXT    DEFAULT NULL,
     description   TEXT,
     is_active     TINYINT(1)   DEFAULT 1,
     created_at    DATETIME     DEFAULT NOW(),
@@ -709,7 +709,7 @@ CREATE TABLE IF NOT EXISTS ia_prompts (
     id            INT          NOT NULL AUTO_INCREMENT,
     name          VARCHAR(255) NOT NULL,
     description   TEXT,
-    content       TEXT         NOT NULL DEFAULT '',
+    content       TEXT,
     return_format VARCHAR(20)  NOT NULL DEFAULT 'text',
     is_active     TINYINT(1)   DEFAULT 1,
     created_at    DATETIME     DEFAULT NOW(),
@@ -723,7 +723,7 @@ CREATE TABLE IF NOT EXISTS ia_functions (
     id          INT          NOT NULL AUTO_INCREMENT,
     name        VARCHAR(255) NOT NULL,
     description TEXT,
-    code        TEXT         NOT NULL DEFAULT '',
+    code        TEXT,
     is_active   TINYINT(1)   DEFAULT 1,
     created_at  DATETIME     DEFAULT NOW(),
     PRIMARY KEY (id)
