@@ -50,9 +50,11 @@ from telegram_page.gold.gold_engine import (
     calculate_lot,
     calculate_gains_losses,
     get_tp_level_for_capital,
-    get_conn,
+ 
 
 )
+
+from db import get_db 
 
 import telegram_page.gold.gold_engine as gold_engine
 
