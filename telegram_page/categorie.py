@@ -182,7 +182,7 @@ async def get_category_members(name_categorie: str, filters: dict = None):
         query  += " AND (m.created_at < ? OR m.created_at IS NULL)"
         params.append((datetime.now() - timedelta(days=21)).isoformat())
 
-    query += f" GROUP BY c.id ORDER BY c.created_at DESC LIMIT {limit} OFFSET {offset}"
+    query += f" GROUP BY c.id, c.id_user, c.created_at, u.name, u.phone, u.email ORDER BY c.created_at DESC LIMIT {limit} OFFSET {offset}"
 
     with get_db() as conn:
         members = [dict(r) for r in conn.execute(query, params).fetchall()]
@@ -191,7 +191,6 @@ async def get_category_members(name_categorie: str, filters: dict = None):
         ).fetchone()["n"]
 
     return {"members": members, "total": total, "limit": limit, "offset": offset}
-
 
 async def add_members_to_category(name_categorie: str, user_ids: list, added_by: str = "manual"):
     with get_db() as conn:
