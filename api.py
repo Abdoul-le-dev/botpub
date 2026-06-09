@@ -65,7 +65,7 @@ from telegram_page.trading_journal import (
 from telegram_page.automatisation.growth_tables import init_growth_tables
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_chat_tables() 
+    
     
     set_bot(bot)
     # init_forms_db()                          
