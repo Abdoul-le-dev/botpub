@@ -50,7 +50,7 @@ from ai_agent import agent_response_router, set_bot
 
 from telegram_page.chat_route import router as chat_router
 from telegram_page.automatisation.routes_growth import router as growth_router
-from telegram_page.chat import init_chat_tables, set_bot  
+from telegram_page.chat import  set_bot  
 from  telegram_page.ia_config_table import  router as ai_router
 
 from contextlib import asynccontextmanager
