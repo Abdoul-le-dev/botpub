@@ -114,15 +114,22 @@ async def schedule_daily_check(bot):
         except Exception as e:
             print(f"[daily_check] Erreur: {e}")
 
-async def _post_init(application):
-    print("[main] init_pool...")
-    await init_pool()
-    print("[main] Pool OK ✓")
-    await setup_background_worker(application)
-    asyncio.create_task(schedule_daily_check(application.bot))
 
 if __name__ == "__main__":
+    # 1. Créer un loop persistant
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # 2. Init le pool dans ce loop
+    loop.run_until_complete(init_pool())
+    print("[main] Pool OK ✓")
+
+    # 3. Construire l'app PTB
     app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
+
+    async def _post_init(application):
+        await setup_background_worker(application)
+        asyncio.create_task(schedule_daily_check(application.bot))
 
     app.post_init = _post_init
 
@@ -137,4 +144,4 @@ if __name__ == "__main__":
     set_gold_bot(app.bot)
 
     print("running...")
-    app.run_polling(poll_interval=1)  
+    app.run_polling(poll_interval=1)  # récupère le loop existant
