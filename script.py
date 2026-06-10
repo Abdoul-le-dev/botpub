@@ -10,7 +10,7 @@ from telegram.ext import (
 )
 from dotenv import load_dotenv
 
-from db import get_db   # ← pour save_user_default
+from db import get_db, init_pool
 
 from ai_agent import set_bot, log_unhandled_message
 from validation_handler import register_validation_handler
@@ -27,11 +27,11 @@ CATEGORIE  = "USER_PUB_1_NON_ACHAT"
 token      = os.getenv("tokens")
 
 
-# ── Remplacement de save_user_default (anciennement dans database.database) ──
-def save_user_default(user_id):
-    with get_db() as conn:
-        conn.execute(
-            "INSERT IGNORE INTO usersdefault (user_id, created_at) VALUES (?, NOW())",
+# ── save_user_default async ───────────────────────────────────────────────────
+async def save_user_default(user_id):
+    async with get_db() as cur:
+        await cur.execute(
+            "INSERT IGNORE INTO usersdefault (user_id, created_at) VALUES (%s, NOW())",
             (str(user_id),)
         )
 
@@ -48,7 +48,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     user_name = update.effective_user.first_name or "CONFERENCE 1"
     chat_id   = update.chat_join_request.chat.id
 
-    save_user_default(user_id)
+    await save_user_default(user_id)
 
     try:
         await update.chat_join_request.approve()
@@ -117,7 +117,13 @@ async def schedule_daily_check(bot):
 
 if __name__ == "__main__":
     app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
-    app.post_init = setup_background_worker()
+
+    async def _post_init(app):
+        await init_pool()                      # ← initialise le pool MySQL
+        await setup_background_worker(app)     # ← démarre le worker formulaires
+        asyncio.create_task(schedule_daily_check(app.bot))
+
+    app.post_init = _post_init
 
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
 
@@ -130,9 +136,6 @@ if __name__ == "__main__":
 
     set_bot(app.bot)
     set_gold_bot(app.bot)
-
-    async def _post_start(app):
-        asyncio.create_task(schedule_daily_check(app.bot))
 
     print("running...")
     app.run_polling(poll_interval=1)
