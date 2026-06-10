@@ -1,5 +1,5 @@
 """
-form_engine.py — v4 MySQL
+form_engine.py — v5 MySQL async
 Moteur d'exécution des formulaires dynamiques via Telegram.
 """
 
@@ -24,7 +24,6 @@ from form.form import (
     save_response, save_submission, get_session,
 )
 
-# ← Remplace la get_db() SQLite locale
 from db import get_db
 
 MEDIA_DIR = Path("media/forms")
@@ -75,12 +74,13 @@ def enqueue(coro):
 # HELPERS
 # ════════════════════════════════════════════════════════════════════════════
 
-def _get_prenom(telegram_id: int) -> str:
+async def _get_prenom(telegram_id: int) -> str:
     try:
-        with get_db() as conn:
-            row = conn.execute(
-                "SELECT name FROM users WHERE telegram_id = ?", (telegram_id,)
-            ).fetchone()
+        async with get_db() as cur:
+            await cur.execute(
+                "SELECT name FROM users WHERE telegram_id = %s", (telegram_id,)
+            )
+            row = await cur.fetchone()
             if row and row["name"]:
                 p = row["name"].strip()
                 if 1 <= len(p) <= 20:
@@ -90,9 +90,8 @@ def _get_prenom(telegram_id: int) -> str:
     return "l'ami"
 
 
-def _inject_vars(text: str, telegram_id: int, score: int = 0, total: int = 0) -> str:
+def _inject_vars(text: str, telegram_id: int, score: int = 0, total: int = 0, prenom: str = "l'ami") -> str:
     from datetime import date
-    prenom = _get_prenom(telegram_id)
     return (text
             .replace("+prenom", prenom)
             .replace("+score",  str(score))
@@ -106,8 +105,9 @@ def _inject_vars(text: str, telegram_id: int, score: int = 0, total: int = 0) ->
 
 async def has_completed_form(form_id: int, telegram_id: int) -> bool:
     try:
-        with get_db() as conn:
-            form = conn.execute("SELECT fields FROM forms WHERE id = ?", (form_id,)).fetchone()
+        async with get_db() as cur:
+            await cur.execute("SELECT fields FROM forms WHERE id = %s", (form_id,))
+            form = await cur.fetchone()
             if not form:
                 return False
             fields = json.loads(form["fields"])
@@ -115,10 +115,13 @@ async def has_completed_form(form_id: int, telegram_id: int) -> bool:
             if not required_fields:
                 return False
             required_ids = {str(f["id"]) for f in required_fields}
-            responses = conn.execute("""
+
+            await cur.execute("""
                 SELECT field_id, value FROM form_responses
-                WHERE form_id = ? AND telegram_id = ?
-            """, (form_id, telegram_id)).fetchall()
+                WHERE form_id = %s AND telegram_id = %s
+            """, (form_id, telegram_id))
+            responses = await cur.fetchall()
+
             if not responses:
                 return False
             answered_ids = {str(r["field_id"]) for r in responses
@@ -277,22 +280,23 @@ async def _run_actions(bot, telegram_id: int, actions: list, context_vars: dict)
         value = str(action.get("value", ""))
         try:
             if atype == "Ajouter catégorie":
-                # ← Correction : utilise categorie.py au lieu de database.database
                 from telegram_page.categorie import add_members_to_category
                 await add_members_to_category(value, [telegram_id])
                 done.append(f"categorie:{value}")
 
             elif atype == "Envoyer message":
+                prenom = await _get_prenom(telegram_id)
                 msg = _inject_vars(value, telegram_id,
                                    score=context_vars.get("score", 0),
-                                   total=context_vars.get("total", 0))
+                                   total=context_vars.get("total", 0),
+                                   prenom=prenom)
                 await bot.send_message(telegram_id, msg)
                 done.append("message_sent")
 
             elif atype == "Notifier admin":
                 admin_id = context_vars.get("admin_id")
                 if admin_id:
-                    prenom = _get_prenom(telegram_id)
+                    prenom = await _get_prenom(telegram_id)
                     await bot.send_message(
                         admin_id,
                         f"📋 Nouveau formulaire soumis\nUtilisateur : {prenom} ({telegram_id})\n{value}"
@@ -309,17 +313,18 @@ async def _run_actions(bot, telegram_id: int, actions: list, context_vars: dict)
 # ════════════════════════════════════════════════════════════════════════════
 
 async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: int = None):
-    with get_db() as conn:
+    async with get_db() as cur:
         if form_id:
-            sessions = conn.execute("""
+            await cur.execute("""
                 SELECT id, telegram_id, form_id, step_index FROM form_sessions
-                WHERE status = 'in_progress' AND form_id = ?
-            """, (form_id,)).fetchall()
+                WHERE status = 'in_progress' AND form_id = %s
+            """, (form_id,))
         else:
-            sessions = conn.execute("""
+            await cur.execute("""
                 SELECT id, telegram_id, form_id, step_index FROM form_sessions
                 WHERE status = 'in_progress'
-            """).fetchall()
+            """)
+        sessions = await cur.fetchall()
 
     if not sessions:
         if admin_id:
@@ -334,8 +339,8 @@ async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: in
         try:
             form = get_form_by_id(fid)
             if not form: return
-            fields = form.get("fields", [])
-            title  = form.get("name", "le formulaire")
+            fields  = form.get("fields", [])
+            title   = form.get("name", "le formulaire")
             command = form.get("command", "")
             q_actuelle = min(step_index + 1, len(fields))
             if command:
@@ -415,7 +420,8 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     if form.get("intro"):
-        await update.message.reply_text(_inject_vars(form["intro"], user_id))
+        prenom = await _get_prenom(user_id)
+        await update.message.reply_text(_inject_vars(form["intro"], user_id, prenom=prenom))
         await asyncio.sleep(0.5)
 
     step = session["step_index"]
@@ -442,12 +448,13 @@ async def _form_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return FORM_STEP
 
     if not form_id:
-        with get_db() as conn:
-            row = conn.execute("""
+        async with get_db() as cur:
+            await cur.execute("""
                 SELECT id, form_id, step_index FROM form_sessions
-                WHERE telegram_id = ? AND status = 'in_progress'
+                WHERE telegram_id = %s AND status = 'in_progress'
                 ORDER BY updated_at DESC LIMIT 1
-            """, (user_id,)).fetchone()
+            """, (user_id,))
+            row = await cur.fetchone()
         if not row:
             await update.message.reply_text("⚠️ Aucun formulaire en cours.")
             return ConversationHandler.END
@@ -483,12 +490,13 @@ async def _form_receive_callback(update: Update, context: ContextTypes.DEFAULT_T
     progress   = context.user_data.get("progress", False)
 
     if not form_id:
-        with get_db() as conn:
-            row = conn.execute("""
+        async with get_db() as cur:
+            await cur.execute("""
                 SELECT id, form_id, step_index FROM form_sessions
-                WHERE telegram_id = ? AND status = 'in_progress'
+                WHERE telegram_id = %s AND status = 'in_progress'
                 ORDER BY updated_at DESC LIMIT 1
-            """, (user_id,)).fetchone()
+            """, (user_id,))
+            row = await cur.fetchone()
         if not row:
             await query.message.reply_text("⚠️ Aucun formulaire en cours.")
             return ConversationHandler.END
@@ -525,8 +533,8 @@ async def _form_receive_callback(update: Update, context: ContextTypes.DEFAULT_T
         opts = field.get("opts", [])
         raw_answer = ", ".join(opts[i]["t"] for i in sorted(sel) if i < len(opts)) or "—"
         context.user_data["multi_sel"] = []
-    elif data == "fopt__skip":   raw_answer = "__skip__"
-    elif data == "fopt__info":   raw_answer = "__info__"
+    elif data == "fopt__skip":     raw_answer = "__skip__"
+    elif data == "fopt__info":     raw_answer = "__info__"
     elif data.startswith("fopt_"): raw_answer = data[5:]
     else: return FORM_STEP
 
@@ -556,10 +564,10 @@ async def _form_receive_media(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     field = fields[step]; ftype = field.get("type"); file_id = None
     try:
-        if ftype == "photo"    and update.message.photo:     file_id = update.message.photo[-1].file_id
-        elif ftype == "video"  and update.message.video:     file_id = update.message.video.file_id
-        elif ftype == "audio"  and update.message.voice:     file_id = update.message.voice.file_id
-        elif ftype == "audio"  and update.message.audio:     file_id = update.message.audio.file_id
+        if ftype == "photo"    and update.message.photo:      file_id = update.message.photo[-1].file_id
+        elif ftype == "video"  and update.message.video:      file_id = update.message.video.file_id
+        elif ftype == "audio"  and update.message.voice:      file_id = update.message.voice.file_id
+        elif ftype == "audio"  and update.message.audio:      file_id = update.message.audio.file_id
         elif ftype == "document" and update.message.document: file_id = update.message.document.file_id
     except Exception:
         pass
@@ -639,7 +647,8 @@ async def _finish_form(update, context, form, session_id, form_id, user_id, extr
     save_submission(session_id, form_id, user_id, done)
 
     if form.get("outro"):
-        outro = _inject_vars(form["outro"], user_id, score=score, total=score_max)
+        prenom = await _get_prenom(user_id)
+        outro  = _inject_vars(form["outro"], user_id, score=score, total=score_max, prenom=prenom)
         await bot.send_message(user_id, outro, reply_markup=ReplyKeyboardRemove())
 
     return ConversationHandler.END
@@ -686,7 +695,8 @@ async def send_form_to_user(bot, telegram_id: int, form_id: int, context=None):
 
     session = get_or_create_session(form_id, telegram_id)
     if form.get("intro"):
-        await bot.send_message(telegram_id, _inject_vars(form["intro"], telegram_id))
+        prenom = await _get_prenom(telegram_id)
+        await bot.send_message(telegram_id, _inject_vars(form["intro"], telegram_id, prenom=prenom))
         await asyncio.sleep(0.4)
 
     if context:

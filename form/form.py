@@ -1,31 +1,29 @@
 """
-form/form.py — v4 MySQL
+form/form.py — v5 MySQL async
 Tables et CRUD pour le système de formulaires dynamiques.
 """
 
 import json
 from datetime import datetime
 
-from db import get_db   # ← pool MySQL
+from db import get_db
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # INIT / MIGRATION
 # ════════════════════════════════════════════════════════════════════════════
 
-def migrate_forms_db():
-    """Ajoute les colonnes manquantes sans casser les données."""
+async def migrate_forms_db():
     try:
-        with get_db() as conn:
-            conn.execute("ALTER TABLE form_responses ADD COLUMN field_label TEXT DEFAULT ''")
+        async with get_db() as cur:
+            await cur.execute("ALTER TABLE form_responses ADD COLUMN field_label TEXT DEFAULT ''")
         print("[forms_db] Colonne field_label ajoutée.")
     except Exception:
-        pass  # déjà présente
+        pass
 
 
-def init_forms_db():
-    """Schéma déjà créé par schema_mysql.sql — on run juste la migration."""
-    migrate_forms_db()
+async def init_forms_db():
+    await migrate_forms_db()
     print("[forms_db] Tables initialisées.")
 
 
@@ -51,7 +49,7 @@ def _deserialize_form(row: dict) -> dict:
 # CRUD FORMULAIRES
 # ════════════════════════════════════════════════════════════════════════════
 
-def save_form(payload: dict) -> int:
+async def save_form(payload: dict) -> int:
     trigger_raw = payload.get("trigger", "Commande manuelle")
     trigger_map = {
         "Commande manuelle":        ("command",   None),
@@ -65,25 +63,24 @@ def save_form(payload: dict) -> int:
     if not command.startswith("/"):
         command = "/" + command
 
-    fields     = json.dumps(payload.get("fields",     []),  ensure_ascii=False)
-    actions    = json.dumps(payload.get("actions",    []),  ensure_ascii=False)
-    conditions = json.dumps(payload.get("conditions", []),  ensure_ascii=False)
-    quiz_cfg   = json.dumps(payload.get("quiz_config",{}),  ensure_ascii=False)
-    options    = json.dumps(payload.get("options",    {}),  ensure_ascii=False)
+    fields     = json.dumps(payload.get("fields",     []), ensure_ascii=False)
+    actions    = json.dumps(payload.get("actions",    []), ensure_ascii=False)
+    conditions = json.dumps(payload.get("conditions", []), ensure_ascii=False)
+    quiz_cfg   = json.dumps(payload.get("quiz_config",{}), ensure_ascii=False)
+    options    = json.dumps(payload.get("options",    {}), ensure_ascii=False)
 
-    with get_db() as conn:
-        existing = conn.execute(
-            "SELECT id FROM forms WHERE command = ?", (command,)
-        ).fetchone()
+    async with get_db() as cur:
+        await cur.execute("SELECT id FROM forms WHERE command = %s", (command,))
+        existing = await cur.fetchone()
 
         if existing:
-            conn.execute("""
+            await cur.execute("""
                 UPDATE forms SET
-                    name=?, type=?, trigger_type=?, trigger_value=?,
-                    intro=?, outro=?,
-                    fields=?, actions=?, conditions=?, quiz_config=?, options=?,
+                    name=%s, type=%s, trigger_type=%s, trigger_value=%s,
+                    intro=%s, outro=%s,
+                    fields=%s, actions=%s, conditions=%s, quiz_config=%s, options=%s,
                     actif=1, modifie_le=NOW()
-                WHERE command=?
+                WHERE command=%s
             """, (
                 payload.get("name", ""), payload.get("type", "custom"),
                 trigger_type, trigger_value,
@@ -92,104 +89,107 @@ def save_form(payload: dict) -> int:
             ))
             return existing["id"]
         else:
-            conn.execute("""
+            await cur.execute("""
                 INSERT INTO forms
                     (name, command, type, trigger_type, trigger_value,
                      intro, outro, fields, actions, conditions, quiz_config, options)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (
                 payload.get("name", ""), command, payload.get("type", "custom"),
                 trigger_type, trigger_value,
                 payload.get("intro", ""), payload.get("outro", ""),
                 fields, actions, conditions, quiz_cfg, options
             ))
-            return conn.execute("SELECT LAST_INSERT_ID() as id").fetchone()["id"]
+            return cur.lastrowid
 
 
-def get_form_by_command(command: str) -> dict | None:
+async def get_form_by_command(command: str) -> dict | None:
     if not command.startswith("/"):
         command = "/" + command
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM forms WHERE command=? AND actif=1", (command,)
-        ).fetchone()
+    async with get_db() as cur:
+        await cur.execute("SELECT * FROM forms WHERE command=%s AND actif=1", (command,))
+        row = await cur.fetchone()
     return _deserialize_form(dict(row)) if row else None
 
 
-def get_form_by_id(form_id: int) -> dict | None:
-    with get_db() as conn:
-        row = conn.execute("SELECT * FROM forms WHERE id=?", (form_id,)).fetchone()
+async def get_form_by_id(form_id: int) -> dict | None:
+    async with get_db() as cur:
+        await cur.execute("SELECT * FROM forms WHERE id=%s", (form_id,))
+        row = await cur.fetchone()
     return _deserialize_form(dict(row)) if row else None
 
 
-def get_all_forms(actif_only: bool = True) -> list[dict]:
-    with get_db() as conn:
-        q    = "SELECT * FROM forms" + (" WHERE actif=1" if actif_only else "") + " ORDER BY id DESC"
-        rows = conn.execute(q).fetchall()
+async def get_all_forms(actif_only: bool = True) -> list[dict]:
+    async with get_db() as cur:
+        q = "SELECT * FROM forms" + (" WHERE actif=1" if actif_only else "") + " ORDER BY id DESC"
+        await cur.execute(q)
+        rows = await cur.fetchall()
     return [_deserialize_form(dict(r)) for r in rows]
 
 
-def toggle_form(form_id: int, actif: bool):
-    with get_db() as conn:
-        conn.execute("UPDATE forms SET actif=? WHERE id=?", (1 if actif else 0, form_id))
+async def toggle_form(form_id: int, actif: bool):
+    async with get_db() as cur:
+        await cur.execute("UPDATE forms SET actif=%s WHERE id=%s", (1 if actif else 0, form_id))
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # SESSIONS
 # ════════════════════════════════════════════════════════════════════════════
 
-def get_or_create_session(form_id: int, telegram_id: int) -> dict:
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM form_sessions WHERE form_id=? AND telegram_id=?",
+async def get_or_create_session(form_id: int, telegram_id: int) -> dict:
+    async with get_db() as cur:
+        await cur.execute(
+            "SELECT * FROM form_sessions WHERE form_id=%s AND telegram_id=%s",
             (form_id, telegram_id)
-        ).fetchone()
+        )
+        row = await cur.fetchone()
 
         if row:
             session = dict(row)
             if session["status"] == "completed":
-                conn.execute("DELETE FROM form_sessions WHERE id=?", (session["id"],))
+                await cur.execute("DELETE FROM form_sessions WHERE id=%s", (session["id"],))
             else:
                 return session
 
-        conn.execute("""
+        await cur.execute("""
             INSERT INTO form_sessions (form_id, telegram_id, step_index, status, score)
-            VALUES (?,?,0,'in_progress',0)
+            VALUES (%s,%s,0,'in_progress',0)
         """, (form_id, telegram_id))
-        new_id = conn.execute("SELECT LAST_INSERT_ID() as id").fetchone()["id"]
+        new_id = cur.lastrowid
 
     return {"id": new_id, "form_id": form_id, "telegram_id": telegram_id,
             "step_index": 0, "status": "in_progress", "score": 0}
 
 
-def advance_session(session_id: int, new_step: int, add_score: int = 0):
-    with get_db() as conn:
-        conn.execute("""
+async def advance_session(session_id: int, new_step: int, add_score: int = 0):
+    async with get_db() as cur:
+        await cur.execute("""
             UPDATE form_sessions
-            SET step_index=?, score=score+?, updated_at=NOW()
-            WHERE id=?
+            SET step_index=%s, score=score+%s, updated_at=NOW()
+            WHERE id=%s
         """, (new_step, add_score, session_id))
 
 
-def complete_session(session_id: int):
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE form_sessions SET status='completed', updated_at=NOW() WHERE id=?",
+async def complete_session(session_id: int):
+    async with get_db() as cur:
+        await cur.execute(
+            "UPDATE form_sessions SET status='completed', updated_at=NOW() WHERE id=%s",
             (session_id,)
         )
 
 
-def abandon_session(session_id: int):
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE form_sessions SET status='abandoned', updated_at=NOW() WHERE id=?",
+async def abandon_session(session_id: int):
+    async with get_db() as cur:
+        await cur.execute(
+            "UPDATE form_sessions SET status='abandoned', updated_at=NOW() WHERE id=%s",
             (session_id,)
         )
 
 
-def get_session(session_id: int) -> dict | None:
-    with get_db() as conn:
-        row = conn.execute("SELECT * FROM form_sessions WHERE id=?", (session_id,)).fetchone()
+async def get_session(session_id: int) -> dict | None:
+    async with get_db() as cur:
+        await cur.execute("SELECT * FROM form_sessions WHERE id=%s", (session_id,))
+        row = await cur.fetchone()
     return dict(row) if row else None
 
 
@@ -197,16 +197,16 @@ def get_session(session_id: int) -> dict | None:
 # RÉPONSES
 # ════════════════════════════════════════════════════════════════════════════
 
-def save_response(session_id, form_id, telegram_id, field_id, field_type,
-                  value, field_label="", is_correct=None, points=0):
+async def save_response(session_id, form_id, telegram_id, field_id, field_type,
+                        value, field_label="", is_correct=None, points=0):
     val     = json.dumps(value, ensure_ascii=False) if isinstance(value, (list, dict)) else str(value)
     correct = None if is_correct is None else (1 if is_correct else 0)
-    with get_db() as conn:
-        conn.execute("""
+    async with get_db() as cur:
+        await cur.execute("""
             INSERT INTO form_responses
                 (session_id, form_id, telegram_id, field_id, field_type,
                  field_label, value, is_correct, points)
-            VALUES (?,?,?,?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (session_id, form_id, telegram_id, field_id, field_type,
               field_label or "", val, correct, points))
 
@@ -215,24 +215,22 @@ def save_response(session_id, form_id, telegram_id, field_id, field_type,
 # SOUMISSIONS
 # ════════════════════════════════════════════════════════════════════════════
 
-def save_submission(session_id: int, form_id: int, telegram_id: int, actions_done: list) -> int:
-    with get_db() as conn:
-        session = conn.execute(
-            "SELECT score FROM form_sessions WHERE id=?", (session_id,)
-        ).fetchone()
+async def save_submission(session_id: int, form_id: int, telegram_id: int, actions_done: list) -> int:
+    async with get_db() as cur:
+        await cur.execute("SELECT score FROM form_sessions WHERE id=%s", (session_id,))
+        session     = await cur.fetchone()
         score_final = session["score"] if session else 0
 
-        form = conn.execute(
-            "SELECT quiz_config FROM forms WHERE id=?", (form_id,)
-        ).fetchone()
+        await cur.execute("SELECT quiz_config FROM forms WHERE id=%s", (form_id,))
+        form      = await cur.fetchone()
         quiz_cfg  = json.loads(form["quiz_config"]) if form and form["quiz_config"] else {}
         score_max = int(quiz_cfg.get("max", 0))
         pct       = round(score_final / score_max * 100) if score_max > 0 else 0
 
-        conn.execute("""
+        await cur.execute("""
             INSERT INTO form_submissions
                 (session_id, form_id, telegram_id, score_final, score_max, pct, actions_done)
-            VALUES (?,?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
             ON DUPLICATE KEY UPDATE
                 score_final  = VALUES(score_final),
                 score_max    = VALUES(score_max),
@@ -240,18 +238,26 @@ def save_submission(session_id: int, form_id: int, telegram_id: int, actions_don
                 actions_done = VALUES(actions_done)
         """, (session_id, form_id, telegram_id, score_final, score_max, pct,
               json.dumps(actions_done, ensure_ascii=False)))
-        return conn.execute("SELECT LAST_INSERT_ID() as id").fetchone()["id"]
+        return cur.lastrowid
 
 
 # ════════════════════════════════════════════════════════════════════════════
 # STATS
 # ════════════════════════════════════════════════════════════════════════════
 
-def get_form_stats(form_id: int) -> dict:
-    with get_db() as conn:
-        total     = conn.execute("SELECT COUNT(*) as n FROM form_sessions WHERE form_id=?", (form_id,)).fetchone()["n"]
-        completed = conn.execute("SELECT COUNT(*) as n FROM form_sessions WHERE form_id=? AND status='completed'", (form_id,)).fetchone()["n"]
-        avg_score = conn.execute("SELECT AVG(score_final) as s FROM form_submissions WHERE form_id=?", (form_id,)).fetchone()["s"]
+async def get_form_stats(form_id: int) -> dict:
+    async with get_db() as cur:
+        await cur.execute("SELECT COUNT(*) as n FROM form_sessions WHERE form_id=%s", (form_id,))
+        total = (await cur.fetchone())["n"]
+
+        await cur.execute(
+            "SELECT COUNT(*) as n FROM form_sessions WHERE form_id=%s AND status='completed'", (form_id,)
+        )
+        completed = (await cur.fetchone())["n"]
+
+        await cur.execute("SELECT AVG(score_final) as s FROM form_submissions WHERE form_id=%s", (form_id,))
+        avg_score = (await cur.fetchone())["s"]
+
     return {
         "form_id": form_id, "total": total, "completed": completed,
         "completion_pct": round(completed / total * 100) if total else 0,
@@ -259,36 +265,40 @@ def get_form_stats(form_id: int) -> dict:
     }
 
 
-def get_form_responses(form_id: int, limit: int = 100) -> list[dict]:
-    with get_db() as conn:
-        rows = conn.execute("""
+async def get_form_responses(form_id: int, limit: int = 100) -> list[dict]:
+    async with get_db() as cur:
+        await cur.execute("""
             SELECT s.telegram_id, s.score_final, s.score_max, s.pct, s.submitted_at, u.name
             FROM form_submissions s
             LEFT JOIN users u ON u.telegram_id = s.telegram_id
-            WHERE s.form_id=? ORDER BY s.submitted_at DESC LIMIT ?
-        """, (form_id, limit)).fetchall()
+            WHERE s.form_id=%s ORDER BY s.submitted_at DESC LIMIT %s
+        """, (form_id, limit))
+        rows = await cur.fetchall()
     return [dict(r) for r in rows]
 
 
-def get_user_responses_for_form(form_id: int, telegram_id: int) -> list[dict]:
-    with get_db() as conn:
-        session = conn.execute(
-            "SELECT id FROM form_sessions WHERE form_id=? AND telegram_id=? ORDER BY id DESC LIMIT 1",
+async def get_user_responses_for_form(form_id: int, telegram_id: int) -> list[dict]:
+    async with get_db() as cur:
+        await cur.execute(
+            "SELECT id FROM form_sessions WHERE form_id=%s AND telegram_id=%s ORDER BY id DESC LIMIT 1",
             (form_id, telegram_id)
-        ).fetchone()
+        )
+        session = await cur.fetchone()
         if not session:
             return []
-        rows = conn.execute("""
+
+        await cur.execute("""
             SELECT field_id, field_type, field_label, value, is_correct, points, answered_at
-            FROM form_responses WHERE session_id=? ORDER BY answered_at
-        """, (session["id"],)).fetchall()
+            FROM form_responses WHERE session_id=%s ORDER BY answered_at
+        """, (session["id"],))
+        rows = await cur.fetchall()
 
     result = []
     for r in rows:
         row = dict(r)
         val = row.get("value", "")
         try:
-            parsed    = json.loads(val)
+            parsed   = json.loads(val)
             row["value"] = parsed if isinstance(parsed, str) else val
         except Exception:
             row["value"] = val

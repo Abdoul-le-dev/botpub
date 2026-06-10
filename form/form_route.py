@@ -173,12 +173,13 @@ async def api_send_form(form_id: int, payload: dict):
 
     if not user_ids and payload.get("category"):
         cat = payload["category"]
-        with get_db() as conn:
-            rows = conn.execute("""
+        async with get_db() as cur:
+            await cur.execute("""
                 SELECT DISTINCT u.telegram_id FROM users u
                 JOIN categories c ON c.id_user = u.telegram_id
-                WHERE c.name_categorie = ?
-            """, (cat,)).fetchall()
+                WHERE c.name_categorie = %s
+            """, (cat,))
+            rows = await cur.fetchall()
         user_ids = [r["telegram_id"] for r in rows]
 
     if not user_ids:
