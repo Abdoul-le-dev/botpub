@@ -82,7 +82,7 @@ from form.form_scheduler import start_scheduler, stop_scheduler
 async def lifespan(app: FastAPI):
     await init_pool()
     set_bot(bot)
-    start_scheduler(bot, admin_id=571718066)
+    await start_scheduler(bot, admin_id=571718066)
     set_trading_bot(bot)
     set_gold_bot(bot)
     yield
