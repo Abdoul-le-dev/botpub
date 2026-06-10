@@ -80,7 +80,7 @@ from form.form_scheduler import start_scheduler, stop_scheduler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_pool()  
+    await init_pool()
     set_bot(bot)
     start_scheduler(bot, admin_id=571718066)
     set_trading_bot(bot)
@@ -129,7 +129,7 @@ class RequestData(BaseModel):
 
 
 # ════════════════════════════════════════════════════════════════════════
-# ROUTES LEGACY
+# ROUTES RACINE
 # ════════════════════════════════════════════════════════════════════════
 
 @app.get("/")
@@ -143,16 +143,6 @@ async def api_broadcast(payload: dict):
     return report
 
 
-@app.get("/categories")
-async def api_get_categorie():
-    async with get_db() as cur:
-        await cur.execute(
-            "SELECT name_categorie, COUNT(*) as total FROM categories GROUP BY name_categorie"
-        )
-        rows = await cur.fetchall()
-    return [{"name": r["name_categorie"], "total": r["total"]} for r in rows]
-
-
 @app.get("/broadcast/history")
 async def api_get_broadcast_history():
     async with get_db() as cur:
@@ -162,14 +152,10 @@ async def api_get_broadcast_history():
         rows = await cur.fetchall()
     return rows
 
-# ════════════════════════════════════════════════════════════════════════
-# STATS GLOBALES
-# ════════════════════════════════════════════════════════════════════════
 
-@app.get("/categories/stats")
-async def api_categories_stats():
-    return await get_categories_stats()
-
+# ════════════════════════════════════════════════════════════════════════
+# DASHBOARD
+# ════════════════════════════════════════════════════════════════════════
 
 @app.get("/dashboard/stats")
 async def api_dashboard_stats():
@@ -189,13 +175,66 @@ async def api_dashboard_stats():
 
 
 # ════════════════════════════════════════════════════════════════════════
-# CRUD CATÉGORIES
+# CATÉGORIES — routes STATIQUES en premier (avant les dynamiques /{name})
 # ════════════════════════════════════════════════════════════════════════
 
+# ── Stats globales ──
+@app.get("/categories/stats")
+async def api_categories_stats():
+    return await get_categories_stats()
+
+
+# ── Liste legacy (broadcast page) ──
+@app.get("/categories")
+async def api_get_categorie():
+    async with get_db() as cur:
+        await cur.execute(
+            "SELECT name_categorie, COUNT(*) as total FROM categories GROUP BY name_categorie"
+        )
+        rows = await cur.fetchall()
+    return [{"name": r["name_categorie"], "total": r["total"]} for r in rows]
+
+
+# ── Liste complète (page catégories) ──
 @app.get("/categorie")
 async def api_get_categories():
     return await get_categories()
 
+
+# ── Créer une catégorie ──
+@app.post("/categories")
+async def api_create_category(payload: dict):
+    if not payload.get("name_categorie"):
+        raise HTTPException(status_code=400, detail="name_categorie requis")
+    return await create_category(payload)
+
+
+# ── Déplacer des membres (statique — AVANT /{name_categorie}/members) ──
+@app.post("/categories/members/move")
+async def api_move_members(payload: dict):
+    for field in ["source", "destination", "user_ids"]:
+        if field not in payload:
+            raise HTTPException(status_code=400, detail=f"{field} requis")
+    return await move_members(payload)
+
+
+# ── Fusionner (statique — AVANT /{name_categorie}) ──
+@app.post("/categories/merge")
+async def api_merge_categories(payload: dict):
+    if not payload.get("target") or not payload.get("sources"):
+        raise HTTPException(status_code=400, detail="target et sources requis")
+    return await merge_categories(payload["target"], payload["sources"])
+
+
+# ── Supprimer une règle (statique — AVANT DELETE /{name_categorie}) ──
+@app.delete("/categories/rules/{rule_id}")
+async def api_delete_rule(rule_id: int):
+    return await delete_category_rule(rule_id)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# CATÉGORIES — routes DYNAMIQUES /{name_categorie}
+# ════════════════════════════════════════════════════════════════════════
 
 @app.get("/categories/{name_categorie}")
 async def api_get_category(name_categorie: str):
@@ -205,13 +244,6 @@ async def api_get_category(name_categorie: str):
     return cat
 
 
-@app.post("/categories")
-async def api_create_category(payload: dict):
-    if not payload.get("name_categorie"):
-        raise HTTPException(status_code=400, detail="name_categorie requis")
-    return await create_category(payload)
-
-
 @app.put("/categories/{name_categorie}")
 async def api_update_category(name_categorie: str, payload: dict):
     return await update_category(name_categorie, payload)
@@ -219,12 +251,11 @@ async def api_update_category(name_categorie: str, payload: dict):
 
 @app.delete("/categories/{name_categorie}")
 async def api_delete_category(name_categorie: str):
-    return {"status": "not_implemented"}
+    from telegram_page.categorie import delete_category
+    return await delete_category(name_categorie)
 
 
-# ════════════════════════════════════════════════════════════════════════
-# MEMBRES
-# ════════════════════════════════════════════════════════════════════════
+# ── Membres ──
 
 @app.get("/categories/{name_categorie}/members")
 async def api_get_members(
@@ -233,7 +264,7 @@ async def api_get_members(
     active_only:    bool = False,
     inactive_only:  bool = False,
     limit:          int  = 50,
-    offset:         int  = 0
+    offset:         int  = 0,
 ):
     return await get_category_members(name_categorie, {
         "search": search, "active_only": active_only,
@@ -255,20 +286,7 @@ async def api_remove_member(name_categorie: str, telegram_id: int):
     return await remove_member_from_category(name_categorie, telegram_id)
 
 
-@app.post("/categories/members/move")
-async def api_move_members(payload: dict):
-    for field in ["source", "destination", "user_ids"]:
-        if field not in payload:
-            raise HTTPException(status_code=400, detail=f"{field} requis")
-    return await move_members(payload)
-
-
-@app.post("/categories/merge")
-async def api_merge_categories(payload: dict):
-    if not payload.get("target") or not payload.get("sources"):
-        raise HTTPException(status_code=400, detail="target et sources requis")
-    return await merge_categories(payload["target"], payload["sources"])
-
+# ── Import CSV ──
 
 @app.post("/categories/{name_categorie}/import")
 async def api_import_csv(name_categorie: str, file: UploadFile = File(...)):
@@ -288,9 +306,7 @@ async def api_import_csv(name_categorie: str, file: UploadFile = File(...)):
     return await import_members_csv(name_categorie, user_ids)
 
 
-# ════════════════════════════════════════════════════════════════════════
-# RÈGLES
-# ════════════════════════════════════════════════════════════════════════
+# ── Règles ──
 
 @app.get("/categories/{name_categorie}/rules")
 async def api_get_rules(name_categorie: str):
@@ -304,14 +320,7 @@ async def api_add_rule(name_categorie: str, payload: dict):
     return await add_category_rule(name_categorie, payload)
 
 
-@app.delete("/categories/rules/{rule_id}")
-async def api_delete_rule(rule_id: int):
-    return await delete_category_rule(rule_id)
-
-
-# ════════════════════════════════════════════════════════════════════════
-# STATS & INTERSECTIONS
-# ════════════════════════════════════════════════════════════════════════
+# ── Stats & intersections ──
 
 @app.get("/categories/{name_categorie}/stats")
 async def api_category_stats(name_categorie: str):
