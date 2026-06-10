@@ -43,19 +43,14 @@ POOL_SIZE = 10
 _pool = None
 
 
-async def _post_init(app):
-    try:
-        print("[post_init] Démarrage...")
-        await init_pool()
-        print("[post_init] Pool OK ✓")
-        await setup_background_worker(app)
-        print("[post_init] Worker OK ✓")
-        asyncio.create_task(schedule_daily_check(app.bot))
-        print("[post_init] Terminé ✓")
-    except Exception as e:
-        print(f"[post_init] ERREUR: {e}")
-        import traceback
-        traceback.print_exc()
+async def init_pool():
+    """Appeler une seule fois au démarrage (dans le lifespan FastAPI)."""
+    global _pool
+    _pool = await aiomysql.create_pool(
+        minsize=2,
+        maxsize=POOL_SIZE,
+        **DB_CONFIG,
+    )
 
 
 async def close_pool():

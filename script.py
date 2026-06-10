@@ -119,9 +119,18 @@ if __name__ == "__main__":
     app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
 
     async def _post_init(app):
-        await init_pool()                      # ← initialise le pool MySQL
-        await setup_background_worker(app)     # ← démarre le worker formulaires
-        asyncio.create_task(schedule_daily_check(app.bot))
+        try:
+            print("[post_init] Démarrage...")
+            await init_pool()
+            print("[post_init] Pool OK ✓")
+            await setup_background_worker(app)
+            print("[post_init] Worker OK ✓")
+            asyncio.create_task(schedule_daily_check(app.bot))
+            print("[post_init] Terminé ✓")
+        except Exception as e:
+            print(f"[post_init] ERREUR: {e}")
+            import traceback
+            traceback.print_exc()
 
     app.post_init = _post_init
 
