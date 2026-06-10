@@ -181,7 +181,7 @@ def _build_teaser_keyboard(session_id: int) -> InlineKeyboardMarkup:
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def send_gold_teaser(bot, session: dict,
-                            category: str = "clients_actifs",
+                            category: str = "see",
                             delay: float  = 0.08) -> dict:
     session_id = session["id"]
     user_ids   = await _get_category_user_ids(category)
