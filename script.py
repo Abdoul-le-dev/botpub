@@ -114,38 +114,30 @@ async def schedule_daily_check(bot):
         except Exception as e:
             print(f"[daily_check] Erreur: {e}")
 
-
-if __name__ == "__main__":
+async def main():
     print("[main] init_pool...")
     await init_pool()
     print("[main] Pool OK ✓")
+
     app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
 
-    async def _post_init(app):
-        try:
-           
-            await setup_background_worker(app)
-            print("[post_init] Worker OK ✓")
-            asyncio.create_task(schedule_daily_check(app.bot))
-            print("[post_init] Terminé ✓")
-        except Exception as e:
-            print(f"[post_init] ERREUR: {e}")
-            import traceback
-            traceback.print_exc()
+    async def _post_init(application):
+        await setup_background_worker(application)
+        asyncio.create_task(schedule_daily_check(application.bot))
 
     app.post_init = _post_init
 
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
-
     register_validation_handler(app)
     register_form_handlers(app, app.bot, ADMIN_ID)
     register_gold_handlers(app)
     register_signal_handlers(app)
-
     app.add_handler(MessageHandler(filters.TEXT, log_unhandled_message), group=99)
 
     set_bot(app.bot)
     set_gold_bot(app.bot)
 
     print("running...")
-    app.run_polling(poll_interval=1)
+    await app.run_polling(poll_interval=1)
+if __name__ == "__main__":
+    asyncio.run(main())
