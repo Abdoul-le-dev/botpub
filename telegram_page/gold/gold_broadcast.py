@@ -184,7 +184,12 @@ async def send_gold_teaser(bot, session: dict,
     session_id = session["id"]
     user_ids   = await _get_category_user_ids(category)
     print(user_ids)
+
     total      = len(user_ids)
+
+    print(total)
+
+    return 
 
     if total == 0:
         return {"total": 0, "sent": 0, "errors": 0, "session_id": session_id}
