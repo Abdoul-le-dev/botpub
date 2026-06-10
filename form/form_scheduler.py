@@ -8,19 +8,14 @@ Utilise APScheduler pour :
 
 Intégration dans api.py (lifespan) :
     from form_scheduler import start_scheduler, stop_scheduler
-    start_scheduler(bot)
+    await start_scheduler(bot)
     ...
     stop_scheduler()
-
-Intégration dans script.py :
-    from form_scheduler import start_scheduler
-    start_scheduler(bot)
 
 Dépendance :
     pip install apscheduler
 """
 
-import sqlite3
 import json
 import asyncio
 from datetime import datetime
@@ -31,19 +26,17 @@ from apscheduler.triggers.cron import CronTrigger
 
 from form.form import get_form_by_id, get_all_forms
 from form.form_engine import broadcast_form
-
-DB_PATH = "preinscriptions.db"
+from db import get_db
 
 _scheduler: BackgroundScheduler | None = None
-_bot = None
+_bot       = None
 _admin_id: int | None = None
 
+
 def get_bot():
-    """Getter sûr pour le bot — évite d'importer _bot directement."""
     return _bot
- 
+
 def get_admin_id():
-    """Getter sûr pour l'admin_id."""
     return _admin_id
 
 
@@ -51,10 +44,10 @@ def get_admin_id():
 # INIT
 # ════════════════════════════════════════════════════════════════════════════
 
-def start_scheduler(bot, admin_id: int = None):
+async def start_scheduler(bot, admin_id: int = None):
     """
     Démarre APScheduler et charge les formulaires planifiés depuis la DB.
-    À appeler une seule fois au démarrage (lifespan FastAPI ou main script.py).
+    À appeler une seule fois au démarrage (lifespan FastAPI).
     """
     global _scheduler, _bot, _admin_id
     _bot      = bot
@@ -63,7 +56,7 @@ def start_scheduler(bot, admin_id: int = None):
     _scheduler = BackgroundScheduler(timezone="Europe/Paris")
     _scheduler.start()
 
-    _reload_scheduled_forms()
+    await _reload_scheduled_forms()
     print("[form_scheduler] Scheduler démarré.")
 
 
@@ -78,9 +71,9 @@ def stop_scheduler():
 # CHARGEMENT DES FORMULAIRES PLANIFIÉS
 # ════════════════════════════════════════════════════════════════════════════
 
-def _reload_scheduled_forms():
+async def _reload_scheduled_forms():
     """Recharge tous les formulaires actifs de type 'scheduled' depuis la DB."""
-    forms = get_all_forms(actif_only=True)
+    forms = await get_all_forms(actif_only=True)
     for form in forms:
         if form.get("trigger_type") == "scheduled" and form.get("trigger_value"):
             _register_form_job(form)
@@ -91,14 +84,13 @@ def _register_form_job(form: dict):
     Enregistre un job APScheduler pour un formulaire planifié.
 
     trigger_value peut être :
-      - Une date ISO : "2025-09-15T09:00:00"      → exécution unique
-      - Un cron      : "0 9 * * 1"               → chaque lundi à 9h
-      - Cron lisible : "lundi 09:00"              → converti en cron
+      - Une date ISO : "2025-09-15T09:00:00"  → exécution unique
+      - Un cron      : "0 9 * * 1"            → chaque lundi à 9h
+      - Cron lisible : "lundi 09:00"          → converti en cron
     """
-    tv = form.get("trigger_value", "")
+    tv     = form.get("trigger_value", "")
     job_id = f"form_{form['id']}"
 
-    # Supprimer l'ancien job si existant
     if _scheduler.get_job(job_id):
         _scheduler.remove_job(job_id)
 
@@ -113,7 +105,7 @@ def _register_form_job(form: dict):
         id=job_id,
         kwargs={"form_id": form["id"]},
         replace_existing=True,
-        misfire_grace_time=300,  # 5 min de tolérance si le serveur était down
+        misfire_grace_time=300,
     )
     print(f"[form_scheduler] Job '{job_id}' enregistré → trigger: {tv}")
 
@@ -138,13 +130,13 @@ def _parse_trigger(tv: str):
 
     # Cron standard (ex: "0 9 * * 1")
     parts = tv.split()
-    if len(parts) == 5 and all(p.replace("*", "").replace("/", "").replace(",", "").replace("-", "").isdigit() or p == "*" for p in parts):
+    if len(parts) == 5:
         try:
             return CronTrigger.from_crontab(tv, timezone="Europe/Paris")
         except Exception:
             pass
 
-    # Format lisible français (ex: "lundi 09:00" ou "vendredi 18:00")
+    # Format lisible français (ex: "lundi 09:00")
     day_map = {
         "lundi": "mon", "mardi": "tue", "mercredi": "wed",
         "jeudi": "thu", "vendredi": "fri", "samedi": "sat", "dimanche": "sun",
@@ -171,70 +163,59 @@ def _parse_trigger(tv: str):
 def _run_form_job(form_id: int):
     """
     Appelé par APScheduler (thread séparé).
-    Lance la diffusion du formulaire via asyncio.run_coroutine_threadsafe
-    si une boucle existe, sinon asyncio.run.
+    Encapsule la logique async dans une coroutine interne.
     """
     print(f"[form_scheduler] Lancement job form_id={form_id}")
-    form = get_form_by_id(form_id)
-    if not form or not form.get("actif"):
-        print(f"[form_scheduler] Formulaire {form_id} inactif ou introuvable.")
-        return
 
-    user_ids = _get_target_users(form)
-    if not user_ids:
-        print(f"[form_scheduler] Aucun utilisateur cible pour le formulaire {form_id}.")
-        return
+    async def _inner():
+        form = await get_form_by_id(form_id)
+        if not form or not form.get("actif"):
+            print(f"[form_scheduler] Formulaire {form_id} inactif ou introuvable.")
+            return
 
-    # Exécuter la coroutine depuis ce thread sync
+        user_ids = await _get_target_users(form)
+        if not user_ids:
+            print(f"[form_scheduler] Aucun utilisateur cible pour le formulaire {form_id}.")
+            return
+
+        await broadcast_form(_bot, form_id, user_ids, _admin_id)
+
     try:
         loop = asyncio.get_event_loop()
         if loop.is_running():
-            asyncio.run_coroutine_threadsafe(
-                broadcast_form(_bot, form_id, user_ids, _admin_id),
-                loop
-            )
+            asyncio.run_coroutine_threadsafe(_inner(), loop)
         else:
-            asyncio.run(broadcast_form(_bot, form_id, user_ids, _admin_id))
+            asyncio.run(_inner())
     except RuntimeError:
-        asyncio.run(broadcast_form(_bot, form_id, user_ids, _admin_id))
+        asyncio.run(_inner())
 
 
-def _get_target_users(form: dict) -> list[int]:
+async def _get_target_users(form: dict) -> list[int]:
     """
     Retourne la liste des telegram_id cibles.
     Lit l'option 'target_category' dans form['options'] ou prend tous les users.
     """
-    options   = form.get("options", {})
-    target_cat = options.get("target_category")  # ex: "Prospect Inscrit"
+    options    = form.get("options", {})
+    target_cat = options.get("target_category")
 
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-
-    try:
+    async with get_db() as cur:
         if target_cat:
-            # Utilisateurs de la catégorie cible
-            rows = conn.execute("""
-                SELECT DISTINCT u.telegram_id
-                FROM users u
-                JOIN user_categories uc ON uc.telegram_id = u.telegram_id
-                WHERE uc.name_categorie = ? AND u.telegram_id IS NOT NULL
-            """, (target_cat,)).fetchall()
+            await cur.execute("""
+                SELECT DISTINCT u.telegram_id FROM users u
+                JOIN categories c ON c.id_user = u.telegram_id
+                WHERE c.name_categorie = %s AND u.telegram_id IS NOT NULL
+            """, (target_cat,))
         else:
-            # Tous les users
-            rows = conn.execute(
+            await cur.execute(
                 "SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL"
-            ).fetchall()
-    except Exception as e:
-        print(f"[form_scheduler] Erreur lecture users: {e}")
-        rows = []
-    finally:
-        conn.close()
+            )
+        rows = await cur.fetchall()
 
     return [r["telegram_id"] for r in rows]
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# API PUBLIQUE (appelée depuis form_routes.py)
+# API PUBLIQUE
 # ════════════════════════════════════════════════════════════════════════════
 
 def schedule_form(form: dict):
@@ -255,11 +236,11 @@ def get_scheduled_jobs() -> list[dict]:
     """Retourne tous les jobs planifiés (pour debug/dashboard)."""
     if not _scheduler:
         return []
-    jobs = []
-    for job in _scheduler.get_jobs():
-        jobs.append({
+    return [
+        {
             "id":       job.id,
             "next_run": str(job.next_run_time) if job.next_run_time else None,
             "trigger":  str(job.trigger),
-        })
-    return jobs
+        }
+        for job in _scheduler.get_jobs()
+    ]
