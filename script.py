@@ -137,4 +137,4 @@ if __name__ == "__main__":
     set_gold_bot(app.bot)
 
     print("running...")
-    app.run_polling(poll_interval=1)  # PTB crée et gère son propre loop
+    app.run_polling(poll_interval=1)  
