@@ -12,6 +12,8 @@ import os
 import csv
 import io
 
+from db import init_pool, close_pool
+
 load_dotenv()
 bot = Bot(token=os.getenv("tokens"))
 
@@ -78,12 +80,14 @@ from form.form_scheduler import start_scheduler, stop_scheduler
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_pool()  
     set_bot(bot)
     start_scheduler(bot, admin_id=571718066)
     set_trading_bot(bot)
     set_gold_bot(bot)
     yield
     stop_scheduler()
+    await close_pool()
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -141,21 +145,22 @@ async def api_broadcast(payload: dict):
 
 @app.get("/categories")
 async def api_get_categorie():
-    with get_db() as conn:
-        rows = conn.execute(
+    async with get_db() as cur:
+        await cur.execute(
             "SELECT name_categorie, COUNT(*) as total FROM categories GROUP BY name_categorie"
-        ).fetchall()
+        )
+        rows = await cur.fetchall()
     return [{"name": r["name_categorie"], "total": r["total"]} for r in rows]
 
 
 @app.get("/broadcast/history")
-def api_get_broadcast_history():
-    with get_db() as conn:
-        rows = conn.execute(
+async def api_get_broadcast_history():
+    async with get_db() as cur:
+        await cur.execute(
             "SELECT * FROM broadcast_history ORDER BY id DESC LIMIT 50"
-        ).fetchall()
-    return [dict(r) for r in rows]
-
+        )
+        rows = await cur.fetchall()
+    return rows
 
 # ════════════════════════════════════════════════════════════════════════
 # STATS GLOBALES
