@@ -86,7 +86,7 @@ async def lifespan(app: FastAPI):
     await start_scheduler(bot, admin_id=571718066)
     set_trading_bot(bot)
     set_gold_bot(bot)
-    await sync_clients_actifs() 
+    #await sync_clients_actifs() 
     yield
     stop_scheduler()
     await close_pool()
