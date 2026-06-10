@@ -1,5 +1,5 @@
 """
-signal_broadcast.py — v4 MySQL
+signal_broadcast.py — v5 MySQL async
 Envoi de signaux de trading avec boutons inline Telegram.
 """
 
@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
-from db import get_db   # ← pool MySQL
+from db import get_db
 
 ADMIN_ID = 571718066
 logger   = logging.getLogger(__name__)
@@ -21,33 +21,36 @@ logger   = logging.getLogger(__name__)
 # HELPERS DB
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _get_category_user_ids(category: str) -> list[int]:
-    with get_db() as conn:
+async def _get_category_user_ids(category: str) -> list[int]:
+    async with get_db() as cur:
         if category == "all":
-            rows = conn.execute(
+            await cur.execute(
                 "SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL"
-            ).fetchall()
+            )
         else:
-            rows = conn.execute(
-                "SELECT id_user FROM categories WHERE name_categorie = ?", (category,)
-            ).fetchall()
+            await cur.execute(
+                "SELECT id_user FROM categories WHERE name_categorie = %s", (category,)
+            )
+        rows = await cur.fetchall()
     return [r[0] for r in rows]
 
 
-def _get_member_capital(user_id: int) -> float | None:
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT capital FROM member_capital WHERE user_id = ? ORDER BY declared_at DESC LIMIT 1",
+async def _get_member_capital(user_id: int) -> float | None:
+    async with get_db() as cur:
+        await cur.execute(
+            "SELECT capital FROM member_capital WHERE user_id = %s ORDER BY declared_at DESC LIMIT 1",
             (user_id,)
-        ).fetchone()
+        )
+        row = await cur.fetchone()
     return float(row["capital"]) if row else None
 
 
-def _get_prenom(user_id: int) -> str:
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT name FROM users WHERE telegram_id = ?", (user_id,)
-        ).fetchone()
+async def _get_prenom(user_id: int) -> str:
+    async with get_db() as cur:
+        await cur.execute(
+            "SELECT name FROM users WHERE telegram_id = %s", (user_id,)
+        )
+        row = await cur.fetchone()
     if row and row["name"]:
         p = row["name"].strip()
         if 1 <= len(p) <= 20:
@@ -109,17 +112,18 @@ def calculate_member_lot(capital: float, sl_pips: float, pip_value: float, risk_
     return round(risk_usd / (sl_pips * pip_value), 4)
 
 
-def get_signal_sl_pips(signal: dict):
+async def get_signal_sl_pips(signal: dict):
     if not signal.get("sl") or not signal.get("entry_price"):
         return None, 10.0
     try:
-        with get_db() as conn:
-            row = conn.execute(
-                "SELECT decimals, pip_value FROM trading_pairs WHERE symbol = ?",
+        async with get_db() as cur:
+            await cur.execute(
+                "SELECT decimals, pip_value FROM trading_pairs WHERE symbol = %s",
                 (signal["pair"].upper(),)
-            ).fetchone()
-        decimals  = int(row["decimals"])   if row else 5
-        pip_value = float(row["pip_value"]) if row else 10.0
+            )
+            row = await cur.fetchone()
+        decimals   = int(row["decimals"])    if row else 5
+        pip_value  = float(row["pip_value"]) if row else 10.0
         multiplier = 10 ** (decimals - 1)
         sl_pips    = round(abs(signal["entry_price"] - signal["sl"]) * multiplier, 1)
         return sl_pips, pip_value
@@ -134,21 +138,21 @@ def get_signal_sl_pips(signal: dict):
 async def _send_one_signal(bot, user_id, signal, sl_pips, pip_value,
                             media_url, personalize_lot=True) -> bool:
     try:
-        prenom = _get_prenom(user_id)
+        prenom = await _get_prenom(user_id)
         lot    = None
         if personalize_lot and sl_pips:
-            capital = _get_member_capital(user_id) or 1000.0
+            capital = await _get_member_capital(user_id) or 1000.0
             lot     = calculate_member_lot(capital, sl_pips, pip_value)
 
         text     = build_signal_message(signal, lot=lot, prenom=prenom)
         keyboard = build_participation_keyboard(signal["id"])
 
         if media_url:
-            local_path = Path(media_url.lstrip("/"))
-            is_local   = local_path.exists()
+            local_path  = Path(media_url.lstrip("/"))
+            is_local    = local_path.exists()
             media_bytes = open(local_path, "rb") if is_local else media_url
-            ext        = local_path.suffix.lower() if is_local else ""
-            is_video   = ext in (".mp4", ".mov", ".avi", ".mkv", ".webm")
+            ext         = local_path.suffix.lower() if is_local else ""
+            is_video    = ext in (".mp4", ".mov", ".avi", ".mkv", ".webm")
 
             try:
                 if is_video:
@@ -186,7 +190,7 @@ async def _send_one_signal(bot, user_id, signal, sl_pips, pip_value,
 
 async def broadcast_signal(bot, signal, category="clients_actifs",
                             media_url=None, delay=0.08, retry=True, risk_pct=2.0) -> dict:
-    user_ids = _get_category_user_ids(category)
+    user_ids = await _get_category_user_ids(category)
     total    = len(user_ids)
 
     if total == 0:
@@ -196,7 +200,7 @@ async def broadcast_signal(bot, signal, category="clients_actifs",
         except Exception: pass
         return {"total": 0, "sent": 0, "errors": 0}
 
-    sl_pips, pip_value = get_signal_sl_pips(signal)
+    sl_pips, pip_value = await get_signal_sl_pips(signal)
     started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     pair_str   = signal.get("pair", "?")
     dir_str    = "LONG" if signal.get("direction") == "long" else "SHORT"
@@ -224,7 +228,7 @@ async def broadcast_signal(bot, signal, category="clients_actifs",
         if success:
             sent += 1
             if sl_pips:
-                cap = _get_member_capital(user_id) or 1000.0
+                cap = await _get_member_capital(user_id) or 1000.0
                 lots.append(calculate_member_lot(cap, sl_pips, pip_value))
         else:
             errors += 1
