@@ -1,9 +1,5 @@
 """
-gold_broadcast.py — Flux Telegram Gold v4 (MySQL)
-
-Changements v4 :
-  - get_conn() → get_db() depuis db.py
-  - Import get_conn supprimé de gold_engine
+gold_broadcast.py — Flux Telegram Gold v5 (MySQL async)
 """
 
 import asyncio
@@ -13,7 +9,7 @@ from datetime import datetime
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackQueryHandler, MessageHandler, filters
 
-from db import get_db   # ← pool MySQL
+from db import get_db
 
 from telegram_page.gold.gold_engine import (
     confirm_gold_entry,
@@ -29,8 +25,8 @@ from telegram_page.gold.gold_engine import (
     _log_flow_event,
 )
 
-logger   = logging.getLogger(__name__)
-ADMIN_ID = 571718066
+logger      = logging.getLogger(__name__)
+ADMIN_ID    = 571718066
 CAPITAL_MIN = 30.0
 
 
@@ -38,11 +34,12 @@ CAPITAL_MIN = 30.0
 # HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _get_prenom(user_id: int) -> str:
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT name FROM users WHERE telegram_id = ?", (user_id,)
-        ).fetchone()
+async def _get_prenom(user_id: int) -> str:
+    async with get_db() as cur:
+        await cur.execute(
+            "SELECT name FROM users WHERE telegram_id = %s", (user_id,)
+        )
+        row = await cur.fetchone()
     if row and row["name"]:
         p = row["name"].strip().split()[0]
         if 1 <= len(p) <= 20:
@@ -50,27 +47,29 @@ def _get_prenom(user_id: int) -> str:
     return ""
 
 
-def _get_last_capital(user_id: int) -> float | None:
-    with get_db() as conn:
-        row = conn.execute("""
+async def _get_last_capital(user_id: int) -> float | None:
+    async with get_db() as cur:
+        await cur.execute("""
             SELECT capital_declared FROM gold_member_entries
-            WHERE user_id = ?
+            WHERE user_id = %s
             ORDER BY confirmed_at DESC LIMIT 1
-        """, (user_id,)).fetchone()
+        """, (user_id,))
+        row = await cur.fetchone()
     return float(row["capital_declared"]) if row else None
 
 
-def _get_category_user_ids(category: str) -> list:
-    with get_db() as conn:
+async def _get_category_user_ids(category: str) -> list:
+    async with get_db() as cur:
         if category == "all":
-            rows = conn.execute(
+            await cur.execute(
                 "SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL"
-            ).fetchall()
+            )
         else:
-            rows = conn.execute(
-                "SELECT id_user FROM categories WHERE name_categorie = ?",
+            await cur.execute(
+                "SELECT id_user FROM categories WHERE name_categorie = %s",
                 (category,)
-            ).fetchall()
+            )
+        rows = await cur.fetchall()
     return [r[0] for r in rows]
 
 
@@ -140,12 +139,12 @@ def _build_disclaimer_keyboard(session_id: int) -> InlineKeyboardMarkup:
 # ÉTAPE 1 — TEASER
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _build_teaser_message(session: dict, prenom: str = "") -> str:
-    rule_msgs  = get_rule_messages(1)
-    tpl        = rule_msgs.get("message_teaser")
-    dir_label  = "📈 Achat (Buy)" if session["direction"] == "buy" else "📉 Vente (Sell)"
+async def _build_teaser_message(session: dict, prenom: str = "") -> str:
+    rule_msgs = await get_rule_messages(1)
+    tpl       = rule_msgs.get("message_teaser")
+    dir_label = "📈 Achat (Buy)" if session["direction"] == "buy" else "📉 Vente (Sell)"
     conf_stars = "⭐" * session.get("confidence_level", 3)
-    greeting   = f" — {prenom}" if prenom else ""
+    greeting  = f" — {prenom}" if prenom else ""
 
     if tpl:
         return (tpl
@@ -183,7 +182,7 @@ async def send_gold_teaser(bot, session: dict,
                             category: str = "clients_actifs",
                             delay: float  = 0.08) -> dict:
     session_id = session["id"]
-    user_ids   = _get_category_user_ids(category)
+    user_ids   = await _get_category_user_ids(category)
     total      = len(user_ids)
 
     if total == 0:
@@ -205,8 +204,8 @@ async def send_gold_teaser(bot, session: dict,
 
     for idx, user_id in enumerate(user_ids, start=1):
         try:
-            prenom    = _get_prenom(user_id)
-            date_str  = _fmt_now_discrete()
+            prenom   = await _get_prenom(user_id)
+            date_str = _fmt_now_discrete()
             dir_label = "Achat (Buy)" if session["direction"] == "buy" else "Vente (Sell)"
 
             try:
@@ -261,8 +260,8 @@ async def send_gold_teaser(bot, session: dict,
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def handle_disclaimer_ok(update, context):
-    query      = update.callback_query
-    user_id    = query.from_user.id
+    query   = update.callback_query
+    user_id = query.from_user.id
 
     try:
         session_id = int(query.data.split("_")[3])
@@ -280,8 +279,8 @@ async def handle_disclaimer_ok(update, context):
     await query.answer()
     await _safe_delete(context.bot, user_id, query.message.message_id)
 
-    prenom  = _get_prenom(user_id)
-    message = _build_teaser_message(session, prenom)
+    prenom  = await _get_prenom(user_id)
+    message = await _build_teaser_message(session, prenom)
     kbd     = _build_teaser_keyboard(real_session_id)
 
     msg = await _send_or_photo(
@@ -319,7 +318,7 @@ async def handle_teaser_click(update, context):
     context.user_data["waiting_capital"] = True
     await save_user_step(real_session_id, user_id, "waiting_capital")
 
-    last_capital = _get_last_capital(user_id)
+    last_capital = await _get_last_capital(user_id)
     hint = f"\n\n_Dernier capital enregistré : *{last_capital}$*_" if last_capital else ""
 
     msg = await context.bot.send_message(
@@ -401,7 +400,7 @@ async def _show_trade_detail(bot, user_id: int, session_id: int, capital: float)
     gains       = calculate_gains_losses(lot=lot, entry=session["entry_price"], sl=session["sl"],
                                           tp1=session.get("tp1"), tp2=session.get("tp2"),
                                           tp3=session.get("tp3"))
-    tp_level, _ = get_tp_level_for_capital(capital)
+    tp_level, _ = await get_tp_level_for_capital(capital)
     tp_labels   = {1: "TP1 seulement", 2: "TP1 + TP2", 3: "TP1 + TP2 + TP3"}
     dir_label   = "📈 Achat (Buy)" if session["direction"] == "buy" else "📉 Vente (Sell)"
     date_label  = _fmt_now_discrete()
@@ -411,7 +410,7 @@ async def _show_trade_detail(bot, user_id: int, session_id: int, capital: float)
         f"{dir_label}", "━━━━━━━━━━━━━━━━━━━━",
         f"🎯 Entrée : *{session['entry_price']}*",
     ]
-    if session.get("tp1"):             lines.append(f"✅ TP1 : *{session['tp1']}*")
+    if session.get("tp1"):                   lines.append(f"✅ TP1 : *{session['tp1']}*")
     if session.get("tp2") and tp_level >= 2: lines.append(f"🎯 TP2 : *{session['tp2']}*")
     if session.get("tp3") and tp_level >= 3: lines.append(f"🏆 TP3 : *{session['tp3']}*")
 
@@ -522,4 +521,4 @@ def register_gold_handlers(app):
     app.add_handler(CallbackQueryHandler(handle_gold_skip,      pattern=r"^gold_skip_\d+$"),           group=3)
     app.add_handler(CallbackQueryHandler(handle_gold_done,      pattern=r"^gold_done$"),               group=3)
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_capital_input), group=3)
-    print("[gold_broadcast] Handlers Gold v4 enregistrés ✓")
+    print("[gold_broadcast] Handlers Gold v5 enregistrés ✓")

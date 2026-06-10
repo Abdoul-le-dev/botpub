@@ -1,13 +1,11 @@
 """
-gold_engine.py — Version MySQL v4
+gold_engine.py — Version MySQL v5 async
 
-Changements v4 :
-  - get_conn() supprimé → get_db() depuis db.py (pool MySQL)
-  - _db_write_lock conservé pour les sections critiques
-  - ON CONFLICT → ON DUPLICATE KEY UPDATE (syntaxe MySQL)
-  - CREATE INDEX IF NOT EXISTS → ignoré (schéma déjà créé)
-  - executemany() → boucle execute() (mysql-connector limitation)
-  - Toutes les requêtes SQLite traduites automatiquement par _ConnWrapper
+Changements v5 :
+  - Toutes les fonctions with get_db() migrées vers async with get_db() as cur
+  - ? → %s partout
+  - LAST_INSERT_ID() → cur.lastrowid
+  - ROW_COUNT() → cur.rowcount
 """
 
 import logging
@@ -20,7 +18,7 @@ import time as _time
 from datetime import datetime
 from typing import Optional
 
-from db import get_db   # ← pool MySQL, remplace get_conn()
+from db import get_db
 
 logger   = logging.getLogger(__name__)
 ADMIN_ID = 571718066
@@ -73,7 +71,7 @@ def calculate_gains_losses(lot: float, entry: float, sl: float,
                             tp1=None, tp2=None, tp3=None) -> dict:
     def dollars(pips):
         return round((lot / 0.01) * pips, 2)
-    sl_pips  = abs(entry - sl)
+    sl_pips = abs(entry - sl)
     return {
         "perte_sl": dollars(sl_pips) * -1,
         "gain_tp1": dollars(abs(tp1 - entry)) if tp1 else None,
@@ -82,43 +80,46 @@ def calculate_gains_losses(lot: float, entry: float, sl: float,
     }
 
 
-def get_tp_level_for_capital(capital: float) -> tuple:
-    with get_db() as conn:
-        rule = conn.execute("""
+async def get_tp_level_for_capital(capital: float) -> tuple:
+    async with get_db() as cur:
+        await cur.execute("""
             SELECT tp_level, risk_pct FROM gold_tp_rules
             WHERE is_active = 1
-              AND min_capital <= ?
-              AND (max_capital IS NULL OR max_capital >= ?)
+              AND min_capital <= %s
+              AND (max_capital IS NULL OR max_capital >= %s)
             ORDER BY tp_level ASC LIMIT 1
-        """, (capital, capital)).fetchone()
+        """, (capital, capital))
+        rule = await cur.fetchone()
     if rule:
         return int(rule["tp_level"]), float(rule["risk_pct"])
-    if capital < 500:   return 1, 1.0
+    if capital < 500:    return 1, 1.0
     elif capital < 2000: return 2, 1.5
-    else:               return 3, 2.0
+    else:                return 3, 2.0
 
 
-def get_rule_messages(tp_level: int) -> dict:
-    with get_db() as conn:
-        rule = conn.execute("""
+async def get_rule_messages(tp_level: int) -> dict:
+    async with get_db() as cur:
+        await cur.execute("""
             SELECT * FROM gold_tp_rules
-            WHERE tp_level = ? AND is_active = 1 LIMIT 1
-        """, (tp_level,)).fetchone()
+            WHERE tp_level = %s AND is_active = 1 LIMIT 1
+        """, (tp_level,))
+        rule = await cur.fetchone()
     return dict(rule) if rule else {}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# INIT TABLES  (schéma déjà créé par schema_mysql.sql — juste seed)
+# INIT TABLES
 # ══════════════════════════════════════════════════════════════════════════════
 
-def init_gold_tables():
-    with get_db() as conn:
-        _seed_default_tp_rules(conn)
-    print("[gold_engine] Tables Gold v4 initialisées.")
+async def init_gold_tables():
+    async with get_db() as cur:
+        await _seed_default_tp_rules(cur)
+    print("[gold_engine] Tables Gold v5 initialisées.")
 
 
-def _seed_default_tp_rules(conn):
-    existing = conn.execute("SELECT COUNT(*) as n FROM gold_tp_rules").fetchone()["n"]
+async def _seed_default_tp_rules(cur):
+    await cur.execute("SELECT COUNT(*) as n FROM gold_tp_rules")
+    existing = (await cur.fetchone())["n"]
     if existing > 0:
         return
 
@@ -127,10 +128,9 @@ def _seed_default_tp_rules(conn):
             "rule_name": "Petit compte — TP1 seulement",
             "tp_level": 1, "min_capital": 0, "max_capital": 499.99, "risk_pct": 1.0,
             "message_tp1_reached":  "✅ *TP1 atteint sur XAU/USD !*\n\n🎯 Sortez maintenant et sécurisez vos gains.\nC'est votre niveau de sortie — ne soyez pas gourmand 💪",
-            "message_tp2_reached":  None,
-            "message_tp3_reached":  None,
+            "message_tp2_reached":  None, "message_tp3_reached": None,
             "message_sl_touched":   "❌ *SL touché sur XAU/USD*\n\nVotre SL a bien protégé votre compte.\nC'est la discipline qui fait les vrais traders 💪",
-            "message_breakeven":    None, "message_partial_close": None,
+            "message_breakeven": None, "message_partial_close": None,
             "message_teaser":       "🔔 *Le trade du jour est disponible !*\n\n📊 Paire : *XAU/USD* (Gold)\n📈 Achat (Buy)\n\n_Cliquez ci-dessous pour accéder au trade._",
             "message_confirmation": "✅ *Trade enregistré !*\nTu recevras les instructions en temps réel.",
         },
@@ -161,13 +161,13 @@ def _seed_default_tp_rules(conn):
     ]
 
     for r in rules:
-        conn.execute("""
+        await cur.execute("""
             INSERT IGNORE INTO gold_tp_rules
                 (rule_name, tp_level, min_capital, max_capital, risk_pct,
                  message_tp1_reached, message_tp2_reached, message_tp3_reached,
                  message_sl_touched, message_breakeven, message_partial_close,
                  message_teaser, message_confirmation)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """, (
             r["rule_name"], r["tp_level"], r["min_capital"], r["max_capital"], r["risk_pct"],
             r["message_tp1_reached"], r["message_tp2_reached"], r["message_tp3_reached"],
@@ -181,39 +181,39 @@ def _seed_default_tp_rules(conn):
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def create_season(payload: dict) -> dict:
-    with get_db() as conn:
-        conn.execute("""
+    async with get_db() as cur:
+        await cur.execute("""
             UPDATE gold_seasons SET status = 'closed', closed_at = NOW()
             WHERE status = 'active'
         """)
-        conn.execute("""
+        await cur.execute("""
             INSERT INTO gold_seasons
                 (name, description, start_date, initial_capital_ref, status)
-            VALUES (?, ?, ?, ?, 'active')
+            VALUES (%s, %s, %s, %s, 'active')
         """, (
             payload["name"], payload.get("description"),
             payload.get("start_date", _now()),
             payload.get("initial_capital_ref"),
         ))
-        season_id = conn.execute("SELECT LAST_INSERT_ID() as id").fetchone()["id"]
-        season    = dict(conn.execute(
-            "SELECT * FROM gold_seasons WHERE id = ?", (season_id,)
-        ).fetchone())
+        season_id = cur.lastrowid
+        await cur.execute("SELECT * FROM gold_seasons WHERE id = %s", (season_id,))
+        season = dict(await cur.fetchone())
     return season
 
 
 async def get_active_season() -> dict | None:
-    with get_db() as conn:
-        row = conn.execute(
+    async with get_db() as cur:
+        await cur.execute(
             "SELECT * FROM gold_seasons WHERE status = 'active' ORDER BY created_at DESC LIMIT 1"
-        ).fetchone()
+        )
+        row = await cur.fetchone()
     return dict(row) if row else None
 
 
 async def get_seasons(include_closed: bool = True) -> list:
-    with get_db() as conn:
+    async with get_db() as cur:
         where = "" if include_closed else "WHERE s.status = 'active'"
-        rows  = conn.execute(f"""
+        await cur.execute(f"""
             SELECT s.*,
                    COUNT(DISTINCT gts.id) AS trades_count,
                    SUM(CASE WHEN gts.current_phase IN
@@ -226,29 +226,31 @@ async def get_seasons(include_closed: bool = True) -> list:
             {where}
             GROUP BY s.id
             ORDER BY s.created_at DESC
-        """).fetchall()
+        """)
+        rows = await cur.fetchall()
     return [dict(r) for r in rows]
 
 
 async def reset_season(season_id: int, payload: dict) -> dict:
-    with get_db() as conn:
-        conn.execute("""
+    async with get_db() as cur:
+        await cur.execute("""
             UPDATE gold_seasons
             SET status = 'reset', closed_at = NOW(), end_date = NOW()
-            WHERE id = ?
+            WHERE id = %s
         """, (season_id,))
-        sim_accounts = conn.execute(
-            "SELECT id, initial_capital FROM simulation_accounts WHERE season_id = ? AND is_active = 1",
+        await cur.execute(
+            "SELECT id, initial_capital FROM simulation_accounts WHERE season_id = %s AND is_active = 1",
             (season_id,)
-        ).fetchall()
+        )
+        sim_accounts = await cur.fetchall()
         for acc in sim_accounts:
-            conn.execute("""
+            await cur.execute("""
                 UPDATE simulation_accounts
                 SET current_capital  = initial_capital,
                     total_trades     = 0, wins = 0, losses = 0,
                     max_drawdown_pct = 0, peak_capital = initial_capital,
                     updated_at       = NOW()
-                WHERE id = ?
+                WHERE id = %s
             """, (acc["id"],))
 
     new_season = await create_season({
@@ -256,9 +258,9 @@ async def reset_season(season_id: int, payload: dict) -> dict:
         "initial_capital_ref": payload.get("new_initial_capital"),
     })
 
-    with get_db() as conn:
-        conn.execute("""
-            UPDATE simulation_accounts SET season_id = ?, updated_at = NOW()
+    async with get_db() as cur:
+        await cur.execute("""
+            UPDATE simulation_accounts SET season_id = %s, updated_at = NOW()
             WHERE is_active = 1
         """, (new_season["id"],))
 
@@ -270,49 +272,54 @@ async def reset_season(season_id: int, payload: dict) -> dict:
 
 
 async def get_season_stats(season_id: int) -> dict:
-    with get_db() as conn:
-        season = conn.execute("SELECT * FROM gold_seasons WHERE id = ?", (season_id,)).fetchone()
+    async with get_db() as cur:
+        await cur.execute("SELECT * FROM gold_seasons WHERE id = %s", (season_id,))
+        season = await cur.fetchone()
         if not season:
             return {"error": "Saison introuvable"}
         season = dict(season)
 
-        session_stats = conn.execute("""
+        await cur.execute("""
             SELECT
                 COUNT(*) AS total_trades,
                 COUNT(CASE WHEN current_phase IN ('tp1_reached','tp2_reached','tp3_reached') THEN 1 END) AS wins,
                 COUNT(CASE WHEN current_phase = 'sl_touched' THEN 1 END) AS losses,
                 AVG(total_members_in)  AS avg_members_per_trade,
                 SUM(total_members_in)  AS total_confirmations
-            FROM gold_trade_sessions WHERE season_id = ?
-        """, (season_id,)).fetchone()
+            FROM gold_trade_sessions WHERE season_id = %s
+        """, (season_id,))
+        session_stats = await cur.fetchone()
 
-        member_stats = conn.execute("""
+        await cur.execute("""
             SELECT
                 COUNT(DISTINCT user_id)                    AS unique_members,
                 ROUND(SUM(result_usd), 2)                  AS total_gains_members,
                 ROUND(AVG(result_usd), 2)                  AS avg_gain_per_trade,
                 COUNT(CASE WHEN result_usd > 0 THEN 1 END) AS member_wins,
                 COUNT(CASE WHEN result_usd < 0 THEN 1 END) AS member_losses
-            FROM gold_member_entries WHERE season_id = ?
-        """, (season_id,)).fetchone()
+            FROM gold_member_entries WHERE season_id = %s
+        """, (season_id,))
+        member_stats = await cur.fetchone()
 
-        sim_accounts = conn.execute("""
+        await cur.execute("""
             SELECT sa.*,
                    ROUND((sa.current_capital - sa.initial_capital)
                          / sa.initial_capital * 100, 2) AS rendement_pct
-            FROM simulation_accounts sa WHERE sa.season_id = ?
+            FROM simulation_accounts sa WHERE sa.season_id = %s
             ORDER BY sa.initial_capital ASC
-        """, (season_id,)).fetchall()
+        """, (season_id,))
+        sim_accounts = await cur.fetchall()
 
-        top_members = conn.execute("""
+        await cur.execute("""
             SELECT u.name, gme.user_id,
                    COUNT(*) AS trades,
                    ROUND(SUM(gme.result_usd), 2) AS total_usd
             FROM gold_member_entries gme
             LEFT JOIN users u ON u.telegram_id = gme.user_id
-            WHERE gme.season_id = ?
+            WHERE gme.season_id = %s
             GROUP BY gme.user_id ORDER BY total_usd DESC LIMIT 10
-        """, (season_id,)).fetchall()
+        """, (season_id,))
+        top_members = await cur.fetchall()
 
     return {
         "season":              season,
@@ -348,14 +355,14 @@ async def create_gold_session(payload: dict) -> dict:
     season    = await get_active_season()
     season_id = season["id"] if season else None
 
-    with get_db() as conn:
-        conn.execute("""
+    async with get_db() as cur:
+        await cur.execute("""
             INSERT INTO gold_trade_sessions
                 (signal_id, season_id, direction, entry_price,
                  tp1, tp2, tp3, sl, sl_pips, tp1_pips, tp2_pips, tp3_pips,
                  timeframe, confidence_level, note, screenshot_url,
                  current_phase, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'teaser',NOW())
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'teaser',NOW())
         """, (
             payload.get("signal_id"), season_id, direction, entry,
             tp1, tp2, tp3, sl, sl_pips, tp1_pips, tp2_pips, tp3_pips,
@@ -363,42 +370,41 @@ async def create_gold_session(payload: dict) -> dict:
             int(payload.get("confidence_level", 3)),
             payload.get("note"), payload.get("screenshot_url"),
         ))
-        session_id = conn.execute("SELECT LAST_INSERT_ID() as id").fetchone()["id"]
-        session    = dict(conn.execute(
-            "SELECT * FROM gold_trade_sessions WHERE id = ?", (session_id,)
-        ).fetchone())
+        session_id = cur.lastrowid
+        await cur.execute("SELECT * FROM gold_trade_sessions WHERE id = %s", (session_id,))
+        session = dict(await cur.fetchone())
     return session
 
 
 async def get_active_gold_session() -> dict | None:
-    with get_db() as conn:
-        row = conn.execute("""
+    async with get_db() as cur:
+        await cur.execute("""
             SELECT gts.*, gs.name AS season_name
             FROM gold_trade_sessions gts
             LEFT JOIN gold_seasons gs ON gs.id = gts.season_id
             WHERE gts.current_phase NOT IN ('closed','cancelled','sl_touched')
             ORDER BY gts.created_at DESC LIMIT 1
-        """).fetchone()
+        """)
+        row = await cur.fetchone()
     return dict(row) if row else None
 
 
 async def get_gold_session_detail(session_id: int) -> dict | None:
-    with get_db() as conn:
-        session = conn.execute(
-            "SELECT * FROM gold_trade_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+    async with get_db() as cur:
+        await cur.execute("SELECT * FROM gold_trade_sessions WHERE id = %s", (session_id,))
+        session = await cur.fetchone()
         if not session:
             return None
         session = dict(session)
 
-        entries = conn.execute("""
+        await cur.execute("""
             SELECT gme.*, u.name FROM gold_member_entries gme
             LEFT JOIN users u ON u.telegram_id = gme.user_id
-            WHERE gme.session_id = ? ORDER BY gme.confirmed_at ASC
-        """, (session_id,)).fetchall()
-        session["entries"] = [dict(e) for e in entries]
+            WHERE gme.session_id = %s ORDER BY gme.confirmed_at ASC
+        """, (session_id,))
+        session["entries"] = [dict(e) for e in await cur.fetchall()]
 
-        tp_dist = conn.execute("""
+        await cur.execute("""
             SELECT tp_level_assigned,
                    COUNT(*) AS members,
                    ROUND(SUM(lot_calculated), 4) AS total_lots,
@@ -406,18 +412,18 @@ async def get_gold_session_detail(session_id: int) -> dict | None:
                    ROUND(SUM(gain_tp1), 2)         AS total_gain_tp1,
                    ROUND(SUM(COALESCE(gain_tp2,0)), 2) AS total_gain_tp2,
                    ROUND(SUM(COALESCE(gain_tp3,0)), 2) AS total_gain_tp3
-            FROM gold_member_entries WHERE session_id = ?
+            FROM gold_member_entries WHERE session_id = %s
             GROUP BY tp_level_assigned ORDER BY tp_level_assigned
-        """, (session_id,)).fetchall()
-        session["tp_distribution"] = [dict(d) for d in tp_dist]
+        """, (session_id,))
+        session["tp_distribution"] = [dict(d) for d in await cur.fetchall()]
 
-        sim_trades = conn.execute("""
+        await cur.execute("""
             SELECT st.*, sa.name AS account_name, sa.initial_capital
             FROM simulation_trades st
             JOIN simulation_accounts sa ON sa.id = st.account_id
-            WHERE st.session_id = ? ORDER BY sa.initial_capital ASC
-        """, (session_id,)).fetchall()
-        session["simulation_trades"] = [dict(s) for s in sim_trades]
+            WHERE st.session_id = %s ORDER BY sa.initial_capital ASC
+        """, (session_id,))
+        session["simulation_trades"] = [dict(s) for s in await cur.fetchall()]
 
     return session
 
@@ -430,15 +436,15 @@ async def get_gold_sessions(filters: dict = None) -> dict:
     params = []
 
     if f.get("season_id"):
-        where.append("gts.season_id = ?")
+        where.append("gts.season_id = %s")
         params.append(f["season_id"])
     if f.get("phase"):
-        where.append("gts.current_phase = ?")
+        where.append("gts.current_phase = %s")
         params.append(f["phase"])
 
     where_sql = " AND ".join(where)
-    with get_db() as conn:
-        rows = conn.execute(f"""
+    async with get_db() as cur:
+        await cur.execute(f"""
             SELECT gts.*, gs.name AS season_name,
                    COUNT(DISTINCT gme.user_id) AS confirmed_members
             FROM gold_trade_sessions gts
@@ -447,11 +453,14 @@ async def get_gold_sessions(filters: dict = None) -> dict:
             WHERE {where_sql}
             GROUP BY gts.id
             ORDER BY gts.created_at DESC
-            LIMIT ? OFFSET ?
-        """, params + [limit, offset]).fetchall()
-        total = conn.execute(
+            LIMIT %s OFFSET %s
+        """, params + [limit, offset])
+        rows = await cur.fetchall()
+
+        await cur.execute(
             f"SELECT COUNT(*) as n FROM gold_trade_sessions gts WHERE {where_sql}", params
-        ).fetchone()["n"]
+        )
+        total = (await cur.fetchone())["n"]
 
     return {"sessions": [dict(r) for r in rows], "total": total, "limit": limit, "offset": offset}
 
@@ -462,11 +471,11 @@ async def get_gold_sessions(filters: dict = None) -> dict:
 
 async def save_user_step(session_id: int, user_id: int, step: str, capital: float = None):
     async with _db_write_lock:
-        with get_db() as conn:
-            conn.execute("""
+        async with get_db() as cur:
+            await cur.execute("""
                 INSERT INTO gold_user_sessions
                     (session_id, user_id, step, capital_input, updated_at)
-                VALUES (?, ?, ?, ?, NOW())
+                VALUES (%s, %s, %s, %s, NOW())
                 ON DUPLICATE KEY UPDATE
                     step          = VALUES(step),
                     capital_input = VALUES(capital_input),
@@ -475,26 +484,28 @@ async def save_user_step(session_id: int, user_id: int, step: str, capital: floa
 
 
 async def get_user_step(session_id: int, user_id: int) -> dict | None:
-    with get_db() as conn:
-        row = conn.execute("""
+    async with get_db() as cur:
+        await cur.execute("""
             SELECT * FROM gold_user_sessions
-            WHERE session_id = ? AND user_id = ?
-        """, (session_id, user_id)).fetchone()
+            WHERE session_id = %s AND user_id = %s
+        """, (session_id, user_id))
+        row = await cur.fetchone()
     return dict(row) if row else None
 
 
 async def restore_user_context(user_id: int) -> dict | None:
-    with get_db() as conn:
-        row = conn.execute("""
+    async with get_db() as cur:
+        await cur.execute("""
             SELECT gus.*, gts.entry_price, gts.direction, gts.current_phase,
                    gts.tp1, gts.tp2, gts.tp3, gts.sl
             FROM gold_user_sessions gus
             JOIN gold_trade_sessions gts ON gts.id = gus.session_id
-            WHERE gus.user_id = ?
+            WHERE gus.user_id = %s
               AND gts.current_phase NOT IN ('closed','cancelled','sl_touched')
               AND gus.step NOT IN ('confirmed','cancelled')
             ORDER BY gus.updated_at DESC LIMIT 1
-        """, (user_id,)).fetchone()
+        """, (user_id,))
+        row = await cur.fetchone()
     return dict(row) if row else None
 
 
@@ -508,10 +519,9 @@ async def confirm_gold_entry(session_id: int, user_id: int, capital: float) -> d
 
 
 async def _confirm_gold_entry_inner(session_id: int, user_id: int, capital: float) -> dict:
-    with get_db() as conn:
-        session = conn.execute(
-            "SELECT * FROM gold_trade_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+    async with get_db() as cur:
+        await cur.execute("SELECT * FROM gold_trade_sessions WHERE id = %s", (session_id,))
+        session = await cur.fetchone()
         if not session:
             return {"error": "Session introuvable"}
         session = dict(session)
@@ -526,18 +536,18 @@ async def _confirm_gold_entry_inner(session_id: int, user_id: int, capital: floa
     gain_tp1 = gains["gain_tp1"]
     gain_tp2 = gains["gain_tp2"]
     gain_tp3 = gains["gain_tp3"]
-    tp_level, risk_pct = get_tp_level_for_capital(capital)
+    tp_level, risk_pct = await get_tp_level_for_capital(capital)
     risk_usd = round(capital * risk_pct / 100, 2)
 
     async with _db_write_lock:
-        with get_db() as conn:
-            conn.execute("""
+        async with get_db() as cur:
+            await cur.execute("""
                 INSERT INTO gold_member_entries
                     (session_id, user_id, season_id, capital_declared, risk_pct,
                      risk_usd, lot_calculated, tp_level_assigned,
                      perte_sl, gain_tp1, gain_tp2, gain_tp3,
                      capital_before, step_reached, confirmed_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'confirmed',NOW())
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'confirmed',NOW())
                 ON DUPLICATE KEY UPDATE
                     capital_declared  = VALUES(capital_declared),
                     risk_pct          = VALUES(risk_pct),
@@ -555,13 +565,13 @@ async def _confirm_gold_entry_inner(session_id: int, user_id: int, capital: floa
                   perte_sl, gain_tp1, gain_tp2, gain_tp3, capital))
 
             if session["current_phase"] == "teaser":
-                conn.execute("""
+                await cur.execute("""
                     UPDATE gold_trade_sessions
                     SET current_phase = 'open', opened_at = NOW()
-                    WHERE id = ?
+                    WHERE id = %s
                 """, (session_id,))
 
-            agg = conn.execute("""
+            await cur.execute("""
                 SELECT
                     COUNT(*) AS total_members,
                     ROUND(SUM(lot_calculated), 4)          AS total_lots,
@@ -569,19 +579,20 @@ async def _confirm_gold_entry_inner(session_id: int, user_id: int, capital: floa
                     ROUND(SUM(gain_tp1), 2)                 AS total_gain_tp1,
                     ROUND(SUM(COALESCE(gain_tp2,0)), 2)     AS total_gain_tp2,
                     ROUND(SUM(COALESCE(gain_tp3,0)), 2)     AS total_gain_tp3
-                FROM gold_member_entries WHERE session_id = ?
-            """, (session_id,)).fetchone()
+                FROM gold_member_entries WHERE session_id = %s
+            """, (session_id,))
+            agg = await cur.fetchone()
 
-            conn.execute("""
+            await cur.execute("""
                 UPDATE gold_trade_sessions SET
-                    total_members_in      = ?,
-                    total_lots_engaged    = ?,
-                    estimated_loss_sl     = ?,
-                    estimated_gain_tp1    = ?,
-                    estimated_gain_tp2    = ?,
-                    estimated_gain_tp3    = ?,
+                    total_members_in      = %s,
+                    total_lots_engaged    = %s,
+                    estimated_loss_sl     = %s,
+                    estimated_gain_tp1    = %s,
+                    estimated_gain_tp2    = %s,
+                    estimated_gain_tp3    = %s,
                     aggregates_updated_at = NOW()
-                WHERE id = ?
+                WHERE id = %s
             """, (agg["total_members"] or 0, agg["total_lots"] or 0,
                   agg["total_loss_sl"] or 0, agg["total_gain_tp1"] or 0,
                   agg["total_gain_tp2"] or 0, agg["total_gain_tp3"] or 0,
@@ -621,35 +632,35 @@ async def _confirm_gold_entry_inner(session_id: int, user_id: int, capital: floa
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def trigger_tp_reached(session_id: int, tp_level: int) -> dict:
-    with get_db() as conn:
-        session = conn.execute(
-            "SELECT * FROM gold_trade_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+    async with get_db() as cur:
+        await cur.execute("SELECT * FROM gold_trade_sessions WHERE id = %s", (session_id,))
+        session = await cur.fetchone()
         if not session:
             return {"error": "Session introuvable"}
         session = dict(session)
 
-        entries = conn.execute("""
+        await cur.execute("""
             SELECT gme.user_id, gme.tp_level_assigned,
                    gme.gain_tp1, gme.gain_tp2, gme.gain_tp3
             FROM gold_member_entries gme
-            WHERE gme.session_id = ? AND gme.step_reached = 'confirmed'
-        """, (session_id,)).fetchall()
+            WHERE gme.session_id = %s AND gme.step_reached = 'confirmed'
+        """, (session_id,))
+        entries = await cur.fetchall()
 
         phase_map = {1: "tp1_reached", 2: "tp2_reached", 3: "tp3_reached"}
         new_phase = phase_map[tp_level]
         tp_field  = f"tp{tp_level}_reached_at"
-        conn.execute(f"""
+        await cur.execute(f"""
             UPDATE gold_trade_sessions
-            SET current_phase = ?, {tp_field} = NOW()
-            WHERE id = ?
+            SET current_phase = %s, {tp_field} = NOW()
+            WHERE id = %s
         """, (new_phase, session_id))
 
     sent_exit = sent_continue = errors = 0
     for entry in entries:
-        entry    = dict(entry)
-        rule_msgs = get_rule_messages(entry["tp_level_assigned"])
-        message  = rule_msgs.get(f"message_tp{tp_level}_reached")
+        entry     = dict(entry)
+        rule_msgs = await get_rule_messages(entry["tp_level_assigned"])
+        message   = rule_msgs.get(f"message_tp{tp_level}_reached")
         if not message:
             continue
         gain = {1: entry["gain_tp1"], 2: entry["gain_tp2"], 3: entry["gain_tp3"]}.get(tp_level)
@@ -660,7 +671,7 @@ async def trigger_tp_reached(session_id: int, tp_level: int) -> dict:
                 await _bot.send_message(chat_id=entry["user_id"], text=message, parse_mode="Markdown")
                 await asyncio.sleep(0.05)
             await _log_flow_event(session_id, entry["user_id"], f"tp{tp_level}_notified", {"gain": gain})
-            sent_exit += 1 if entry["tp_level_assigned"] == tp_level else 0
+            sent_exit     += 1 if entry["tp_level_assigned"] == tp_level else 0
             sent_continue += 1 if entry["tp_level_assigned"] != tp_level else 0
         except Exception as e:
             logger.warning(f"[trigger_tp] uid={entry['user_id']}: {e}")
@@ -671,49 +682,49 @@ async def trigger_tp_reached(session_id: int, tp_level: int) -> dict:
 
 
 async def trigger_sl_touched(session_id: int) -> dict:
-    with get_db() as conn:
-        session = conn.execute(
-            "SELECT * FROM gold_trade_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+    async with get_db() as cur:
+        await cur.execute("SELECT * FROM gold_trade_sessions WHERE id = %s", (session_id,))
+        session = await cur.fetchone()
         if not session:
             return {"error": "Session introuvable"}
         session = dict(session)
 
-        entries = conn.execute("""
+        await cur.execute("""
             SELECT gme.*, u.name FROM gold_member_entries gme
             LEFT JOIN users u ON u.telegram_id = gme.user_id
-            WHERE gme.session_id = ? AND gme.step_reached = 'confirmed'
-        """, (session_id,)).fetchall()
+            WHERE gme.session_id = %s AND gme.step_reached = 'confirmed'
+        """, (session_id,))
+        entries = await cur.fetchall()
 
-        async with _db_write_lock:
-            with get_db() as conn2:
-                conn2.execute("""
-                    UPDATE gold_trade_sessions
-                    SET current_phase = 'sl_touched', sl_touched_at = NOW(), closed_at = NOW()
-                    WHERE id = ?
-                """, (session_id,))
-                conn2.execute("""
-                    UPDATE gold_member_entries
-                    SET result_usd    = perte_sl,
-                        capital_after = capital_before + perte_sl,
-                        exit_tp_level = NULL,
-                        exited_at     = NOW()
-                    WHERE session_id = ?
-                """, (session_id,))
-                conn2.execute("""
-                    UPDATE simulation_trades
-                    SET result_usd    = perte_sl,
-                        capital_after = capital_before + perte_sl,
-                        status        = 'closed',
-                        closed_at     = NOW()
-                    WHERE session_id = ?
-                """, (session_id,))
+    async with _db_write_lock:
+        async with get_db() as cur:
+            await cur.execute("""
+                UPDATE gold_trade_sessions
+                SET current_phase = 'sl_touched', sl_touched_at = NOW(), closed_at = NOW()
+                WHERE id = %s
+            """, (session_id,))
+            await cur.execute("""
+                UPDATE gold_member_entries
+                SET result_usd    = perte_sl,
+                    capital_after = capital_before + perte_sl,
+                    exit_tp_level = NULL,
+                    exited_at     = NOW()
+                WHERE session_id = %s
+            """, (session_id,))
+            await cur.execute("""
+                UPDATE simulation_trades
+                SET result_usd    = perte_sl,
+                    capital_after = capital_before + perte_sl,
+                    status        = 'closed',
+                    closed_at     = NOW()
+                WHERE session_id = %s
+            """, (session_id,))
 
     notified = 0
     for entry in entries:
-        entry    = dict(entry)
-        rule_msgs = get_rule_messages(entry["tp_level_assigned"])
-        message  = rule_msgs.get("message_sl_touched",
+        entry     = dict(entry)
+        rule_msgs = await get_rule_messages(entry["tp_level_assigned"])
+        message   = rule_msgs.get("message_sl_touched",
             f"❌ *SL touché sur XAU/USD*\n\nPerte : *{entry['perte_sl']}$*\nRestez discipliné 💪")
         message += f"\n\n📉 Perte sur ce trade : *{entry['perte_sl']}$*"
         try:
@@ -742,13 +753,13 @@ async def close_gold_session(session_id: int, payload: dict) -> dict:
     result = await trigger_tp_reached(session_id, tp_num)
 
     async with _db_write_lock:
-        with get_db() as conn:
-            conn.execute("""
+        async with get_db() as cur:
+            await cur.execute("""
                 UPDATE gold_trade_sessions
                 SET current_phase = 'closed', closed_at = NOW()
-                WHERE id = ?
+                WHERE id = %s
             """, (session_id,))
-            conn.execute(f"""
+            await cur.execute(f"""
                 UPDATE gold_member_entries
                 SET result_usd = CASE
                         WHEN tp_level_assigned >= {tp_num} AND gain_tp{tp_num} IS NOT NULL THEN gain_tp{tp_num}
@@ -766,7 +777,7 @@ async def close_gold_session(session_id: int, payload: dict) -> dict:
                         ELSE gain_tp1
                     END,
                     exited_at = NOW()
-                WHERE session_id = ?
+                WHERE session_id = %s
             """, (session_id,))
 
     await _close_simulation_trades(session_id, close_type)
@@ -813,10 +824,9 @@ async def watch_gold_price(session_id: int):
     logger.info(f"[gold_watch] Démarrage session {session_id}")
     while True:
         try:
-            with get_db() as conn:
-                session = conn.execute(
-                    "SELECT * FROM gold_trade_sessions WHERE id = ?", (session_id,)
-                ).fetchone()
+            async with get_db() as cur:
+                await cur.execute("SELECT * FROM gold_trade_sessions WHERE id = %s", (session_id,))
+                session = await cur.fetchone()
 
             if not session:
                 break
@@ -836,11 +846,11 @@ async def watch_gold_price(session_id: int):
                 await asyncio.sleep(interval)
                 continue
 
-            with get_db() as conn:
-                conn.execute("""
+            async with get_db() as cur:
+                await cur.execute("""
                     UPDATE gold_trade_sessions
-                    SET live_price_last = ?, live_price_updated_at = NOW()
-                    WHERE id = ?
+                    SET live_price_last = %s, live_price_updated_at = NOW()
+                    WHERE id = %s
                 """, (price, session_id))
 
             direction     = session["direction"]
@@ -879,25 +889,24 @@ async def create_simulation_account(payload: dict) -> dict:
     capital   = float(payload["initial_capital"])
 
     async with _db_write_lock:
-        with get_db() as conn:
-            conn.execute("""
+        async with get_db() as cur:
+            await cur.execute("""
                 INSERT INTO simulation_accounts
                     (name, description, initial_capital, current_capital,
                      risk_pct_default, peak_capital, season_id, created_at, updated_at)
-                VALUES (?,?,?,?,?,?,?,NOW(),NOW())
+                VALUES (%s,%s,%s,%s,%s,%s,%s,NOW(),NOW())
             """, (payload["name"], payload.get("description"), capital, capital,
                   float(payload.get("risk_pct_default", 1.0)), capital, season_id))
-            account_id = conn.execute("SELECT LAST_INSERT_ID() as id").fetchone()["id"]
-            account    = dict(conn.execute(
-                "SELECT * FROM simulation_accounts WHERE id = ?", (account_id,)
-            ).fetchone())
+            account_id = cur.lastrowid
+            await cur.execute("SELECT * FROM simulation_accounts WHERE id = %s", (account_id,))
+            account = dict(await cur.fetchone())
     return account
 
 
 async def get_simulation_accounts(active_only: bool = True) -> list:
-    with get_db() as conn:
+    async with get_db() as cur:
         where = "WHERE sa.is_active = 1" if active_only else ""
-        rows  = conn.execute(f"""
+        await cur.execute(f"""
             SELECT sa.*, gs.name AS season_name,
                    COUNT(st.id) AS total_trades_count,
                    ROUND((sa.current_capital - sa.initial_capital)
@@ -908,24 +917,25 @@ async def get_simulation_accounts(active_only: bool = True) -> list:
             {where}
             GROUP BY sa.id
             ORDER BY sa.initial_capital ASC
-        """).fetchall()
+        """)
+        rows = await cur.fetchall()
     return [dict(r) for r in rows]
 
 
 async def get_simulation_account_detail(account_id: int) -> dict | None:
-    with get_db() as conn:
-        account = conn.execute(
-            "SELECT * FROM simulation_accounts WHERE id = ?", (account_id,)
-        ).fetchone()
+    async with get_db() as cur:
+        await cur.execute("SELECT * FROM simulation_accounts WHERE id = %s", (account_id,))
+        account = await cur.fetchone()
         if not account:
             return None
         account = dict(account)
 
-        trades = conn.execute("""
+        await cur.execute("""
             SELECT st.*, gts.current_phase FROM simulation_trades st
             JOIN gold_trade_sessions gts ON gts.id = st.session_id
-            WHERE st.account_id = ? ORDER BY st.opened_at ASC
-        """, (account_id,)).fetchall()
+            WHERE st.account_id = %s ORDER BY st.opened_at ASC
+        """, (account_id,))
+        trades = await cur.fetchall()
         account["trades"] = [dict(t) for t in trades]
 
         capital_curve = []
@@ -945,24 +955,24 @@ async def get_simulation_account_detail(account_id: int) -> dict | None:
 
 
 async def _apply_to_simulation_accounts(session_id: int, session: dict):
-    with get_db() as conn:
-        existing = conn.execute(
-            "SELECT COUNT(*) as n FROM simulation_trades WHERE session_id = ?", (session_id,)
-        ).fetchone()["n"]
+    async with get_db() as cur:
+        await cur.execute(
+            "SELECT COUNT(*) as n FROM simulation_trades WHERE session_id = %s", (session_id,)
+        )
+        existing = (await cur.fetchone())["n"]
         if existing > 0:
             return
-        accounts = conn.execute(
-            "SELECT * FROM simulation_accounts WHERE is_active = 1"
-        ).fetchall()
+        await cur.execute("SELECT * FROM simulation_accounts WHERE is_active = 1")
+        accounts = await cur.fetchall()
 
     rows_to_insert = []
     for acc in accounts:
         acc     = dict(acc)
         capital = acc["current_capital"]
-        lot    = calculate_lot(capital, session["entry_price"], session["sl"])
-        gains  = calculate_gains_losses(lot=lot, entry=session["entry_price"], sl=session["sl"],
-                                         tp1=session.get("tp1"), tp2=session.get("tp2"), tp3=session.get("tp3"))
-        tp_level, risk_pct = get_tp_level_for_capital(capital)
+        lot     = calculate_lot(capital, session["entry_price"], session["sl"])
+        gains   = calculate_gains_losses(lot=lot, entry=session["entry_price"], sl=session["sl"],
+                                          tp1=session.get("tp1"), tp2=session.get("tp2"), tp3=session.get("tp3"))
+        tp_level, risk_pct = await get_tp_level_for_capital(capital)
         risk_usd           = round(capital * risk_pct / 100, 2)
         rows_to_insert.append((
             acc["id"], session_id, session.get("season_id"),
@@ -975,32 +985,33 @@ async def _apply_to_simulation_accounts(session_id: int, session: dict):
         return
 
     async with _db_write_lock:
-        with get_db() as conn:
+        async with get_db() as cur:
             for row in rows_to_insert:
-                conn.execute("""
+                await cur.execute("""
                     INSERT IGNORE INTO simulation_trades
                         (account_id, session_id, season_id,
                          entry_price, tp1, tp2, tp3, sl, direction,
                          capital_before, risk_pct, risk_usd, lot_used, tp_level_target,
                          perte_sl, gain_tp1, gain_tp2, gain_tp3, opened_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW())
                 """, row)
 
 
 async def _close_simulation_trades(session_id: int, close_type: str):
-    with get_db() as conn:
-        trades = conn.execute("""
+    async with get_db() as cur:
+        await cur.execute("""
             SELECT st.*, sa.current_capital, sa.id AS acc_id, sa.peak_capital
             FROM simulation_trades st
             JOIN simulation_accounts sa ON sa.id = st.account_id
-            WHERE st.session_id = ? AND st.status = 'open'
-        """, (session_id,)).fetchall()
+            WHERE st.session_id = %s AND st.status = 'open'
+        """, (session_id,))
+        trades = await cur.fetchall()
 
     if not trades:
         return
 
     async with _db_write_lock:
-        with get_db() as conn:
+        async with get_db() as cur:
             for t in trades:
                 t = dict(t)
                 if close_type == "sl":
@@ -1023,22 +1034,22 @@ async def _close_simulation_trades(session_id: int, close_type: str):
                 drawdown    = round((peak - new_capital) / peak * 100, 2) if peak > 0 else 0
                 is_win      = result_usd > 0
 
-                conn.execute("""
+                await cur.execute("""
                     UPDATE simulation_trades
-                    SET result_usd = ?, capital_after = ?, exit_tp_level = ?,
+                    SET result_usd = %s, capital_after = %s, exit_tp_level = %s,
                         status = 'closed', closed_at = NOW()
-                    WHERE id = ?
+                    WHERE id = %s
                 """, (result_usd, new_capital, exit_tp, t["id"]))
-                conn.execute("""
+                await cur.execute("""
                     UPDATE simulation_accounts SET
-                        current_capital  = ?,
+                        current_capital  = %s,
                         total_trades     = total_trades + 1,
-                        wins             = wins + ?,
-                        losses           = losses + ?,
-                        peak_capital     = ?,
-                        max_drawdown_pct = GREATEST(max_drawdown_pct, ?),
+                        wins             = wins + %s,
+                        losses           = losses + %s,
+                        peak_capital     = %s,
+                        max_drawdown_pct = GREATEST(max_drawdown_pct, %s),
                         updated_at       = NOW()
-                    WHERE id = ?
+                    WHERE id = %s
                 """, (new_capital, 1 if is_win else 0, 0 if is_win else 1,
                       peak, drawdown, t["acc_id"]))
 
@@ -1049,14 +1060,15 @@ async def _close_simulation_trades(session_id: int, close_type: str):
 
 async def check_cramed_accounts(session_id: int = None) -> dict:
     cramed_risk = []; already_cramed = []; simulation_danger = []
-    with get_db() as conn:
+    async with get_db() as cur:
         if session_id:
-            entries = conn.execute("""
+            await cur.execute("""
                 SELECT gme.user_id, gme.capital_declared, gme.perte_sl, u.name
                 FROM gold_member_entries gme
                 LEFT JOIN users u ON u.telegram_id = gme.user_id
-                WHERE gme.session_id = ? AND gme.step_reached = 'confirmed'
-            """, (session_id,)).fetchall()
+                WHERE gme.session_id = %s AND gme.step_reached = 'confirmed'
+            """, (session_id,))
+            entries = await cur.fetchall()
             for e in entries:
                 e = dict(e)
                 capital = e["capital_declared"]
@@ -1070,13 +1082,15 @@ async def check_cramed_accounts(session_id: int = None) -> dict:
                                         "capital": capital, "perte_sl": -perte,
                                         "capital_restant": round(apres, 2),
                                         "pct_restant": round(apres / capital * 100, 1)})
-            sim = conn.execute("""
+
+            await cur.execute("""
                 SELECT st.perte_sl, st.capital_before, sa.name AS account_name
                 FROM simulation_trades st
                 JOIN simulation_accounts sa ON sa.id = st.account_id
-                WHERE st.session_id = ? AND st.status = 'open'
-            """, (session_id,)).fetchall()
-            for s in sim:
+                WHERE st.session_id = %s AND st.status = 'open'
+            """, (session_id,))
+            sims = await cur.fetchall()
+            for s in sims:
                 s = dict(s)
                 apres = s["capital_before"] + (s["perte_sl"] or 0)
                 if apres < s["capital_before"] * 0.3:
@@ -1110,10 +1124,11 @@ async def check_cramed_accounts(session_id: int = None) -> dict:
 
 
 async def daily_cramed_check():
-    with get_db() as conn:
-        open_sessions = conn.execute(
+    async with get_db() as cur:
+        await cur.execute(
             "SELECT id FROM gold_trade_sessions WHERE current_phase = 'open'"
-        ).fetchall()
+        )
+        open_sessions = await cur.fetchall()
     results = []
     for s in open_sessions:
         result = await check_cramed_accounts(s["id"])
@@ -1126,23 +1141,24 @@ async def daily_cramed_check():
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def get_tp_rules() -> list:
-    with get_db() as conn:
-        rows = conn.execute(
+    async with get_db() as cur:
+        await cur.execute(
             "SELECT * FROM gold_tp_rules ORDER BY tp_level ASC, min_capital ASC"
-        ).fetchall()
+        )
+        rows = await cur.fetchall()
     return [dict(r) for r in rows]
 
 
 async def create_tp_rule(payload: dict) -> dict:
     async with _db_write_lock:
-        with get_db() as conn:
-            conn.execute("""
+        async with get_db() as cur:
+            await cur.execute("""
                 INSERT INTO gold_tp_rules
                     (rule_name, tp_level, min_capital, max_capital, risk_pct,
                      message_tp1_reached, message_tp2_reached, message_tp3_reached,
                      message_sl_touched, message_breakeven, message_partial_close,
                      message_teaser, message_confirmation)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (
                 payload["rule_name"], int(payload["tp_level"]),
                 float(payload["min_capital"]),
@@ -1153,10 +1169,9 @@ async def create_tp_rule(payload: dict) -> dict:
                 payload.get("message_breakeven"), payload.get("message_partial_close"),
                 payload.get("message_teaser"), payload.get("message_confirmation"),
             ))
-            rule_id = conn.execute("SELECT LAST_INSERT_ID() as id").fetchone()["id"]
-            rule    = dict(conn.execute(
-                "SELECT * FROM gold_tp_rules WHERE id = ?", (rule_id,)
-            ).fetchone())
+            rule_id = cur.lastrowid
+            await cur.execute("SELECT * FROM gold_tp_rules WHERE id = %s", (rule_id,))
+            rule = dict(await cur.fetchone())
     return rule
 
 
@@ -1168,7 +1183,7 @@ async def update_tp_rule(rule_id: int, payload: dict) -> dict:
                  "message_teaser","message_confirmation","is_active"]
     for col in updatable:
         if col in payload:
-            fields.append(f"{col} = ?")
+            fields.append(f"{col} = %s")
             values.append(payload[col])
     if not fields:
         return {"status": "nothing_to_update"}
@@ -1176,11 +1191,10 @@ async def update_tp_rule(rule_id: int, payload: dict) -> dict:
     values.append(rule_id)
 
     async with _db_write_lock:
-        with get_db() as conn:
-            conn.execute(f"UPDATE gold_tp_rules SET {', '.join(fields)} WHERE id = ?", values)
-            rule = dict(conn.execute(
-                "SELECT * FROM gold_tp_rules WHERE id = ?", (rule_id,)
-            ).fetchone())
+        async with get_db() as cur:
+            await cur.execute(f"UPDATE gold_tp_rules SET {', '.join(fields)} WHERE id = %s", values)
+            await cur.execute("SELECT * FROM gold_tp_rules WHERE id = %s", (rule_id,))
+            rule = dict(await cur.fetchone())
     return rule
 
 
@@ -1190,11 +1204,11 @@ async def update_tp_rule(rule_id: int, payload: dict) -> dict:
 
 async def _log_flow_event(session_id: int, user_id: int, event_type: str, payload: dict = None):
     try:
-        with get_db() as conn:
-            conn.execute("""
+        async with get_db() as cur:
+            await cur.execute("""
                 INSERT INTO gold_flow_events
                     (session_id, user_id, event_type, payload, created_at)
-                VALUES (?,?,?,?,NOW())
+                VALUES (%s,%s,%s,%s,NOW())
             """, (session_id, user_id, event_type, json.dumps(payload) if payload else None))
     except Exception as e:
         logger.warning(f"[flow_event] {e}")
@@ -1203,17 +1217,17 @@ async def _log_flow_event(session_id: int, user_id: int, event_type: str, payloa
 async def _notify_admin_session_closed(session_id: int, close_type: str, notified: int):
     if not _bot:
         return
-    with get_db() as conn:
-        session = conn.execute(
-            "SELECT * FROM gold_trade_sessions WHERE id = ?", (session_id,)
-        ).fetchone()
-        agg = conn.execute("""
+    async with get_db() as cur:
+        await cur.execute("SELECT * FROM gold_trade_sessions WHERE id = %s", (session_id,))
+        session = await cur.fetchone()
+        await cur.execute("""
             SELECT
                 ROUND(SUM(result_usd), 2) AS total_result,
                 ROUND(SUM(CASE WHEN result_usd > 0 THEN result_usd ELSE 0 END), 2) AS total_gains,
                 ROUND(SUM(CASE WHEN result_usd < 0 THEN result_usd ELSE 0 END), 2) AS total_losses
-            FROM gold_member_entries WHERE session_id = ?
-        """, (session_id,)).fetchone()
+            FROM gold_member_entries WHERE session_id = %s
+        """, (session_id,))
+        agg = await cur.fetchone()
 
     if not session:
         return
