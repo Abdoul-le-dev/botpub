@@ -19,6 +19,8 @@ Dépendance :
 import json
 import asyncio
 from datetime import datetime
+from subscription_sync import sync_clients_actifs
+
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
@@ -55,6 +57,15 @@ async def start_scheduler(bot, admin_id: int = None):
 
     _scheduler = BackgroundScheduler(timezone="Europe/Paris")
     _scheduler.start()
+    _scheduler.add_job(
+    lambda: asyncio.run(sync_clients_actifs()),
+    trigger="cron",
+    hour=23,
+    minute=50,
+    id="sync_clients_actifs",
+    replace_existing=True,
+    )
+    print("[form_scheduler] Job sync_clients_actifs enregistré → 23h50 chaque soir")
 
     await _reload_scheduled_forms()
     print("[form_scheduler] Scheduler démarré.")

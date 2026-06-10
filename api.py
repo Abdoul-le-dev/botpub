@@ -11,7 +11,8 @@ from telegram import Bot
 import os
 import csv
 import io
-
+from subscription_sync import sync_clients_actifs
+import asyncio
 from db import init_pool, close_pool
 
 load_dotenv()
@@ -88,6 +89,7 @@ async def lifespan(app: FastAPI):
     yield
     stop_scheduler()
     await close_pool()
+    await sync_clients_actifs() 
 
 
 # ════════════════════════════════════════════════════════════════════════
