@@ -337,7 +337,7 @@ async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: in
         if telegram_id <= 0:
             return
         try:
-            form = get_form_by_id(fid)
+            form = await get_form_by_id(fid)
             if not form: return
             fields  = form.get("fields", [])
             title   = form.get("name", "le formulaire")
@@ -408,7 +408,7 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return ConversationHandler.END
 
-    session = get_or_create_session(form["id"], user_id)
+    session = await get_or_create_session(form["id"], user_id)
     context.user_data.update({
         "form_id": form["id"], "session_id": session["id"],
         "step": session["step_index"], "progress": options.get("progress", False),
@@ -462,7 +462,7 @@ async def _form_receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data.update({"form_id": form_id, "session_id": session_id,
                                    "step": step, "multi_sel": [], "responses": {}})
 
-    form   = get_form_by_id(form_id)
+    form   = await get_form_by_id(form_id)
     fields = form.get("fields", [])
     if step >= len(fields):
         return ConversationHandler.END
@@ -504,7 +504,7 @@ async def _form_receive_callback(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data.update({"form_id": form_id, "session_id": session_id,
                                    "step": step, "multi_sel": [], "responses": {}})
 
-    form   = get_form_by_id(form_id)
+    form   = await  get_form_by_id(form_id)
     fields = form.get("fields", [])
     if step >= len(fields):
         return ConversationHandler.END
@@ -557,7 +557,7 @@ async def _form_receive_media(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not form_id:
         return ConversationHandler.END
 
-    form   = get_form_by_id(form_id)
+    form   = await get_form_by_id(form_id)
     fields = form.get("fields", [])
     if step >= len(fields):
         return ConversationHandler.END
@@ -595,7 +595,7 @@ async def _process_answer(update, context, form, fields, field, step,
     is_correct, points, feedback = _evaluate_answer(field, raw_answer)
 
     if raw_answer not in ("__skip__", "__info__"):
-        save_response(session_id, form_id, user_id,
+        await save_response(session_id, form_id, user_id,
                       field_id=field.get("id", step), field_type=field.get("type", "text"),
                       field_label=field.get("label", ""), value=raw_answer,
                       is_correct=is_correct, points=points)
@@ -607,7 +607,7 @@ async def _process_answer(update, context, form, fields, field, step,
 
     cond_actions = _eval_conditions(form.get("conditions", []), context.user_data.get("responses", {}))
     next_step    = step + 1
-    advance_session(session_id, next_step, add_score=points)
+    await advance_session(session_id, next_step, add_score=points)
 
     if next_step >= len(fields):
         async def _finish_bg():
@@ -626,7 +626,7 @@ async def _process_answer(update, context, form, fields, field, step,
 
 async def _finish_form(update, context, form, session_id, form_id, user_id, extra_cond_actions):
     bot = context.bot
-    complete_session(session_id)
+    await complete_session(session_id)
 
     link_id = context.user_data.get("pending_link_id") if context else None
     if link_id:
@@ -634,7 +634,7 @@ async def _finish_form(update, context, form, session_id, form_id, user_id, extr
         await record_form_completion(bot, user_id, link_id)
         context.user_data.pop("pending_link_id", None)
 
-    session   = get_session(session_id)
+    session   = await get_session(session_id)
     score     = session["score"] if session else 0
     qcfg      = form.get("quiz_config", {})
     score_max = int(qcfg.get("max", 0))
@@ -644,7 +644,7 @@ async def _finish_form(update, context, form, session_id, form_id, user_id, extr
     ctx_vars    = {"score": score, "total": score_max, "admin_id": admin_id}
 
     done = await _run_actions(bot, user_id, all_actions, ctx_vars)
-    save_submission(session_id, form_id, user_id, done)
+    await save_submission(session_id, form_id, user_id, done)
 
     if form.get("outro"):
         prenom = await _get_prenom(user_id)
@@ -676,7 +676,7 @@ async def _form_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session_id = context.user_data.get("session_id")
     if session_id:
         from form.form import abandon_session
-        abandon_session(session_id)
+        await abandon_session(session_id)
     context.user_data.clear()
     await update.message.reply_text("Formulaire annulé.", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
@@ -687,13 +687,13 @@ async def _form_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ════════════════════════════════════════════════════════════════════════════
 
 async def send_form_to_user(bot, telegram_id: int, form_id: int, context=None):
-    form = get_form_by_id(form_id)
+    form = await get_form_by_id(form_id)
     if not form: return
     fields  = form.get("fields", [])
     options = form.get("options", {}) or {}
     if not fields: return
 
-    session = get_or_create_session(form_id, telegram_id)
+    session = await get_or_create_session(form_id, telegram_id)
     if form.get("intro"):
         prenom = await _get_prenom(telegram_id)
         await bot.send_message(telegram_id, _inject_vars(form["intro"], telegram_id, prenom=prenom))
@@ -734,7 +734,7 @@ async def broadcast_form(bot, form_id: int, user_ids: list[int], admin_id: int =
 
 def register_form_handlers(app: Application, bot, admin_id: int):
     app.bot_data["admin_id"] = admin_id
-    app.post_init = setup_background_worker
+    #app.post_init = setup_background_worker
 
     conv = ConversationHandler(
         entry_points=[MessageHandler(filters.COMMAND, _form_start)],
