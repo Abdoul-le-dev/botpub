@@ -4,7 +4,7 @@
 
 from datetime import datetime
 from db import get_db
-from categorie import _bulk_insert_members, _ensure_meta_exists
+from telegram_page.categorie import _bulk_insert_members, _ensure_meta_exists
 
 CATEGORIE_ACTIFS = "clients_actifs"
 
