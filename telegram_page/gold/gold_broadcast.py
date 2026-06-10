@@ -191,7 +191,7 @@ async def send_gold_teaser(bot, session: dict,
 
     print(total)
 
-    return 
+    
 
     if total == 0:
         return {"total": 0, "sent": 0, "errors": 0, "session_id": session_id}
