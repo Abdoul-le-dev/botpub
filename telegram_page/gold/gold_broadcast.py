@@ -64,13 +64,15 @@ async def _get_category_user_ids(category: str) -> list:
             await cur.execute(
                 "SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL"
             )
+            rows = await cur.fetchall()
+            return [r["telegram_id"] for r in rows] if rows else []
         else:
             await cur.execute(
                 "SELECT id_user FROM categories WHERE name_categorie = %s",
                 (category,)
             )
-        rows = await cur.fetchall()
-    return [r[0] for r in rows]
+            rows = await cur.fetchall()
+            return [r["id_user"] for r in rows] if rows else []
 
 
 def _fmt_now_discrete() -> str:
