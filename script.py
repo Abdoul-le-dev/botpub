@@ -114,7 +114,7 @@ async def schedule_daily_check(bot):
         except Exception as e:
             print(f"[daily_check] Erreur: {e}")
 
-async def main():
+async def _init():
     print("[main] init_pool...")
     await init_pool()
     print("[main] Pool OK ✓")
@@ -137,7 +137,9 @@ async def main():
     set_bot(app.bot)
     set_gold_bot(app.bot)
 
-    print("running...")
-    await app.run_polling(poll_interval=1)
+    return app
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    app = asyncio.run(_init())   # ← construit l'app (async)
+    print("running...")
+    app.run_polling(poll_interval=1)  # ← sans await, PTB gère son propre loop
