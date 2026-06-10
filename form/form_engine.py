@@ -390,9 +390,9 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return FORM_STEP
         if not form_id:
             return ConversationHandler.END
-        form = get_form_by_id(form_id)
+        form = await get_form_by_id(form_id)
     else:
-        form = get_form_by_command(command)
+        form = await get_form_by_command(command)
 
     if not form:
         return ConversationHandler.END
