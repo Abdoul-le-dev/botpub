@@ -267,6 +267,7 @@ async def broadcast_engine(bot, payload: dict) -> dict:
 
     # ── 4. Résolution destinataires ───────────────────────────────────────────
     final_ids = await _resolve_user_ids(category, user_ids, exclude_user_ids, filters)
+    print(final_ids)
     total     = len(final_ids)
 
     if total == 0:
