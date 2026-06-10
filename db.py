@@ -58,7 +58,7 @@ async def close_pool():
     global _pool
     if _pool:
         _pool.close()
-        await _pool.wait_closed()
+        #await _pool.wait_closed()
 
 
 # ─────────────────────────────────────────────
