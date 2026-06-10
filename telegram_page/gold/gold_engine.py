@@ -131,7 +131,7 @@ async def _seed_default_tp_rules(cur):
             "message_tp2_reached":  None, "message_tp3_reached": None,
             "message_sl_touched":   "❌ *SL touché sur XAU/USD*\n\nVotre SL a bien protégé votre compte.\nC'est la discipline qui fait les vrais traders 💪",
             "message_breakeven": None, "message_partial_close": None,
-            "message_teaser":       "🔔 *Le trade du jour est disponible !*\n\n📊 Paire : *XAU/USD* (Gold)\n📈 Achat (Buy)\n\n_Cliquez ci-dessous pour accéder au trade._",
+            "message_teaser":       "🔔 *Le trade du jour est disponible !*\n\n📊 Paire : *XAU/USD* (Gold)\n \n\n_Cliquez ci-dessous pour accéder au trade._",
             "message_confirmation": "✅ *Trade enregistré !*\nTu recevras les instructions en temps réel.",
         },
         {

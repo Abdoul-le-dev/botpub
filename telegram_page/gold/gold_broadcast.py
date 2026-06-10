@@ -158,7 +158,7 @@ async def _build_teaser_message(session: dict, prenom: str = "") -> str:
     lines = [
         f"🔔 *Le trade du jour est disponible{greeting} !*", "",
         f"📊 Paire : *{session.get('pair', 'XAU/USD')}*",
-        # f"{dir_label}", f"Confiance : {conf_stars}", "",
+        f"{dir_label}", f"Confiance : {conf_stars}", "",
         "─────────────────────",
         "💡 *Rappel — gestion du risque :*",
         "• Respectez toujours votre SL",
@@ -184,7 +184,7 @@ async def send_gold_teaser(bot, session: dict,
                             category: str = "see",
                             delay: float  = 0.08) -> dict:
     session_id = session["id"]
-    user_ids   = await _get_category_user_ids("see")
+    user_ids   = await _get_category_user_ids("clients_actifs")
     print(user_ids)
 
     total      = len(user_ids)

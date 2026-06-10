@@ -24,7 +24,7 @@ load_dotenv()
 ADMIN_ID   = 571718066
 CANAL_B_ID = -1002705005402
 CATEGORIE  = "USER_PUB_1_NON_ACHAT"
-token      = os.getenv("tokenss")
+token      = os.getenv("tokens")
 
 
 # ── save_user_default async ───────────────────────────────────────────────────
