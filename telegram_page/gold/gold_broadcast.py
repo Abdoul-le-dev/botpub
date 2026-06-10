@@ -157,11 +157,11 @@ async def _build_teaser_message(session: dict, prenom: str = "") -> str:
 
     lines = [
         f"🔔 *Le trade du jour est disponible{greeting} !*", "",
-        f"📊 Paire : *{session.get('pair', 'XAU/USD')}*",
-        f"{dir_label}", f"Confiance : {conf_stars}", "",
+       
         "─────────────────────",
         "💡 *Rappel — gestion du risque :*",
         "• Respectez toujours votre SL",
+        
         "• Ne risquez que ce que vous pouvez perdre",
         "• Suivez les instructions en temps réel",
         "─────────────────────", "",
