@@ -1,5 +1,5 @@
 """
-ia_agent.py — v4 MySQL
+ia_agent.py — v5 MySQL async
 """
 
 import os
@@ -14,7 +14,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from fastapi import APIRouter, HTTPException, Request
 
-from db import get_db   # ← pool MySQL
+from db import get_db
 
 load_dotenv()
 
@@ -50,82 +50,83 @@ def _now() -> str:
     return datetime.now().isoformat()
 
 
-def get_conversation_state(user_id: int) -> dict:
-    with get_db() as conn:
-        row = conn.execute(
-            "SELECT ia_enabled, is_blocked FROM conversations WHERE user_id = ?",
+async def get_conversation_state(user_id: int) -> dict:
+    async with get_db() as cur:
+        await cur.execute(
+            "SELECT ia_enabled, is_blocked FROM conversations WHERE user_id = %s",
             (user_id,)
-        ).fetchone()
+        )
+        row = await cur.fetchone()
     if row:
         return {"ia_enabled": int(row["ia_enabled"]), "is_blocked": int(row["is_blocked"])}
     return {"ia_enabled": 1, "is_blocked": 0}
 
 
-def ensure_user(user_id: int, first_name: str = "", username: str = ""):
+async def ensure_user(user_id: int, first_name: str = "", username: str = ""):
     try:
-        with get_db() as conn:
-            conn.execute("""
+        async with get_db() as cur:
+            await cur.execute("""
                 INSERT IGNORE INTO users (telegram_id, name, phone, created_at)
-                VALUES (?, ?, '0000', NOW())
+                VALUES (%s, %s, '0000', NOW())
             """, (user_id, first_name or username or "inconnu"))
     except Exception as e:
         print(f"[ensure_user] {e}")
 
 
-def ensure_conversation(user_id: int):
+async def ensure_conversation(user_id: int):
     try:
-        with get_db() as conn:
-            conn.execute("""
+        async with get_db() as cur:
+            await cur.execute("""
                 INSERT IGNORE INTO conversations (user_id, created_at, updated_at)
-                VALUES (?, NOW(), NOW())
+                VALUES (%s, NOW(), NOW())
             """, (user_id,))
-            conn.execute("""
+            await cur.execute("""
                 UPDATE conversations
                 SET last_activity = NOW(), updated_at = NOW(),
                     unread_count  = unread_count + 1
-                WHERE user_id = ?
+                WHERE user_id = %s
             """, (user_id,))
     except Exception as e:
         print(f"[ensure_conversation] {e}")
 
 
-def save_message(user_id, message_id, message_text, answer=None,
-                 message_type="text", media_url=None, direction="inbound",
-                 answered_by=None, requires_admin=0, is_testimonial=0,
-                 ia_enabled=0, status="received") -> int:
-    with get_db() as conn:
-        conn.execute("""
+async def save_message(user_id, message_id, message_text, answer=None,
+                       message_type="text", media_url=None, direction="inbound",
+                       answered_by=None, requires_admin=0, is_testimonial=0,
+                       ia_enabled=0, status="received") -> int:
+    async with get_db() as cur:
+        await cur.execute("""
             INSERT INTO messages
                 (user_id, message_id, message_text, answer, created_at,
                  media_url, status, direction, answered_by,
                  message_type, ia_enabled, requires_admin, is_testimonial)
-            VALUES (?, ?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s)
         """, (user_id, message_id, message_text or "", answer,
               media_url, status, direction, answered_by,
               message_type, ia_enabled, requires_admin, is_testimonial))
-        row_id = conn.execute("SELECT LAST_INSERT_ID() as id").fetchone()["id"]
+        row_id = cur.lastrowid
     return row_id
 
 
-def save_outbound(user_id, text, answered_by="ia", is_testimonial=0, requires_admin=0):
-    save_message(user_id=user_id, message_id=None, message_text=text,
-                 message_type="text", direction="outbound", answered_by=answered_by,
-                 ia_enabled=1, status="sent", is_testimonial=is_testimonial,
-                 requires_admin=requires_admin)
+async def save_outbound(user_id, text, answered_by="ia", is_testimonial=0, requires_admin=0):
+    await save_message(user_id=user_id, message_id=None, message_text=text,
+                       message_type="text", direction="outbound", answered_by=answered_by,
+                       ia_enabled=1, status="sent", is_testimonial=is_testimonial,
+                       requires_admin=requires_admin)
 
 
-def update_inbound(msg_id, answer, answered_by="ia", status="sent",
-                   requires_admin=0, is_testimonial=0):
-    with get_db() as conn:
-        conn.execute("""
+async def update_inbound(msg_id, answer, answered_by="ia", status="sent",
+                         requires_admin=0, is_testimonial=0):
+    async with get_db() as cur:
+        await cur.execute("""
             UPDATE messages
-            SET answer=?, answered_by=?, status=?, requires_admin=?, is_testimonial=?
-            WHERE id=?
+            SET answer=%s, answered_by=%s, status=%s, requires_admin=%s, is_testimonial=%s
+            WHERE id=%s
         """, (answer, answered_by, status, requires_admin, is_testimonial, msg_id))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PARSING DE LA RÉPONSE AGENT  (inchangé)
+# PARSING DE LA RÉPONSE AGENT
 # ══════════════════════════════════════════════════════════════════════════════
 
 def parse_agent_response(result: dict) -> dict:
@@ -225,11 +226,11 @@ def _detect_media_type(msg) -> tuple[str, str, str | None]:
     if msg.document:
         fname = msg.document.file_name or ""; ext = Path(fname).suffix.lower() or ".bin"
         mime  = msg.document.mime_type or ""
-        if "pdf" in mime:                               mtype = "pdf"
-        elif "word" in mime or ext in (".doc",".docx"): mtype = "word"
+        if "pdf" in mime:                                mtype = "pdf"
+        elif "word" in mime or ext in (".doc",".docx"):  mtype = "word"
         elif "excel" in mime or ext in (".xls",".xlsx"): mtype = "excel"
         elif "powerpoint" in mime or ext in (".ppt",".pptx"): mtype = "powerpoint"
-        else:                                           mtype = "document"
+        else:                                            mtype = "document"
         return mtype, msg.document.file_id, ext
     if msg.sticker:   return "sticker", None, None
     return "other", None, None
@@ -262,58 +263,58 @@ async def _handle_text_via_agent(user_id, chat_id, message_id, text,
     action = raw_result.get("action")
 
     if not ok:
-        update_inbound(msg_db_id, MSG_ERROR, "error", "error")
-        save_outbound(user_id, MSG_ERROR, "error")
+        await update_inbound(msg_db_id, MSG_ERROR, "error", "error")
+        await save_outbound(user_id, MSG_ERROR, "error")
         await bot.send_message(chat_id=chat_id, text=MSG_ERROR)
         return {"action": "error"}
 
     if action == "async":
-        update_inbound(msg_db_id, "", "ia_async", "pending")
+        await update_inbound(msg_db_id, "", "ia_async", "pending")
         return {"action": "async"}
 
     if action == "ignored":
-        update_inbound(msg_db_id, "", "ia", "ignored")
+        await update_inbound(msg_db_id, "", "ia", "ignored")
         return {"action": "ignored"}
 
-    parsed    = parse_agent_response(raw_result)
-    p_action  = parsed["action"]
+    parsed     = parse_agent_response(raw_result)
+    p_action   = parsed["action"]
     p_response = parsed["response"]
-    relevant  = parsed["relevant"]
+    relevant   = parsed["relevant"]
 
     if p_action == "escalation":
-        update_inbound(msg_db_id, MSG_ESCALADE, "ia_escalade", "sent", requires_admin=1)
-        save_outbound(user_id, MSG_ESCALADE, "ia_escalade", requires_admin=1)
+        await update_inbound(msg_db_id, MSG_ESCALADE, "ia_escalade", "sent", requires_admin=1)
+        await save_outbound(user_id, MSG_ESCALADE, "ia_escalade", requires_admin=1)
         await bot.send_message(chat_id=chat_id, text=MSG_ESCALADE)
         return parsed
 
     if p_action == "testimonial":
-        update_inbound(msg_db_id, MSG_TESTIMONIAL, "ia", "sent", is_testimonial=1)
-        save_outbound(user_id, MSG_TESTIMONIAL, "ia", is_testimonial=1)
+        await update_inbound(msg_db_id, MSG_TESTIMONIAL, "ia", "sent", is_testimonial=1)
+        await save_outbound(user_id, MSG_TESTIMONIAL, "ia", is_testimonial=1)
         await bot.send_message(chat_id=chat_id, text=MSG_TESTIMONIAL)
         return parsed
 
     if p_action == "need_info":
         question = parsed["need_info"]["question"]
-        update_inbound(msg_db_id, question, "ia", "sent")
-        save_outbound(user_id, question, "ia")
+        await update_inbound(msg_db_id, question, "ia", "sent")
+        await save_outbound(user_id, question, "ia")
         await bot.send_message(chat_id=chat_id, text=question)
         return parsed
 
     if not relevant:
-        update_inbound(msg_db_id, MSG_FALLBACK, "ia", "sent")
-        save_outbound(user_id, MSG_FALLBACK, "ia")
+        await update_inbound(msg_db_id, MSG_FALLBACK, "ia", "sent")
+        await save_outbound(user_id, MSG_FALLBACK, "ia")
         await bot.send_message(chat_id=chat_id, text=MSG_FALLBACK)
         return parsed
 
     if p_response:
-        update_inbound(msg_db_id, p_response, "ia", "sent")
-        save_outbound(user_id, p_response, "ia")
+        await update_inbound(msg_db_id, p_response, "ia", "sent")
+        await save_outbound(user_id, p_response, "ia")
         await bot.send_message(chat_id=chat_id, text=p_response, reply_to_message_id=message_id)
         if parsed.get("bot_command"):
             await execute_bot_command(parsed["bot_command"], user_id, chat_id, bot)
     else:
-        update_inbound(msg_db_id, MSG_ERROR, "error", "error")
-        save_outbound(user_id, MSG_ERROR, "error")
+        await update_inbound(msg_db_id, MSG_ERROR, "error", "error")
+        await save_outbound(user_id, MSG_ERROR, "error")
         await bot.send_message(chat_id=chat_id, text=MSG_ERROR)
 
     return parsed
@@ -332,25 +333,25 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
     chat_type  = msg.chat.type or "private"
     text       = msg.text or None; caption = msg.caption or None
 
-    ensure_user(user_id, first_name, username)
-    conv = get_conversation_state(user_id)
+    await ensure_user(user_id, first_name, username)
+    conv = await get_conversation_state(user_id)
 
     if conv["is_blocked"]:
         return
 
-    ensure_conversation(user_id)
+    await ensure_conversation(user_id)
 
     if not conv["ia_enabled"]:
-        save_message(user_id=user_id, message_id=message_id,
-                     message_text=text or caption or f"[{_detect_media_type(msg)[0]}]",
-                     message_type="text" if text else _detect_media_type(msg)[0],
-                     direction="inbound", ia_enabled=0, requires_admin=1, status="received")
+        await save_message(user_id=user_id, message_id=message_id,
+                           message_text=text or caption or f"[{_detect_media_type(msg)[0]}]",
+                           message_type="text" if text else _detect_media_type(msg)[0],
+                           direction="inbound", ia_enabled=0, requires_admin=1, status="received")
         return
 
     # CAS 1 — TEXTE PUR
     if msg.text and not any([msg.photo, msg.video, msg.document, msg.audio, msg.voice, msg.sticker]):
-        msg_db_id = save_message(user_id=user_id, message_id=message_id, message_text=text,
-                                  message_type="text", direction="inbound", ia_enabled=1)
+        msg_db_id = await save_message(user_id=user_id, message_id=message_id, message_text=text,
+                                       message_type="text", direction="inbound", ia_enabled=1)
         return
         await _handle_text_via_agent(
             user_id=user_id, chat_id=chat_id, message_id=message_id, text=text,
@@ -360,8 +361,8 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
 
     # CAS 2 — STICKER
     if msg.sticker:
-        save_message(user_id=user_id, message_id=message_id, message_text="[sticker]",
-                     message_type="sticker", direction="inbound", ia_enabled=0)
+        await save_message(user_id=user_id, message_id=message_id, message_text="[sticker]",
+                           message_type="sticker", direction="inbound", ia_enabled=0)
         return
 
     # CAS 3 — MÉDIA
@@ -371,28 +372,32 @@ async def log_unhandled_message(update: Update, context: ContextTypes.DEFAULT_TY
         media_url = await _download_media(context.bot, file_id, ext)
 
     if caption:
-        msg_db_id = save_message(user_id=user_id, message_id=message_id, message_text=caption,
-                                  message_type=mtype, media_url=media_url,
-                                  direction="inbound", ia_enabled=1)
+        msg_db_id = await save_message(user_id=user_id, message_id=message_id, message_text=caption,
+                                       message_type=mtype, media_url=media_url,
+                                       direction="inbound", ia_enabled=1)
         parsed = await _handle_text_via_agent(
             user_id=user_id, chat_id=chat_id, message_id=message_id, text=caption,
             first_name=first_name, username=username, chat_type=chat_type,
             msg_db_id=msg_db_id, bot=context.bot, is_media_caption=True)
 
         if parsed.get("is_testimonial") or parsed.get("action") == "testimonial":
-            with get_db() as conn:
-                conn.execute("UPDATE messages SET is_testimonial=1 WHERE id=?", (msg_db_id,))
+            async with get_db() as cur:
+                await cur.execute(
+                    "UPDATE messages SET is_testimonial=1 WHERE id=%s", (msg_db_id,)
+                )
 
         if parsed.get("action") not in ("testimonial", "ai_response", "need_info"):
-            with get_db() as conn:
-                conn.execute("UPDATE messages SET requires_admin=1 WHERE id=?", (msg_db_id,))
+            async with get_db() as cur:
+                await cur.execute(
+                    "UPDATE messages SET requires_admin=1 WHERE id=%s", (msg_db_id,)
+                )
         return
 
-    save_message(user_id=user_id, message_id=message_id, message_text=f"[{mtype}]",
-                 answer=MSG_SUPPORT, message_type=mtype, media_url=media_url,
-                 direction="inbound", answered_by="ia", requires_admin=1,
-                 ia_enabled=0, status="sent")
-    save_outbound(user_id, MSG_SUPPORT, "ia")
+    await save_message(user_id=user_id, message_id=message_id, message_text=f"[{mtype}]",
+                       answer=MSG_SUPPORT, message_type=mtype, media_url=media_url,
+                       direction="inbound", answered_by="ia", requires_admin=1,
+                       ia_enabled=0, status="sent")
+    await save_outbound(user_id, MSG_SUPPORT, "ia")
     await msg.reply_text(MSG_SUPPORT)
 
 
@@ -427,35 +432,35 @@ async def agent_response_webhook(request: Request):
     text_to_send = None
 
     if parsed["action"] == "escalation" or response is None:
-        with get_db() as conn:
-            conn.execute("""
+        async with get_db() as cur:
+            await cur.execute("""
                 UPDATE messages SET requires_admin=1, answered_by='ia_escalade', status='sent'
-                WHERE user_id=? AND message_id=? AND status='pending'
+                WHERE user_id=%s AND message_id=%s AND status='pending'
             """, (user_id, message_id))
         return {"ok": True}
 
     elif parsed["action"] == "testimonial":
         text_to_send = MSG_TESTIMONIAL
-        save_outbound(user_id, MSG_TESTIMONIAL, "ia", is_testimonial=1)
+        await save_outbound(user_id, MSG_TESTIMONIAL, "ia", is_testimonial=1)
     elif parsed["action"] == "need_info":
         text_to_send = parsed["need_info"]["question"]
-        save_outbound(user_id, text_to_send, "ia")
+        await save_outbound(user_id, text_to_send, "ia")
     elif not relevant:
         text_to_send = MSG_FALLBACK
-        save_outbound(user_id, MSG_FALLBACK, "ia")
+        await save_outbound(user_id, MSG_FALLBACK, "ia")
     elif parsed["response"]:
         text_to_send = parsed["response"]
-        save_outbound(user_id, text_to_send, "ia")
+        await save_outbound(user_id, text_to_send, "ia")
 
     if text_to_send:
         try:
             await _bot_instance.send_message(chat_id=chat_id, text=text_to_send,
                                               reply_to_message_id=message_id)
-            with get_db() as conn:
-                conn.execute("""
-                    UPDATE messages SET answer=?, answered_by='ia', status='sent', is_testimonial=?
-                    WHERE user_id=? AND message_id=? AND status='pending'
-                """, (text_to_send, 1 if parsed["action"]=="testimonial" else 0, user_id, message_id))
+            async with get_db() as cur:
+                await cur.execute("""
+                    UPDATE messages SET answer=%s, answered_by='ia', status='sent', is_testimonial=%s
+                    WHERE user_id=%s AND message_id=%s AND status='pending'
+                """, (text_to_send, 1 if parsed["action"] == "testimonial" else 0, user_id, message_id))
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
