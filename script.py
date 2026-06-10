@@ -116,13 +116,14 @@ async def schedule_daily_check(bot):
 
 
 if __name__ == "__main__":
+    print("[main] init_pool...")
+    await init_pool()
+    print("[main] Pool OK ✓")
     app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
 
     async def _post_init(app):
         try:
-            print("[post_init] Démarrage...")
-            await init_pool()
-            print("[post_init] Pool OK ✓")
+           
             await setup_background_worker(app)
             print("[post_init] Worker OK ✓")
             asyncio.create_task(schedule_daily_check(app.bot))
