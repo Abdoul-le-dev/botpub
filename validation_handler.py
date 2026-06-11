@@ -3,7 +3,6 @@ validation_handler.py — Flow de validation d'abonnement FDK Signal via Telegra
 Déclenchement : t.me/TradingBot?start=fdkgoldsaison
 """
 
-import sqlite3
 from datetime import datetime
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from telegram.ext import (
@@ -11,10 +10,10 @@ from telegram.ext import (
     MessageHandler, CallbackQueryHandler,
     filters, ContextTypes,
 )
-
 from telegram.helpers import escape_markdown
 
-DB_PATH      = "preinscriptions.db"
+from db import get_db  # ← pool aiomysql
+
 CATEGORIE    = "PRELANCEMENT FDK GOLD SAISON"
 FORM_COMMAND = "/suivi"
 
@@ -34,7 +33,9 @@ CLAUSES = (
 )
 
 
-# Helper
+# ─────────────────────────────────────────────
+#  Helper
+# ─────────────────────────────────────────────
 
 def _escape_md(text) -> str:
     if not text:
@@ -44,105 +45,108 @@ def _escape_md(text) -> str:
     return text
 
 
-# DB
+# ─────────────────────────────────────────────
+#  DB helpers (async — aiomysql)
+# ─────────────────────────────────────────────
 
-def _conn():
-    c = sqlite3.connect(DB_PATH, timeout=30)
-    c.row_factory = sqlite3.Row
-    c.execute("PRAGMA journal_mode=WAL")
-    c.execute("PRAGMA foreign_keys = ON")
-    return c
-
-
-def _find_last_unvalidated(email: str):
+async def _find_last_unvalidated(email: str):
     print(f"[validation] _find_last_unvalidated email={email}")
-    with _conn() as c:
-        row = c.execute(
+    async with get_db() as cur:
+        await cur.execute(
             """
             SELECT * FROM subscription_info
-            WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))
-              AND (note IS NULL OR note NOT LIKE '%valide%')
+            WHERE LOWER(TRIM(email)) = LOWER(TRIM(%s))
+              AND (note IS NULL OR note NOT LIKE '%%valide%%')
             ORDER BY paid_at DESC LIMIT 1
             """,
             (email,)
-        ).fetchone()
+        )
+        row = await cur.fetchone()
     result = dict(row) if row else None
     print(f"[validation] _find_last_unvalidated result={result}")
     return result
 
 
-def _all_validated(email: str) -> bool:
+async def _all_validated(email: str) -> bool:
     print(f"[validation] _all_validated email={email}")
-    with _conn() as c:
-        total = c.execute(
-            "SELECT COUNT(*) FROM subscription_info WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))",
+    async with get_db() as cur:
+        await cur.execute(
+            "SELECT COUNT(*) AS cnt FROM subscription_info WHERE LOWER(TRIM(email)) = LOWER(TRIM(%s))",
             (email,)
-        ).fetchone()[0]
-        validated = c.execute(
+        )
+        total = (await cur.fetchone())["cnt"]
+
+        await cur.execute(
             """
-            SELECT COUNT(*) FROM subscription_info
-            WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))
-              AND note LIKE '%valide%'
+            SELECT COUNT(*) AS cnt FROM subscription_info
+            WHERE LOWER(TRIM(email)) = LOWER(TRIM(%s))
+              AND note LIKE '%%valide%%'
             """,
             (email,)
-        ).fetchone()[0]
+        )
+        validated = (await cur.fetchone())["cnt"]
+
     print(f"[validation] total={total} validated={validated}")
     return total > 0 and total == validated
 
 
-def _upsert_user(c, telegram_id: int, pay: dict):
+async def _upsert_user(cur, telegram_id: int, pay: dict):
+    """Crée ou met à jour l'utilisateur. Reçoit le curseur déjà ouvert."""
     print(f"[validation] _upsert_user telegram_id={telegram_id}")
     name    = pay.get("name") or ""
     email   = pay.get("email") or ""
     phone   = pay.get("phone") or ""
     country = pay.get("country_code") or ""
 
-    existing = c.execute(
-        "SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)
-    ).fetchone()
+    await cur.execute(
+        "SELECT * FROM users WHERE telegram_id = %s", (telegram_id,)
+    )
+    existing = await cur.fetchone()
 
     if existing:
-        user = dict(existing)
         updates = {}
-        if not user.get("name")    and name:    updates["name"]    = name
-        if not user.get("email")   and email:   updates["email"]   = email
-        if not user.get("phone")   and phone:   updates["phone"]   = phone
-        if not user.get("country") and country: updates["country"] = country
+        if not existing.get("name")    and name:    updates["name"]    = name
+        if not existing.get("email")   and email:   updates["email"]   = email
+        if not existing.get("phone")   and phone:   updates["phone"]   = phone
+        if not existing.get("country") and country: updates["country"] = country
         if updates:
-            sets = ", ".join(f"{k} = ?" for k in updates)
+            sets = ", ".join(f"{k} = %s" for k in updates)
             vals = list(updates.values()) + [telegram_id]
-            c.execute(f"UPDATE users SET {sets} WHERE telegram_id = ?", vals)
+            await cur.execute(f"UPDATE users SET {sets} WHERE telegram_id = %s", vals)
             print(f"[validation] user mis à jour: {updates}")
     else:
-        c.execute(
-            "INSERT INTO users (telegram_id, name, email, phone, country, created_at) VALUES (?,?,?,?,?,datetime('now'))",
+        await cur.execute(
+            "INSERT INTO users (telegram_id, name, email, phone, country, created_at) VALUES (%s,%s,%s,%s,%s, NOW())",
             (telegram_id, name, email, phone, country)
         )
         print(f"[validation] user créé telegram_id={telegram_id}")
 
 
-def _activate(pay: dict, telegram_id: int, email: str):
+async def _activate(pay: dict, telegram_id: int, email: str):
     print(f"[validation] _activate pay_id={pay['id']} telegram_id={telegram_id}")
-    with _conn() as c:
-        _upsert_user(c, telegram_id, pay)
-        c.execute(
-            "UPDATE subscription_info SET status='active', note='valide par telegram', updated_at=datetime('now') WHERE id=?",
+    async with get_db() as cur:
+        await _upsert_user(cur, telegram_id, pay)
+
+        await cur.execute(
+            "UPDATE subscription_info SET status='active', note='valide par telegram', updated_at=NOW() WHERE id=%s",
             (pay["id"],)
         )
-        existing = c.execute(
-            "SELECT id FROM subscriptions WHERE user_id=? AND status='active'", (telegram_id,)
-        ).fetchone()
+
+        await cur.execute(
+            "SELECT id FROM subscriptions WHERE user_id=%s AND status='active'", (telegram_id,)
+        )
+        existing = await cur.fetchone()
+
         if not existing:
-            c.execute(
+            await cur.execute(
                 """
-                INSERT OR IGNORE INTO subscriptions
+                INSERT IGNORE INTO subscriptions
                     (user_id, plan, duration_days, started_at, expires_at,
                      status, note, created_at, updated_at)
-                VALUES (?,?,?,?,?,'active','valide telegram',datetime('now'),datetime('now'))
+                VALUES (%s,%s,%s,%s,%s,'active','valide telegram', NOW(), NOW())
                 """,
                 (telegram_id, pay["plan"], pay["duration_days"], pay["started_at"], pay["expires_at"])
             )
-        c.commit()
     print(f"[validation] _activate done")
 
 
@@ -155,20 +159,24 @@ def _format_date(raw) -> str:
         return str(raw)
 
 
-# Étape 1
+# ─────────────────────────────────────────────
+#  Étape 1 — Demander l'email
+# ─────────────────────────────────────────────
 
 async def _start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["in_validation"] = True
     print(f"[validation] _start user={update.effective_user.id}")
     context.user_data.clear()
     await update.message.reply_text(
-    "📧 Veuillez saisir l'adresse email utilisée lors de votre paiement :",
-    reply_markup=ReplyKeyboardRemove()
-)
+        "📧 Veuillez saisir l'adresse email utilisée lors de votre paiement :",
+        reply_markup=ReplyKeyboardRemove()
+    )
     return ASK_EMAIL
 
 
-# Étape 2
+# ─────────────────────────────────────────────
+#  Étape 2 — Recevoir l'email et chercher
+# ─────────────────────────────────────────────
 
 async def _receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["in_validation"] = True
@@ -182,7 +190,7 @@ async def _receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["email"] = email
 
     try:
-        all_done = _all_validated(email)
+        all_done = await _all_validated(email)
     except Exception as e:
         print(f"[validation] ERREUR _all_validated: {e}")
         await update.message.reply_text("❌ Erreur interne. Contactez support@fdksignal.com")
@@ -198,7 +206,7 @@ async def _receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     try:
-        pay = _find_last_unvalidated(email)
+        pay = await _find_last_unvalidated(email)
     except Exception as e:
         print(f"[validation] ERREUR _find_last_unvalidated: {e}")
         await update.message.reply_text("❌ Erreur interne. Contactez support@fdksignal.com")
@@ -234,7 +242,9 @@ async def _receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return SHOW_RESULT
 
 
-# Étape 3a
+# ─────────────────────────────────────────────
+#  Étape 3a — Confirmer l'abonnement
+# ─────────────────────────────────────────────
 
 async def _confirm_subscription(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -246,7 +256,7 @@ async def _confirm_subscription(update: Update, context: ContextTypes.DEFAULT_TY
     pay     = context.user_data.get("pay", {})
 
     try:
-        _activate(pay, user_id, email)
+        await _activate(pay, user_id, email)
     except Exception as e:
         print(f"[validation] ERREUR _activate: {e}")
 
@@ -258,18 +268,21 @@ async def _confirm_subscription(update: Update, context: ContextTypes.DEFAULT_TY
         print(f"[validation] categorie error: {e}")
 
     await query.edit_message_reply_markup(reply_markup=None)
-    
+
     await query.message.reply_text(
-    f"🎉 *Votre abonnement FDK Gold est validé \\!*\n\n"
-    f"⏳ Il est actif jusqu'au *{escape_markdown(_format_date(pay.get('expires_at')), version=2)}*\\.\n\n"
-    "💬 Si vous avez la moindre question, quelle qu'elle soit, vous pouvez me contacter directement en privé sur @Fiacrekpanou\\. "
-    "Je vous répondrai personnellement afin que nous puissions avancer ensemble vers un objectif commun\\.\n\n"
-    "📋 Veuillez cliquer sur /mon\\_profil\\_trader\\_fdk afin de compléter votre *Profil Trader*\\.",
-    parse_mode="MarkdownV2")
+        f"🎉 *Votre abonnement FDK Gold est validé \\!*\n\n"
+        f"⏳ Il est actif jusqu'au *{escape_markdown(_format_date(pay.get('expires_at')), version=2)}*\\.\n\n"
+        "💬 Si vous avez la moindre question, quelle qu'elle soit, vous pouvez me contacter directement en privé sur @Fiacrekpanou\\. "
+        "Je vous répondrai personnellement afin que nous puissions avancer ensemble vers un objectif commun\\.\n\n"
+        "📋 Veuillez cliquer sur /mon\\_profil\\_trader\\_fdk afin de compléter votre *Profil Trader*\\.",
+        parse_mode="MarkdownV2"
+    )
     return ConversationHandler.END
 
 
-# Étape 3b
+# ─────────────────────────────────────────────
+#  Étape 3b — Demande de remboursement
+# ─────────────────────────────────────────────
 
 async def _request_refund(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -289,7 +302,9 @@ async def _request_refund(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return CONFIRM_REFUND
 
 
-# Étape 4a
+# ─────────────────────────────────────────────
+#  Étape 4a — Remboursement confirmé
+# ─────────────────────────────────────────────
 
 async def _refund_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -299,7 +314,7 @@ async def _refund_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pay        = context.user_data.get("pay") or {}
     expires_at = _format_date(pay.get("expires_at"))
     msg_expiry = (
-        f"Votre accès reste disponible jusqu'au *{expires_at}*\\."
+        f"Votre accès reste disponible jusqu'au *{_escape_md(expires_at)}*\\."
         if expires_at != "—"
         else "Votre accès a déjà expiré\\."
     )
@@ -318,7 +333,9 @@ async def _refund_confirmed(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-# Étape 4b
+# ─────────────────────────────────────────────
+#  Étape 4b — Remboursement annulé
+# ─────────────────────────────────────────────
 
 async def _refund_cancelled(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -330,7 +347,9 @@ async def _refund_cancelled(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-# Annulation
+# ─────────────────────────────────────────────
+#  Annulation
+# ─────────────────────────────────────────────
 
 async def _cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -338,7 +357,9 @@ async def _cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-# Enregistrement
+# ─────────────────────────────────────────────
+#  Enregistrement
+# ─────────────────────────────────────────────
 
 def register_validation_handler(app):
     conv = ConversationHandler(
