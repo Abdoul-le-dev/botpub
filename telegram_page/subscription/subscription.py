@@ -76,18 +76,21 @@ async def create_subscription(payload: SubscriptionPayload):
 
 
 @router.get("/subscription-info")
-def get_subscriptions(email: Optional[str] = None):
+async def get_subscriptions(email: Optional[str] = None):
     try:
-        with get_db() as conn:
+        async with get_db() as cur:
             if email:
-                rows = conn.execute("""
+                await cur.execute("""
                     SELECT * FROM subscription_info
-                    WHERE LOWER(TRIM(email)) = LOWER(TRIM(?))
-                """, (email,)).fetchall()
+                    WHERE LOWER(TRIM(email)) = LOWER(TRIM(%s))
+                """, (email,))
             else:
-                rows = conn.execute("""
+                await cur.execute("""
                     SELECT * FROM subscription_info ORDER BY created_at DESC
-                """).fetchall()
-            return [dict(r) for r in rows]
+                """)
+            rows = await cur.fetchall()
+            return rows  # déjà une liste de dicts grâce à DictCursor
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
