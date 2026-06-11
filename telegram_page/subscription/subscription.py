@@ -35,27 +35,27 @@ class SubscriptionPayload(BaseModel):
     aggregator:    Optional[str]   = None
     paid_at:       Optional[str]   = None
 
-
 @router.post("/subscription-info")
 async def create_subscription(payload: SubscriptionPayload):
     try:
-        with get_db() as conn:
+        async with get_db() as cur:                          # 1. async with + cur (pas conn)
             # Vérifier si déjà enregistré (même email + paid_at)
-            existing = conn.execute("""
+            await cur.execute("""
                 SELECT id FROM subscription_info
-                WHERE email = ? AND paid_at = ?
-            """, (payload.email, payload.paid_at)).fetchone()
+                WHERE email = %s AND paid_at = %s
+            """, (payload.email, payload.paid_at))           # 2. %s au lieu de ?
+            existing = await cur.fetchone()
 
             if existing:
                 print(f"[subscription] Déjà sauvegardé — email={payload.email} | id={existing['id']}")
                 return {"id": existing["id"], "message": "déjà sauvegardé"}
 
-            conn.execute("""
+            await cur.execute("""
                 INSERT INTO subscription_info
                     (plan, duration_days, started_at, expires_at, status, note,
                      order_id, name, email, phone, country_code, billing_cycle,
                      amount_usd, currency, amount_local, aggregator, paid_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (
                 payload.plan, payload.duration_days,
                 payload.started_at, payload.expires_at, payload.status, payload.note,
@@ -64,16 +64,18 @@ async def create_subscription(payload: SubscriptionPayload):
                 payload.currency, payload.amount_local, payload.aggregator, payload.paid_at,
             ))
 
-            # Récupérer l'ID inséré via LAST_INSERT_ID()
-            new_id = conn.execute("SELECT LAST_INSERT_ID() as id").fetchone()["id"]
+            # LAST_INSERT_ID() — avec aiomysql
+            await cur.execute("SELECT LAST_INSERT_ID() AS id")
+            new_id = (await cur.fetchone())["id"]
 
         print(f"[subscription] Nouveau paiement — email={payload.email} | id={new_id}")
         await _notify_admin(bot, ADMIN_ID, f"[subscription] Nouveau paiement — email={payload.email} | id={new_id}")
         return {"id": new_id, "message": "subscription enregistrée"}
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/subscription-info")
 async def get_subscriptions(email: Optional[str] = None):
