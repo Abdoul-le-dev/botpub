@@ -26,8 +26,8 @@ router = APIRouter(prefix="/forms", tags=["forms"])
 async def api_save_form(payload: dict):
     if not payload.get("name"):    raise HTTPException(status_code=400, detail="name requis")
     if not payload.get("command"): raise HTTPException(status_code=400, detail="command requis")
-    form_id = save_form(payload)
-    form    = get_form_by_id(form_id)
+    form_id = await save_form(payload)
+    form    = await get_form_by_id(form_id)
     if form and form.get("trigger_type") == "scheduled":
         schedule_form(form)
     return {"ok": True, "form_id": form_id,
