@@ -47,7 +47,7 @@ async def api_scheduler_jobs():
 
 @router.get("/{form_id}")
 async def api_get_form(form_id: int):
-    form = get_form_by_id(form_id)
+    form = await get_form_by_id(form_id)
     if not form: raise HTTPException(status_code=404, detail="Formulaire introuvable")
     return form
 
@@ -79,14 +79,14 @@ async def api_activate_form(form_id: int):
 async def api_form_stats(form_id: int):
     form = get_form_by_id(form_id)
     if not form: raise HTTPException(status_code=404, detail="Formulaire introuvable")
-    return get_form_stats(form_id)
+    return await get_form_stats(form_id)
 
 
 @router.get("/{form_id}/responses")
 async def api_form_responses(form_id: int, limit: int = 10000):
     form = get_form_by_id(form_id)
     if not form: raise HTTPException(status_code=404, detail="Formulaire introuvable")
-    return get_form_responses(form_id, limit=limit)
+    return await get_form_responses(form_id, limit=limit)
 
 
 @router.get("/{form_id}/responses/{telegram_id}")
