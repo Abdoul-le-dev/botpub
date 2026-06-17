@@ -36,8 +36,8 @@ async def api_save_form(payload: dict):
 
 @router.get("")
 async def api_list_forms(actif_only: bool = True):
-    forms = get_all_forms(actif_only=actif_only)
-    return [{**f, "stats": get_form_stats(f["id"])} for f in forms]
+    forms = await get_all_forms(actif_only=actif_only)
+    return [{**f, "stats": await get_form_stats(f["id"])} for f in forms]
 
 
 @router.get("/scheduler/jobs")
