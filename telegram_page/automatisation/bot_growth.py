@@ -1,12 +1,12 @@
 """
-telegram_page/bot_growth.py — v4 MySQL
+telegram_page/bot_growth.py — v4 MySQL (aiomysql)
 Logique bot pour le Growth Hub : automations, rapports.
 """
 
 import json
 from datetime import datetime, timedelta
 
-from db import get_db   # ← pool MySQL, remplace get_conn()
+from db import get_db   # ← pool aiomysql
 
 ADMIN_ID = 571718066
 _bot = None
@@ -23,21 +23,24 @@ def set_growth_bot(b):
 
 async def resolve_job_targets(job: dict) -> list:
     t = job.get("target", "all")
-    with get_db() as conn:
+    async with get_db() as cur:
         if t == "all":
-            rows = conn.execute(
+            await cur.execute(
                 "SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL"
-            ).fetchall()
+            )
+            rows = await cur.fetchall()
+            return [r["telegram_id"] for r in rows if r["telegram_id"]]
         elif t == "admin":
             return [ADMIN_ID]
         elif t.startswith("cat:"):
-            cat  = t.replace("cat:", "")
-            rows = conn.execute(
-                "SELECT id_user FROM categories WHERE name_categorie = ?", (cat,)
-            ).fetchall()
+            cat = t.replace("cat:", "")
+            await cur.execute(
+                "SELECT id_user FROM categories WHERE name_categorie = %s", (cat,)
+            )
+            rows = await cur.fetchall()
+            return [r["id_user"] for r in rows if r["id_user"]]
         else:
             return []
-    return [r[0] for r in rows if r[0]]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -156,22 +159,23 @@ def compute_next_run(freq: str, run_time: str):
 async def check_and_run_jobs(bot):
     now = datetime.now().isoformat()
 
-    with get_db() as conn:
-        jobs = conn.execute("""
+    async with get_db() as cur:
+        await cur.execute("""
             SELECT * FROM automation_jobs
             WHERE is_active = 1 AND trig_type = 'time'
-              AND next_run_at IS NOT NULL AND next_run_at <= ?
-        """, (now,)).fetchall()
+              AND next_run_at IS NOT NULL AND next_run_at <= %s
+        """, (now,))
+        jobs = await cur.fetchall()
 
     for job in [dict(j) for j in jobs]:
 
         # Créer le log
-        with get_db() as conn:
-            conn.execute(
-                "INSERT INTO automation_logs (job_id, started_at) VALUES (?, NOW())",
+        async with get_db() as cur:
+            await cur.execute(
+                "INSERT INTO automation_logs (job_id, started_at) VALUES (%s, NOW())",
                 (job["id"],)
             )
-            log_id = conn.execute("SELECT LAST_INSERT_ID() as id").fetchone()["id"]
+            log_id = cur.lastrowid
 
         try:
             r  = await execute_automation_job(bot, job)
@@ -182,18 +186,18 @@ async def check_and_run_jobs(bot):
 
         next_run = compute_next_run(job.get("freq"), job.get("run_time"))
 
-        with get_db() as conn:
-            conn.execute("""
+        async with get_db() as cur:
+            await cur.execute("""
                 UPDATE automation_logs
-                SET finished_at = NOW(), total = ?, sent = ?, errors = ?, status = ?
-                WHERE id = ?
+                SET finished_at = NOW(), total = %s, sent = %s, errors = %s, status = %s
+                WHERE id = %s
             """, (r["total"], r["sent"], r["errors"], st, log_id))
-            conn.execute("""
+            await cur.execute("""
                 UPDATE automation_jobs
-                SET last_run_at = NOW(), next_run_at = ?,
+                SET last_run_at = NOW(), next_run_at = %s,
                     exec_count  = exec_count + 1,
-                    err_count   = err_count + ?
-                WHERE id = ?
+                    err_count   = err_count + %s
+                WHERE id = %s
             """, (next_run, r["errors"], job["id"]))
 
 
@@ -203,10 +207,9 @@ async def check_and_run_jobs(bot):
 
 async def check_ia_trigger(user_id: int) -> bool:
     """Retourne True si l'IA peut démarrer la conversation."""
-    with get_db() as conn:
-        cfg = conn.execute(
-            "SELECT * FROM ia_trigger_config WHERE id = 1"
-        ).fetchone()
+    async with get_db() as cur:
+        await cur.execute("SELECT * FROM ia_trigger_config WHERE id = 1")
+        cfg = await cur.fetchone()
         if not cfg:
             return False
 
@@ -216,23 +219,26 @@ async def check_ia_trigger(user_id: int) -> bool:
             return True
 
         if t == "form":
-            row = conn.execute("""
+            await cur.execute("""
                 SELECT id FROM form_sessions
-                WHERE telegram_id = ? AND status = 'completed' LIMIT 1
-            """, (user_id,)).fetchone()
+                WHERE telegram_id = %s AND status = 'completed' LIMIT 1
+            """, (user_id,))
+            row = await cur.fetchone()
             return row is not None
 
         if t == "messages":
-            row = conn.execute("""
+            await cur.execute("""
                 SELECT COUNT(*) as cnt FROM messages
-                WHERE user_id = ? AND direction = 'inbound'
-            """, (user_id,)).fetchone()
+                WHERE user_id = %s AND direction = 'inbound'
+            """, (user_id,))
+            row = await cur.fetchone()
             return (row["cnt"] if row else 0) >= (cfg["messages_count"] or 5)
 
         if t == "trade":
-            row = conn.execute(
-                "SELECT id FROM trade_journal WHERE user_id = ? LIMIT 1", (user_id,)
-            ).fetchone()
+            await cur.execute(
+                "SELECT id FROM trade_journal WHERE user_id = %s LIMIT 1", (user_id,)
+            )
+            row = await cur.fetchone()
             return row is not None
 
     return False
@@ -244,45 +250,52 @@ async def check_ia_trigger(user_id: int) -> bool:
 
 async def send_admin_report(bot, period="week"):
     """Rapport hebdomadaire envoyé à l'admin chaque lundi 09h."""
-    with get_db() as conn:
-        mrr = conn.execute(
+    async with get_db() as cur:
+        await cur.execute(
             "SELECT COALESCE(SUM(price_paid), 0) as n FROM growth_subscriptions WHERE status = 'active'"
-        ).fetchone()["n"]
+        )
+        mrr = (await cur.fetchone())["n"]
 
-        actifs = conn.execute(
+        await cur.execute(
             "SELECT COUNT(*) as n FROM growth_subscriptions WHERE status = 'active'"
-        ).fetchone()["n"]
+        )
+        actifs = (await cur.fetchone())["n"]
 
-        trials = conn.execute(
+        await cur.execute(
             "SELECT COUNT(*) as n FROM growth_subscriptions WHERE status = 'trial'"
-        ).fetchone()["n"]
+        )
+        trials = (await cur.fetchone())["n"]
 
-        expiring = conn.execute("""
+        await cur.execute("""
             SELECT COUNT(*) as n FROM growth_subscriptions
             WHERE status = 'active'
               AND expires_at <= DATE_ADD(NOW(), INTERVAL 7 DAY)
-        """).fetchone()["n"]
+        """)
+        expiring = (await cur.fetchone())["n"]
 
-        new7d = conn.execute("""
+        await cur.execute("""
             SELECT COUNT(*) as n FROM users
             WHERE created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-        """).fetchone()["n"]
+        """)
+        new7d = (await cur.fetchone())["n"]
 
-        avg_cap = conn.execute("""
+        await cur.execute("""
             SELECT AVG(capital) as n FROM (
                 SELECT user_id, MAX(capital) as capital
                 FROM member_capital GROUP BY user_id
             ) t
-        """).fetchone()["n"] or 0
+        """)
+        avg_cap = (await cur.fetchone())["n"] or 0
 
-        risk = conn.execute("""
+        await cur.execute("""
             SELECT COUNT(*) as n FROM growth_subscriptions gs
             LEFT JOIN engagement_scores es ON es.user_id = gs.user_id
             WHERE gs.status = 'active'
               AND (es.score IS NULL OR es.score < 30)
-        """).fetchone()["n"]
+        """)
+        risk = (await cur.fetchone())["n"]
 
-        top = conn.execute("""
+        await cur.execute("""
             SELECT u.name, ROUND(SUM(tj.result_percent), 1) as perf
             FROM trade_journal tj
             JOIN users u ON u.telegram_id = tj.user_id
@@ -290,7 +303,8 @@ async def send_admin_report(bot, period="week"):
               AND tj.submitted_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
             GROUP BY tj.user_id
             ORDER BY perf DESC LIMIT 1
-        """).fetchone()
+        """)
+        top = await cur.fetchone()
 
     top_str = f"{top['name']} (+{top['perf']}%)" if top else "—"
     msg = (
