@@ -58,7 +58,7 @@ async def start_scheduler(bot, admin_id: int = None):
     _scheduler = BackgroundScheduler(timezone="Europe/Paris")
     _scheduler.start()
     _scheduler.add_job(
-    lambda: asyncio.run(await sync_clients_actifs()),
+    lambda: asyncio.run(sync_clients_actifs()),
     trigger="cron",
     hour=13,
     minute=5,
