@@ -15,7 +15,7 @@
 CREATE TABLE IF NOT EXISTS relance (
     id              INT AUTO_INCREMENT PRIMARY KEY,
     name_categorie  VARCHAR(100) NOT NULL UNIQUE,
-    message         TEXT         NOT NULL DEFAULT '',
+    message         TEXT         NOT NULL,
     is_active       TINYINT(1)   NOT NULL DEFAULT 1,
     created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP
