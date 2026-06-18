@@ -63,7 +63,7 @@ async def start_scheduler(bot, admin_id: int = None):
         _run_sync_clients_actifs,
         trigger="cron",
         hour=10,
-        minute=20,
+        minute=37,
         id="sync_clients_actifs",
         replace_existing=True,
     )
