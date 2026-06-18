@@ -60,8 +60,8 @@ async def start_scheduler(bot, admin_id: int = None):
     _scheduler.add_job(
     lambda: asyncio.run(sync_clients_actifs()),
     trigger="cron",
-    hour=13,
-    minute=5,
+    hour=10,
+    minute=7,
     id="sync_clients_actifs",
     replace_existing=True,
     )
