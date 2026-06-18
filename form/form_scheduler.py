@@ -21,7 +21,7 @@ import re
 import asyncio
 from datetime import datetime
 from subscription_sync import sync_clients_actifs
-from relance.relance_routes      import get_due_relances, count_members_in_categorie
+from relance.relance      import get_due_relances, count_members_in_categorie
 from telegram_page.broadcast_engine import broadcast_engine
 
 
