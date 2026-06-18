@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from relance import (
+from relance.relance import (
     get_relances,
     get_relance_by_categorie,
     upsert_relance,
