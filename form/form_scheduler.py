@@ -65,7 +65,7 @@ async def start_scheduler(bot, admin_id: int = None):
     _scheduler.add_job(
         _run_sync_clients_actifs,
         trigger="cron",
-        hour=10,
+        hour=20,
         minute=20,
         id="sync_clients_actifs",
         replace_existing=True,

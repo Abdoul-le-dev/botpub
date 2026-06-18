@@ -117,7 +117,6 @@ async def _dedupe_categorie(cur, name_categorie: str) -> int:
 # ════════════════════════════════════════════════════════════════════════════
 # JOB PRINCIPAL
 # ════════════════════════════════════════════════════════════════════════════
-
 async def sync_clients_actifs():
     """
     Synchronise les catégories d'abonnement, chaque jour :
@@ -126,8 +125,9 @@ async def sync_clients_actifs():
       2. CATEGORIE_J7       : expire dans exactement 7 jours
       3. CATEGORIE_J3       : expire dans exactement 3 jours
       4. CATEGORIE_J1       : expire dans exactement 1 jour
-      5. CATEGORIE_EXPIRES : abonnement expiré → status = 'expired',
-                              et retiré de toutes les autres catégories
+      5. CATEGORIE_EXPIRES : user dont TOUS les abonnements sont 'expired'
+                              et qui n'ont aucun abonnement actif en cours.
+                              Retiré de toutes les autres catégories.
 
     Un user actif qui expire dans 7/3/1 jour(s) se retrouve DANS LES DEUX
     catégories à la fois (ex: clients_actifs + clients_j7) — c'est le
@@ -183,46 +183,26 @@ async def sync_clients_actifs():
         print(f"[sync_clients_actifs] ✓ J-1           : {len(j1)} user(s)  →  {added_j1} nouveau(x)")
 
         # ── 5. Abonnements expirés ──────────────────────────────────────────
+        # Users dont TOUS les abonnements sont 'expired'
+        # et qui n'ont aucun abonnement actif valide en cours.
         await cur.execute("""
             SELECT DISTINCT user_id
             FROM subscriptions
-            WHERE expires_at <= NOW()
-              AND status != 'expired'
+            WHERE status = 'expired'
+              AND user_id NOT IN (
+                  SELECT DISTINCT user_id
+                  FROM subscriptions
+                  WHERE status = 'active'
+                    AND expires_at > NOW()
+              )
         """)
-        expires = [r["user_id"] for r in await cur.fetchall()]
-
-        # Ne marque/déplace que ceux qui n'ont PAS d'autre abonnement actif
-        to_expire = []
-        for uid in expires:
-            await cur.execute("""
-                SELECT COUNT(*) as n FROM subscriptions
-                WHERE user_id = %s
-                  AND status = 'active'
-                  AND expires_at > NOW()
-            """, (uid,))
-            still_active = (await cur.fetchone())["n"]
-            if not still_active:
-                to_expire.append(uid)
+        to_expire = [r["user_id"] for r in await cur.fetchall()]
 
         # Un expiré ne doit rester nulle part ailleurs (actifs/J7/J3/J1)
         removed_from_active = await _remove_from_active_categories(cur, to_expire)
         added_exp = await _place_in_category(cur, CATEGORIE_EXPIRES, to_expire)
 
-        # Marque les abonnements comme expirés dans subscriptions
-        if expires:
-            placeholders = ",".join(["%s"] * len(expires))
-            await cur.execute(
-                f"UPDATE subscriptions SET status = 'expired', updated_at = NOW() "
-                f"WHERE user_id IN ({placeholders}) "
-                f"  AND expires_at <= NOW() AND status != 'expired'",
-                expires
-            )
-            expired_count = cur.rowcount
-        else:
-            expired_count = 0
-
         print(f"[sync_clients_actifs] ✓ EXPIRÉS       : {len(to_expire)} user(s)  →  {added_exp} nouveau(x), {removed_from_active} retiré(s) des catégories actives")
-        print(f"[sync_clients_actifs] ✓ {expired_count} abonnement(s) marqué(s) 'expired' dans subscriptions")
 
         # ── 6. Vérification finale : doublons intra-catégorie ──────────────
         total_dupes = 0
