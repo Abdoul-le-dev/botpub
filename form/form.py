@@ -147,7 +147,15 @@ async def get_or_create_session(form_id: int, telegram_id: int) -> dict:
         if row:
             session = dict(row)
             if session["status"] == "completed":
-                await cur.execute("DELETE FROM form_sessions WHERE id=%s", (session["id"],))
+                # Supprimer d'abord les submissions liées (FK constraint)
+                await cur.execute(
+                    "DELETE FROM form_submissions WHERE session_id=%s",
+                    (session["id"],)
+                )
+                await cur.execute(
+                    "DELETE FROM form_sessions WHERE id=%s",
+                    (session["id"],)
+                )
             else:
                 return session
 
@@ -159,7 +167,6 @@ async def get_or_create_session(form_id: int, telegram_id: int) -> dict:
 
     return {"id": new_id, "form_id": form_id, "telegram_id": telegram_id,
             "step_index": 0, "status": "in_progress", "score": 0}
-
 
 async def advance_session(session_id: int, new_step: int, add_score: int = 0):
     async with get_db() as cur:

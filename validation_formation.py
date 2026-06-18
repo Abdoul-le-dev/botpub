@@ -87,7 +87,7 @@ async def _receive_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Email absent → branching ─────────────────────────────────────────
     await update.message.reply_text(
-        "ℹ️ *Votre email n'est pas encore dans notre système\\.*\n\n"
+        "ℹ️ *Votre email n'est pas encore enregistré dans notre système de formation\\.*\n\n"
         "Avez\\-vous suivi la formation FDK jusqu'à la fin ?",
         parse_mode="MarkdownV2",
         reply_markup=InlineKeyboardMarkup([
@@ -132,7 +132,7 @@ async def _suivi_oui(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.message.reply_text(
         "👍 Parfait \\!\n\n"
-        "Avez\\-vous créé votre compte sur la plateforme après la formation ?",
+        "Avez\\-vous créé votre compte sur Xm après la formation ?",
         parse_mode="MarkdownV2",
         reply_markup=InlineKeyboardMarkup([
             [

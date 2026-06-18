@@ -35,31 +35,37 @@ ALL_CATEGORIES = [
 # ════════════════════════════════════════════════════════════════════════════
 
 async def _ensure_meta_exists(cur, name_categorie: str):
-    """
-    Crée la catégorie dans la table meta si elle n'existe pas encore.
-    INSERT IGNORE pour éviter les doublons (clé unique sur name_categorie).
-    """
+    if not name_categorie or not name_categorie.strip():
+        return
     await cur.execute(
-        "INSERT IGNORE INTO categories_meta (name_categorie) VALUES (%s)",
+        "SELECT 1 FROM categories_meta WHERE name_categorie = %s",
         (name_categorie,)
     )
+    if not await cur.fetchone():
+        await cur.execute(
+            "INSERT INTO categories_meta (name_categorie) VALUES (%s)",
+            (name_categorie,)
+        )
+        
 
 
 async def _bulk_insert_members(cur, name_categorie: str, user_ids: list[int]) -> int:
-    """
-    Insère en masse les user_ids dans `categories` pour name_categorie.
-    INSERT IGNORE pour rester idempotent (clé unique id_user+name_categorie).
-    Retourne le nombre de lignes réellement insérées (nouvelles seulement).
-    """
     if not user_ids:
         return 0
-    values = [(name_categorie, uid) for uid in user_ids]
-    await cur.executemany(
-        "INSERT IGNORE INTO categories (name_categorie, id_user) VALUES (%s, %s)",
-        values
-    )
-    return cur.rowcount if cur.rowcount > 0 else 0
-
+    now    = datetime.now().isoformat()
+    added  = 0
+    for uid in user_ids:
+        await cur.execute(
+            "SELECT 1 FROM categories WHERE name_categorie=%s AND id_user=%s",
+            (name_categorie, uid)
+        )
+        if not await cur.fetchone():
+            await cur.execute(
+                "INSERT INTO categories (name_categorie, id_user, created_at) VALUES (%s, %s, %s)",
+                (name_categorie, uid, now)
+            )
+            added += 1
+    return added
 
 async def _remove_from_active_categories(cur, user_ids: list[int]) -> int:
     """

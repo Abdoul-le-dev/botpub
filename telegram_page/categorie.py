@@ -9,7 +9,9 @@ from db import get_db
 # ────────────────────────────────────────────────────────────────────────
 
 async def _bulk_insert_members(cur, name_categorie: str, user_ids: list, added_by: str = "manual") -> int:
-    """Insère en boucle et compte les lignes réellement insérées."""
+    if not name_categorie or not name_categorie.strip():
+        return 0
+
     now   = datetime.now().isoformat()
     added = 0
     for uid in user_ids:
@@ -17,14 +19,24 @@ async def _bulk_insert_members(cur, name_categorie: str, user_ids: list, added_b
             INSERT IGNORE INTO categories (id_user, name_categorie, created_at)
             VALUES (%s, %s, %s)
         """, (uid, name_categorie, now))
-        added += cur.rowcount  # 1 si inséré, 0 si ignoré (INSERT IGNORE)
+        added += cur.rowcount
     return added
 
 
 async def _ensure_meta_exists(cur, name_categorie: str):
-    await cur.execute("""
-        INSERT IGNORE INTO categories_meta (name_categorie) VALUES (%s)
-    """, (name_categorie,))
+    # Ignorer les noms vides
+    if not name_categorie or not name_categorie.strip():
+        return
+
+    await cur.execute(
+        "SELECT 1 FROM categories_meta WHERE name_categorie = %s",
+        (name_categorie,)
+    )
+    if not await cur.fetchone():
+        await cur.execute(
+            "INSERT INTO categories_meta (name_categorie) VALUES (%s)",
+            (name_categorie,)
+        )
 
 
 # ────────────────────────────────────────────────────────────────────────

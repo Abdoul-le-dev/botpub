@@ -65,10 +65,14 @@ async def get_conversation_state(user_id: int) -> dict:
 async def ensure_user(user_id: int, first_name: str = "", username: str = ""):
     try:
         async with get_db() as cur:
-            await cur.execute("""
-                INSERT IGNORE INTO users (telegram_id, name, phone, created_at)
-                VALUES (%s, %s, '0000', NOW())
-            """, (user_id, first_name or username or "inconnu"))
+            await cur.execute(
+                "SELECT 1 FROM users WHERE telegram_id = %s", (user_id,)
+            )
+            if not await cur.fetchone():
+                await cur.execute("""
+                    INSERT INTO users (telegram_id, name, phone, created_at)
+                    VALUES (%s, %s, '0000', NOW())
+                """, (user_id, first_name or username or "inconnu"))
     except Exception as e:
         print(f"[ensure_user] {e}")
 
@@ -76,10 +80,14 @@ async def ensure_user(user_id: int, first_name: str = "", username: str = ""):
 async def ensure_conversation(user_id: int):
     try:
         async with get_db() as cur:
-            await cur.execute("""
-                INSERT IGNORE INTO conversations (user_id, created_at, updated_at)
-                VALUES (%s, NOW(), NOW())
-            """, (user_id,))
+            await cur.execute(
+                "SELECT 1 FROM conversations WHERE user_id = %s", (user_id,)
+            )
+            if not await cur.fetchone():
+                await cur.execute("""
+                    INSERT INTO conversations (user_id, created_at, updated_at)
+                    VALUES (%s, NOW(), NOW())
+                """, (user_id,))
             await cur.execute("""
                 UPDATE conversations
                 SET last_activity = NOW(), updated_at = NOW(),
