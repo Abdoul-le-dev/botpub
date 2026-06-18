@@ -21,9 +21,9 @@ from telegram_page.gold.gold_engine import set_bot as set_gold_bot, daily_cramed
 from telegram_page.gold.gold_broadcast import register_gold_handlers
 
 load_dotenv()
-
-ADMIN_ID   = 571718066
 CANAL_B_ID = -1002705005402
+ADMIN_ID   = 571718066
+
 CATEGORIE  = "USER_PUB_1_NON_ACHAT"
 token      = os.getenv("tokens")
 
