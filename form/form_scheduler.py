@@ -17,9 +17,12 @@ Dépendance :
 """
 
 import json
+import re
 import asyncio
 from datetime import datetime
 from subscription_sync import sync_clients_actifs
+from relance.relance_routes      import get_due_relances, count_members_in_categorie
+from telegram_page.broadcast_engine import broadcast_engine
 
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -62,12 +65,22 @@ async def start_scheduler(bot, admin_id: int = None):
     _scheduler.add_job(
         _run_sync_clients_actifs,
         trigger="cron",
-        hour=11,
-        minute=15,
+        hour=10,
+        minute=20,
         id="sync_clients_actifs",
         replace_existing=True,
     )
     print("[form_scheduler] Job sync_clients_actifs enregistré → 10h20 chaque jour")
+
+    _scheduler.add_job(
+        _run_relances_check,
+        trigger="cron",
+        minute="*",
+        id="relances_check",
+        replace_existing=True,
+        misfire_grace_time=50,
+    )
+    print("[form_scheduler] Job relances_check enregistré → chaque minute")
 
     await _reload_scheduled_forms()
     print("[form_scheduler] Scheduler démarré.")
@@ -114,6 +127,92 @@ def _run_sync_clients_actifs():
             asyncio.run(sync_clients_actifs())
         except Exception as e:
             print(f"[form_scheduler] Erreur sync_clients_actifs (fallback): {e}")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# JOB : RELANCES AUTOMATIQUES
+# ════════════════════════════════════════════════════════════════════════════
+
+def _extract_jours_restants(name_categorie: str) -> str | None:
+    """
+    Dérive jours_restants à partir du nom de la catégorie plutôt que d'un
+    mapping en dur : 'clients_j7' -> '7', 'clients_j3' -> '3', etc.
+    Reste valide si une catégorie clients_j14 ou similaire est ajoutée
+    plus tard, sans modifier ce fichier.
+    Retourne None si le nom ne contient pas de motif jN (ex: clients_actifs,
+    clients_expires) — la variable +jours_restants est alors simplement
+    absente du message final si elle n'est pas utilisée par le texte.
+    """
+    match = re.search(r"_j(\d+)$", name_categorie)
+    return match.group(1) if match else None
+
+
+async def _check_and_send_relances():
+    """
+    Appelée chaque minute par APScheduler (via _run_relances_check).
+
+    1. Demande à la DB quelles relances ont un créneau actif tombant sur
+       l'heure courante (HH:MM, Europe/Paris).
+    2. Pour chacune, vérifie qu'il y a au moins un membre dans la
+       catégorie (évite un appel broadcast_engine inutile sur un segment
+       vide — broadcast_engine gérerait ce cas mais autant filtrer tôt).
+    3. Calcule jours_restants selon le nom de catégorie et déclenche
+       broadcast_engine avec tag='relance_<categorie>' pour que
+       l'historique (broadcast_history) reste filtrable par relance.
+    """
+    heure_courante = datetime.now().strftime("%H:%M")
+    relances = await get_due_relances(heure_courante)
+
+    if not relances:
+        return
+
+    for r in relances:
+        name_categorie = r["name_categorie"]
+        member_count   = await count_members_in_categorie(name_categorie)
+
+        if member_count == 0:
+            print(f"[form_scheduler] Relance '{name_categorie}' due à {heure_courante} mais 0 membre, ignorée.")
+            continue
+
+        jours_restants = _extract_jours_restants(name_categorie)
+        variables = {"+jours_restants": jours_restants} if jours_restants else {}
+
+        print(f"[form_scheduler] Relance '{name_categorie}' déclenchée à {heure_courante} → {member_count} membre(s)")
+
+        payload = {
+            "message":  r["message"],
+            "format":   "text",
+            "category": name_categorie,
+            "variables": variables,
+            "tag":      f"relance_{name_categorie}",
+        }
+
+        try:
+            report = await broadcast_engine(_bot, payload)
+            print(f"[form_scheduler] Relance '{name_categorie}' terminée : {report}")
+        except Exception as e:
+            print(f"[form_scheduler] Erreur lors de la relance '{name_categorie}': {e}")
+
+
+def _run_relances_check():
+    """
+    Appelé par APScheduler (thread séparé, distinct du loop uvicorn).
+    Même mécanisme que _run_sync_clients_actifs : la coroutine est
+    planifiée sur _main_loop via run_coroutine_threadsafe pour éviter
+    la collision de event loop avec le pool aiomysql.
+    """
+    if _main_loop and _main_loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(_check_and_send_relances(), _main_loop)
+        try:
+            future.result()
+        except Exception as e:
+            print(f"[form_scheduler] Erreur relances_check: {e}")
+    else:
+        print("[form_scheduler] _main_loop indisponible, fallback asyncio.run() (relances_check)")
+        try:
+            asyncio.run(_check_and_send_relances())
+        except Exception as e:
+            print(f"[form_scheduler] Erreur relances_check (fallback): {e}")
 
 
 # ════════════════════════════════════════════════════════════════════════════

@@ -20,6 +20,7 @@ bot = Bot(token=os.getenv("tokens"))
 
 # ── Routers ──────────────────────────────────────────────────────────────
 from form.form_route                          import router as forms_router
+from relance.relance_routes                   import router as relance_router
 from routes.routes_dashboard                  import router as dashboard_router
 from telegram_page.gold.routes_gold           import router as gold_router
 from telegram_page.subscription.subscription  import router as subscription_router
@@ -115,6 +116,7 @@ app.include_router(gold_router)
 app.include_router(forms_router)
 app.include_router(trading_router)
 app.include_router(growth_router)
+app.include_router(relance_router)
 app.include_router(ai_router)
 app.include_router(subscription_router)
 app.include_router(dashboard_router)
