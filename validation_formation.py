@@ -23,7 +23,7 @@ from telegram.ext import (
     filters, ContextTypes,
 )
 
-from formation_validation import email_exists
+from relance.relance import email_exists
 
 # ─────────────────────────────────────────────
 #  États
