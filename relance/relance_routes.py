@@ -22,6 +22,7 @@ from relance.relance import (
     set_relance_active,
     set_relance_schedule,
     delete_relance,
+    get_relance_history
 )
 
 router = APIRouter(prefix="/relance", tags=["relance"])
@@ -119,3 +120,12 @@ async def api_delete_relance(relance_id: int):
     if not ok:
         raise HTTPException(status_code=404, detail="Relance introuvable")
     return {"deleted": True, "id": relance_id}
+
+
+@router.get("/history/list")
+async def api_get_relance_history(limit: int = 50):
+    """
+    Historique des envois automatiques (lecture de broadcast_history
+    filtrée sur les tags 'relance_*' posés par le scheduler).
+    """
+    return await get_relance_history(limit=limit)
