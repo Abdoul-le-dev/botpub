@@ -14,6 +14,7 @@ from db import get_db, init_pool
 
 from ai_agent import set_bot, log_unhandled_message
 from validation_handler import register_validation_handler
+from validation_formation  import register_formation_handle
 from form.form_engine import register_form_handlers, setup_background_worker
 from telegram_page.signal_broadcast import register_signal_handlers
 from telegram_page.gold.gold_engine import set_bot as set_gold_bot, daily_cramed_check
@@ -135,6 +136,7 @@ if __name__ == "__main__":
 
     app.add_handler(ChatJoinRequestHandler(approve_join_request))
     register_validation_handler(app)
+    register_formation_handler(app)
     register_form_handlers(app, app.bot, ADMIN_ID)
     register_gold_handlers(app)
     register_signal_handlers(app)

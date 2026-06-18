@@ -14,6 +14,8 @@ from telegram.helpers import escape_markdown
 
 from db import get_db  # ← pool aiomysql
 
+import asyncio
+
 CATEGORIE    = "PRELANCEMENT FDK GOLD SAISON"
 FORM_COMMAND = "/suivi"
 
@@ -272,11 +274,18 @@ async def _confirm_subscription(update: Update, context: ContextTypes.DEFAULT_TY
     await query.message.reply_text(
         f"🎉 *Votre abonnement FDK Gold est validé \\!*\n\n"
         f"⏳ Il est actif jusqu'au *{escape_markdown(_format_date(pay.get('expires_at')), version=2)}*\\.\n\n"
-        "💬 Si vous avez la moindre question, quelle qu'elle soit, vous pouvez me contacter directement en privé sur @Fiacrekpanou\\. "
-        "Je vous répondrai personnellement afin que nous puissions avancer ensemble vers un objectif commun\\.\n\n"
-        "📋 Veuillez cliquer sur /mon\\_profil\\_trader\\_fdk afin de compléter votre *Profil Trader*\\.",
-        parse_mode="MarkdownV2"
+        "📚 Avant de recevoir les signaux, deux étapes sont obligatoires :\n\n"
+        "1\\. Suivre la *formation FDK* jusqu'à la fin, créer son compte et le faire valider\n"
+        "2\\. Compléter votre *Profil Trader* via /mon\\_profil\\_trader\\_fdk\n\n"
+        "⚠️ Les signaux ne seront accessibles qu'une fois ces deux étapes complétées\\.\n\n"
+        "💬 Pour toute question, contactez\\-moi directement sur @Fiacrekpanou\\.",
+        parse_mode="MarkdownV2",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎓 Accéder à ma formation", url="https://fdksignal.com/formation")]
+        ])
     )
+
+    await asyncio.sleep(15 * 60)
     return ConversationHandler.END
 
 
