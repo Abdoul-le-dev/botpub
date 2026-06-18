@@ -11,10 +11,37 @@ broadcast_engine, et le log sent/errors) est gérée par relance_scheduler.py
 et broadcast_history — pas ici.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dt_time
 from typing import Optional
 
 from db import get_db
+
+
+def _format_heure(value) -> str:
+    """
+    Normalise n'importe quelle représentation d'une colonne TIME MySQL
+    en string 'HH:MM:SS'.
+
+    Les drivers MySQL Python (aiomysql/PyMySQL) renvoient une colonne TIME
+    comme datetime.timedelta, PAS comme une string — contrairement à ce
+    qu'on pourrait attendre. Sans cette normalisation, FastAPI sérialise
+    ce timedelta sous une forme non-string, et le front (qui appelle
+    .slice(0,5) en supposant une string) plante avec :
+        TypeError: heure_envoi.slice is not a function
+
+    Gère les trois cas rencontrés en pratique : timedelta (cas réel le
+    plus courant), datetime.time (si jamais le driver/version change de
+    comportement), et str (si la valeur est déjà au bon format, ex.
+    quand elle vient directement d'un payload entrant plutôt que de la DB).
+    """
+    if isinstance(value, timedelta):
+        total_seconds = int(value.total_seconds())
+        h, rem = divmod(total_seconds, 3600)
+        m, s   = divmod(rem, 60)
+        return f"{h:02d}:{m:02d}:{s:02d}"
+    if isinstance(value, dt_time):
+        return value.strftime("%H:%M:%S")
+    return str(value)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -55,7 +82,10 @@ async def get_relances() -> list[dict]:
                 WHERE relance_id = %s
                 ORDER BY heure_envoi ASC
             """, (relance["id"],))
-            relance["schedules"] = [dict(row) for row in await cur.fetchall()]
+            schedules = [dict(row) for row in await cur.fetchall()]
+            for sched in schedules:
+                sched["heure_envoi"] = _format_heure(sched["heure_envoi"])
+            relance["schedules"] = schedules
 
     return relances
 
@@ -84,7 +114,10 @@ async def get_relance_by_categorie(name_categorie: str) -> Optional[dict]:
             WHERE relance_id = %s
             ORDER BY heure_envoi ASC
         """, (relance["id"],))
-        relance["schedules"] = [dict(r) for r in await cur.fetchall()]
+        schedules = [dict(r) for r in await cur.fetchall()]
+        for sched in schedules:
+            sched["heure_envoi"] = _format_heure(sched["heure_envoi"])
+        relance["schedules"] = schedules
 
     return relance
 
@@ -220,7 +253,12 @@ async def get_due_relances(heure_courante: str) -> list[dict]:
               AND rs.is_active = 1
               AND TIME_FORMAT(rs.heure_envoi, '%%H:%%i') = %s
         """, (heure_courante,))
-        return [dict(row) for row in await cur.fetchall()]
+        rows = [dict(row) for row in await cur.fetchall()]
+
+    for row in rows:
+        row["heure_envoi"] = _format_heure(row["heure_envoi"])
+
+    return rows
 
 
 async def count_members_in_categorie(name_categorie: str) -> int:
@@ -236,3 +274,41 @@ async def count_members_in_categorie(name_categorie: str) -> int:
         )
         row = await cur.fetchone()
         return row["n"] if row else 0
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# LECTURE — HISTORIQUE D'EXÉCUTION (pour le dashboard)
+# ════════════════════════════════════════════════════════════════════════════
+
+async def get_relance_history(limit: int = 50) -> list[dict]:
+    """
+    Lit broadcast_history filtré sur les tags posés par le scheduler
+    (relance_<name_categorie>, cf. _check_and_send_relances dans
+    form_scheduler.py). Ne lit QUE les colonnes écrites par _save_report
+    dans broadcast_engine.py — pas de colonne supposée au-delà de ça.
+
+    Utilise LEFT(tag, 8) = 'relance_' plutôt qu'un LIKE avec underscore
+    échappé : l'échappement de '_' dans LIKE dépend du mode SQL du
+    serveur (NO_BACKSLASH_ESCAPES), alors qu'une comparaison de préfixe
+    explicite n'a aucune ambiguïté.
+
+    Retourne les entrées les plus récentes en premier.
+    """
+    async with get_db() as cur:
+        await cur.execute("""
+            SELECT tag, category, format, message, total, sent, errors,
+                   started_at, finished_at
+            FROM broadcast_history
+            WHERE LEFT(tag, 8) = 'relance_'
+            ORDER BY started_at DESC
+            LIMIT %s
+        """, (limit,))
+        rows = [dict(r) for r in await cur.fetchall()]
+
+    for r in rows:
+        # name_categorie dérivé du tag (relance_clients_j7 -> clients_j7),
+        # plus robuste que de se fier uniquement à `category` qui peut être
+        # vide selon comment broadcast_engine a résolu le payload.
+        r["name_categorie"] = r["tag"][len("relance_"):] if r["tag"].startswith("relance_") else r.get("category", "")
+
+    return rows
