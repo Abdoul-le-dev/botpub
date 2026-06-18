@@ -96,3 +96,36 @@ async def get_subscriptions(email: Optional[str] = None):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@router.post("/formation-validation")
+async def create_formation_validation(email: str):
+    try:
+        async with get_db() as cur:
+            # Vérifier si déjà enregistré
+            await cur.execute("""
+                SELECT id FROM formation_validation
+                WHERE email = %s
+            """, (email,))
+            existing = await cur.fetchone()
+
+            if existing:
+                print(f"[formation-validation] Déjà sauvegardé — email={email} | id={existing['id']}")
+                return {"id": existing["id"], "message": "déjà sauvegardé"}
+
+            await cur.execute("""
+                INSERT INTO formation_validation (email, is_active)
+                VALUES (%s, 1)
+            """, (email,))
+
+            # LAST_INSERT_ID() — avec aiomysql
+            await cur.execute("SELECT LAST_INSERT_ID() AS id")
+            new_id = (await cur.fetchone())["id"]
+
+        print(f"[formation-validation] Nouveau enregistrement — email={email} | id={new_id}")
+        await _notify_admin(bot, ADMIN_ID, f"[formation-validation] Nouveau enregistrement — email={email} | id={new_id}")
+        return {"id": new_id, "message": "formation validation enregistrée"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

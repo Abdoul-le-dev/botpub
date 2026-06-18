@@ -312,3 +312,64 @@ async def get_relance_history(limit: int = 50) -> list[dict]:
         r["name_categorie"] = r["tag"][len("relance_"):] if r["tag"].startswith("relance_") else r.get("category", "")
 
     return rows
+
+
+async def email_exists(email: str) -> bool:
+    """
+    Vérifie si un email est présent dans `formation_validation`,
+    quel que soit son statut is_active.
+ 
+    Retourne True si au moins une ligne correspond, False sinon.
+    """
+    try:
+        async with get_db() as cur:
+            await cur.execute(
+                "SELECT 1 FROM formation_validation WHERE email = %s LIMIT 1",
+                (email,),
+            )
+            row = await cur.fetchone()
+            return row is not None
+    except Exception:
+        pass
+    return False
+ 
+ 
+async def insert_email(email: str, is_active: bool = True) -> bool:
+    """
+    Insère un email dans `formation_validation` s'il n'existe pas déjà.
+ 
+    Retourne True si l'insertion a eu lieu.
+    Retourne False si l'email existait déjà, ou si une erreur est survenue.
+    """
+    if await email_exists(email):
+        return False
+ 
+    try:
+        async with get_db() as cur:
+            await cur.execute(
+                "INSERT INTO formation_validation (email, is_active) VALUES (%s, %s)",
+                (email, int(is_active)),
+            )
+            return True
+    except Exception:
+        pass
+    return False
+ 
+ 
+async def set_active_status(email: str, is_active: bool) -> bool:
+    """
+    Active ou désactive un email existant (mise à jour de `is_active`).
+ 
+    Retourne True si une ligne a été modifiée.
+    Retourne False si aucun email correspondant n'a été trouvé, ou en cas d'erreur.
+    """
+    try:
+        async with get_db() as cur:
+            await cur.execute(
+                "UPDATE formation_validation SET is_active = %s WHERE email = %s",
+                (int(is_active), email),
+            )
+            return cur.rowcount > 0
+    except Exception:
+        pass
+    return False
