@@ -33,6 +33,7 @@ from db import get_db
 _scheduler: BackgroundScheduler | None = None
 _bot       = None
 _admin_id: int | None = None
+_main_loop: asyncio.AbstractEventLoop | None = None
 
 
 def get_bot():
@@ -51,21 +52,22 @@ async def start_scheduler(bot, admin_id: int = None):
     Démarre APScheduler et charge les formulaires planifiés depuis la DB.
     À appeler une seule fois au démarrage (lifespan FastAPI).
     """
-    global _scheduler, _bot, _admin_id
-    _bot      = bot
-    _admin_id = admin_id
+    global _scheduler, _bot, _admin_id, _main_loop
+    _bot       = bot
+    _admin_id  = admin_id
+    _main_loop = asyncio.get_running_loop()  # loop principal d'uvicorn, capturé ici
 
     _scheduler = BackgroundScheduler(timezone="Europe/Paris")
     _scheduler.start()
     _scheduler.add_job(
-    lambda: asyncio.run(sync_clients_actifs()),
-    trigger="cron",
-    hour=10,
-    minute=20,
-    id="sync_clients_actifs",
-    replace_existing=True,
+        _run_sync_clients_actifs,
+        trigger="cron",
+        hour=10,
+        minute=20,
+        id="sync_clients_actifs",
+        replace_existing=True,
     )
-    print("[form_scheduler] Job sync_clients_actifs enregistré → 23h50 chaque soir")
+    print("[form_scheduler] Job sync_clients_actifs enregistré → 10h20 chaque jour")
 
     await _reload_scheduled_forms()
     print("[form_scheduler] Scheduler démarré.")
@@ -76,6 +78,42 @@ def stop_scheduler():
     if _scheduler and _scheduler.running:
         _scheduler.shutdown(wait=False)
         print("[form_scheduler] Scheduler arrêté.")
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# JOB : SYNC CLIENTS ACTIFS
+# ════════════════════════════════════════════════════════════════════════════
+
+def _run_sync_clients_actifs():
+    """
+    Appelé par APScheduler (thread séparé, distinct du loop uvicorn).
+
+    Le pool aiomysql (_pool dans db.py) est créé une seule fois sur le loop
+    principal d'uvicorn via init_pool(). Si on fait asyncio.run(...) ici,
+    un second event loop est créé dans ce thread, et toute tentative
+    d'utiliser _pool depuis ce loop étranger lève :
+        RuntimeError: ... attached to a different loop
+
+    On planifie donc la coroutine sur le loop principal via
+    run_coroutine_threadsafe, qui est le mécanisme thread-safe prévu par
+    asyncio pour ce cas précis.
+    """
+    print("[form_scheduler] Lancement job sync_clients_actifs")
+
+    if _main_loop and _main_loop.is_running():
+        future = asyncio.run_coroutine_threadsafe(sync_clients_actifs(), _main_loop)
+        try:
+            future.result()  # bloque le thread scheduler, propage les exceptions
+        except Exception as e:
+            print(f"[form_scheduler] Erreur sync_clients_actifs: {e}")
+    else:
+        # Fallback : ne devrait pas arriver en prod (loop principal toujours
+        # actif tant qu'uvicorn tourne), mais évite un échec silencieux.
+        print("[form_scheduler] _main_loop indisponible, fallback asyncio.run()")
+        try:
+            asyncio.run(sync_clients_actifs())
+        except Exception as e:
+            print(f"[form_scheduler] Erreur sync_clients_actifs (fallback): {e}")
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -168,7 +206,7 @@ def _parse_trigger(tv: str):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# EXÉCUTION D'UN JOB
+# EXÉCUTION D'UN JOB (FORMULAIRES)
 # ════════════════════════════════════════════════════════════════════════════
 
 def _run_form_job(form_id: int):
