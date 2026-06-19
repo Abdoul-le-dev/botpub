@@ -135,8 +135,42 @@ async def toggle_form(form_id: int, actif: bool):
 # ════════════════════════════════════════════════════════════════════════════
 # SESSIONS
 # ════════════════════════════════════════════════════════════════════════════
-
 async def get_or_create_session(form_id: int, telegram_id: int) -> dict:
+    async with get_db() as cur:
+        await cur.execute(
+            "SELECT * FROM form_sessions WHERE form_id=%s AND telegram_id=%s",
+            (form_id, telegram_id)
+        )
+        row = await cur.fetchone()
+
+        if row:
+            session = dict(row)
+            if session["status"] == "completed":
+                # Supprimer toutes les tables enfants avant la session (FK constraints)
+                await cur.execute(
+                    "DELETE FROM form_responses WHERE session_id=%s",
+                    (session["id"],)
+                )
+                await cur.execute(
+                    "DELETE FROM form_submissions WHERE session_id=%s",
+                    (session["id"],)
+                )
+                await cur.execute(
+                    "DELETE FROM form_sessions WHERE id=%s",
+                    (session["id"],)
+                )
+            else:
+                return session
+
+        await cur.execute("""
+            INSERT INTO form_sessions (form_id, telegram_id, step_index, status, score)
+            VALUES (%s,%s,0,'in_progress',0)
+        """, (form_id, telegram_id))
+        new_id = cur.lastrowid
+
+    return {"id": new_id, "form_id": form_id, "telegram_id": telegram_id,
+            "step_index": 0, "status": "in_progress", "score": 0}
+async def get_or_create_session_(form_id: int, telegram_id: int) -> dict:
     async with get_db() as cur:
         await cur.execute(
             "SELECT * FROM form_sessions WHERE form_id=%s AND telegram_id=%s",
