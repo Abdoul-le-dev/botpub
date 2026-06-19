@@ -147,8 +147,24 @@ async def _suivi_oui(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ─────────────────────────────────────────────
 #  Branche B1 — N'a PAS créé le compte
 # ─────────────────────────────────────────────
-
 async def _compte_non(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    await query.message.reply_text(
+        "📝 *Créez votre compte dès maintenant\\.*\n\n"
+        "1\\. Cliquez sur le bouton ci\\-dessous pour créer votre compte\n"
+        "2\\. Une fois créé, soumettez une capture d'écran ici : "
+        f"[cliquez ici pour soumettre]({URL_SCREEN})\n\n"
+        "Revenez ensuite avec /formation\\_valider pour finaliser votre validation\\.",
+        parse_mode="MarkdownV2",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔗 Créer mon compte", url=URL_CREER_COMPTE)]
+        ])
+    )
+    return ConversationHandler.END
+async def _compte_non_(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_reply_markup(reply_markup=None)
