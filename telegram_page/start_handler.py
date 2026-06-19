@@ -12,9 +12,13 @@ async def process_start_link(update, context, user_id: int, first_name: str, sta
 
     async with get_db() as cur:
         await cur.execute(
-            "INSERT IGNORE INTO users (telegram_id, name) VALUES (%s, %s)",
-            (user_id, first_name)
+            "SELECT 1 FROM users WHERE telegram_id = %s", (user_id,)
         )
+        if not await cur.fetchone():
+            await cur.execute(
+                "INSERT INTO users (telegram_id, name, phone, created_at) VALUES (%s, %s, '0000', NOW())",
+                (user_id, first_name)
+            )
 
     if not start_param:
         return None
