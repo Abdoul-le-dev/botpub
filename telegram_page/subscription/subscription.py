@@ -1,7 +1,7 @@
 # subscription.py — v4 MySQL
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import Optional
 from telegram_page.broadcast_engine import _notify_admin
 import os
@@ -34,6 +34,9 @@ class SubscriptionPayload(BaseModel):
     amount_local:  Optional[float] = None
     aggregator:    Optional[str]   = None
     paid_at:       Optional[str]   = None
+
+class FormationValidationRequest(BaseModel):
+    email: EmailStr
 
 @router.post("/subscription-info")
 async def create_subscription(payload: SubscriptionPayload):
@@ -98,7 +101,8 @@ async def get_subscriptions(email: Optional[str] = None):
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.post("/formation-validation")
-async def create_formation_validation(email: str):
+async def create_formation_validation(payload: FormationValidationRequest):
+    email = payload.email
     try:
         async with get_db() as cur:
             # Vérifier si déjà enregistré
