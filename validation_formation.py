@@ -42,7 +42,7 @@ from relance.relance import email_exists
 
 URL_FORMATION    = "https://fdksignal.com/formation"
 URL_CREER_COMPTE = "https://affs.click/hw88e"
-URL_SCREEN       = "https://fdksignal.com/screen"
+URL_SCREEN       = "https://fdksignal.com/formation/soumettre"
 CONTACT_SUPPORT  = "@Fiacrekpanou"
 
 
