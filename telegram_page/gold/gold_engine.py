@@ -6,6 +6,14 @@ Changements v5 :
   - ? → %s partout
   - LAST_INSERT_ID() → cur.lastrowid
   - ROW_COUNT() → cur.rowcount
+
+Corrections appliquées dans cette version :
+  1. Ajout de adjust_entry_sl_to_live_price() — manquait et faisait
+     crasher le bot au démarrage (ImportError depuis gold_broadcast.py).
+  2. save_user_step() — fix du warning MySQL "'VALUES function' is
+     deprecated" (syntaxe ON DUPLICATE KEY UPDATE avec alias).
+  3. trigger_sl_touched() — ne notifie plus aucun user, seul l'admin
+     reçoit la notification de clôture (via _notify_admin_session_closed).
 """
 
 import logging
@@ -78,6 +86,35 @@ def calculate_gains_losses(lot: float, entry: float, sl: float,
         "gain_tp2": dollars(abs(tp2 - entry)) if tp2 else None,
         "gain_tp3": dollars(abs(tp3 - entry)) if tp3 else None,
     }
+
+
+def adjust_entry_sl_to_live_price(direction: str, entry: float, sl: float,
+                                    live_price: float | None) -> dict:
+    """
+    Ajuste entry/sl au prix live SI le prix live offre un meilleur point
+    d'entrée que le prix original. Sinon, garde le trade tel qu'envoyé
+    à l'origine. Les TP ne sont jamais recalculés ici — seul l'écart en
+    pips entre entry et sl est préservé lors de l'ajustement.
+
+    Règle :
+      - sell : prix_live > entry → meilleure vente → ajuster
+      - buy  : prix_live < entry → meilleur achat  → ajuster
+      - sinon (ou prix live indisponible) → garder l'original
+
+    Retourne {"entry": ..., "sl": ..., "adjusted": bool}
+    """
+    if live_price is None:
+        return {"entry": entry, "sl": sl, "adjusted": False}
+
+    sl_pips = round(abs(entry - sl), 2)
+
+    if direction == "sell" and live_price > entry:
+        return {"entry": live_price, "sl": round(live_price + sl_pips, 2), "adjusted": True}
+
+    if direction == "buy" and live_price < entry:
+        return {"entry": live_price, "sl": round(live_price - sl_pips, 2), "adjusted": True}
+
+    return {"entry": entry, "sl": sl, "adjusted": False}
 
 
 async def get_tp_level_for_capital(capital: float) -> tuple:
@@ -475,11 +512,11 @@ async def save_user_step(session_id: int, user_id: int, step: str, capital: floa
             await cur.execute("""
                 INSERT INTO gold_user_sessions
                     (session_id, user_id, step, capital_input, updated_at)
-                VALUES (%s, %s, %s, %s, NOW())
+                VALUES (%s, %s, %s, %s, NOW()) AS new_vals
                 ON DUPLICATE KEY UPDATE
-                    step          = VALUES(step),
-                    capital_input = VALUES(capital_input),
-                    updated_at    = NOW()
+                    step          = new_vals.step,
+                    capital_input = new_vals.capital_input,
+                    updated_at    = new_vals.updated_at
             """, (session_id, user_id, step, capital))
 
 
@@ -524,17 +561,17 @@ async def confirm_gold_entry(session_id: int, user_id: int, capital: float,
             if not session:
                 return {"error": "Session introuvable"}
             session = dict(session)
- 
+
         if session["current_phase"] not in ("teaser", "open"):
             return {"error": "Ce trade n'est plus ouvert aux participations"}
- 
+
         # Utilise les valeurs ajustées (meilleur point d'entrée selon le
         # prix live au moment où l'utilisateur a vu le détail du trade)
         # si elles ont été fournies, sinon retombe sur les valeurs de
         # session d'origine.
         effective_entry = override_entry if override_entry is not None else session["entry_price"]
         effective_sl    = override_sl    if override_sl    is not None else session["sl"]
- 
+
         # 2. Calcul Python pur — instantané, aucune DB
         #
         # La perte SL est calculée avec l'entry/sl EFFECTIFS (ajustés au prix
@@ -543,25 +580,23 @@ async def confirm_gold_entry(session_id: int, user_id: int, capital: float,
         #
         # Les gains TP restent calculés depuis l'ENTRY ORIGINAL de la session,
         # PAS l'entry ajusté — l'utilisateur garde le gain annoncé au teaser,
-        # peu importe son point d'entrée réel. S'il a un meilleur point
-        # d'entrée, son risque diminue mais son gain potentiel reste celui
-        # promis (jamais réduit par l'ajustement).
+        # peu importe son point d'entrée réel.
         original_entry = session["entry_price"]
- 
+
         lot = calculate_lot(capital, effective_entry, effective_sl)
- 
+
         risk_gains = calculate_gains_losses(lot=lot, entry=effective_entry, sl=effective_sl)
         perte_sl   = risk_gains["perte_sl"]
- 
+
         tp_gains = calculate_gains_losses(lot=lot, entry=original_entry, sl=effective_sl,
                                            tp1=session.get("tp1"), tp2=session.get("tp2"), tp3=session.get("tp3"))
         gain_tp1 = tp_gains["gain_tp1"]
         gain_tp2 = tp_gains["gain_tp2"]
         gain_tp3 = tp_gains["gain_tp3"]
- 
+
         tp_level, risk_pct = await get_tp_level_for_capital(capital)
         risk_usd = round(capital * risk_pct / 100, 2)
- 
+
         # 3. Message prêt à renvoyer — disponible immédiatement
         tp_labels = {1: "TP1", 2: "TP1 + TP2", 3: "TP1 + TP2 + TP3"}
         dir_label = "Achat (Buy)" if session["direction"] == "buy" else "Vente (Sell)"
@@ -578,7 +613,7 @@ async def confirm_gold_entry(session_id: int, user_id: int, capital: float,
         if gain_tp3: lines.append(f"🏆 Si TP3 touché → *+{gain_tp3}$*")
         lines += ["", "_Tu recevras les instructions en temps réel._"]
         message = "\n".join(lines)
- 
+
         # 4. Empile la persistance — ne bloque PAS la réponse à l'utilisateur
         await enqueue_write(
             "confirm_gold_entry",
@@ -587,7 +622,7 @@ async def confirm_gold_entry(session_id: int, user_id: int, capital: float,
             risk_pct, risk_usd, lot, tp_level,
             perte_sl, gain_tp1, gain_tp2, gain_tp3,
         )
- 
+
         # 5. Retourne immédiatement — l'utilisateur n'attend aucune écriture DB
         return {
             "entry": {"session_id": session_id, "user_id": user_id, "capital": capital,
@@ -595,8 +630,8 @@ async def confirm_gold_entry(session_id: int, user_id: int, capital: float,
                       "gain_tp1": gain_tp1, "gain_tp2": gain_tp2, "gain_tp3": gain_tp3},
             "message": message,
         }
- 
- 
+
+
 async def _persist_gold_entry(session_id, user_id, session, capital,
                                 risk_pct, risk_usd, lot, tp_level,
                                 perte_sl, gain_tp1, gain_tp2, gain_tp3):
@@ -629,14 +664,14 @@ async def _persist_gold_entry(session_id, user_id, session, capital,
             """, (session_id, user_id, session["season_id"],
                   capital, risk_pct, risk_usd, lot, tp_level,
                   perte_sl, gain_tp1, gain_tp2, gain_tp3, capital))
- 
+
             if session["current_phase"] == "teaser":
                 await cur.execute("""
                     UPDATE gold_trade_sessions
                     SET current_phase = 'open', opened_at = NOW()
                     WHERE id = %s
                 """, (session_id,))
- 
+
             await cur.execute("""
                 SELECT
                     COUNT(*) AS total_members,
@@ -648,7 +683,7 @@ async def _persist_gold_entry(session_id, user_id, session, capital,
                 FROM gold_member_entries WHERE session_id = %s
             """, (session_id,))
             agg = await cur.fetchone()
- 
+
             await cur.execute("""
                 UPDATE gold_trade_sessions SET
                     total_members_in      = %s,
@@ -663,11 +698,11 @@ async def _persist_gold_entry(session_id, user_id, session, capital,
                   agg["total_loss_sl"] or 0, agg["total_gain_tp1"] or 0,
                   agg["total_gain_tp2"] or 0, agg["total_gain_tp3"] or 0,
                   session_id))
- 
+
     await save_user_step(session_id, user_id, "confirmed", capital)
     await _log_flow_event(session_id, user_id, "confirmed", {"capital": capital, "lot": lot, "tp_level": tp_level})
     await _apply_to_simulation_accounts(session_id, session)
- 
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION 5 — GESTION TP / SL
@@ -724,6 +759,11 @@ async def trigger_tp_reached(session_id: int, tp_level: int) -> dict:
 
 
 async def trigger_sl_touched(session_id: int) -> dict:
+    """
+    Marque la session et toutes les entrées membres comme clôturées en SL.
+    NE NOTIFIE PLUS AUCUN USER — seul l'admin reçoit la notification de
+    clôture via _notify_admin_session_closed, appelée plus bas.
+    """
     async with get_db() as cur:
         await cur.execute("SELECT * FROM gold_trade_sessions WHERE id = %s", (session_id,))
         session = await cur.fetchone()
@@ -762,20 +802,7 @@ async def trigger_sl_touched(session_id: int) -> dict:
                 WHERE session_id = %s
             """, (session_id,))
 
-    notified = 0
-    for entry in entries:
-        entry     = dict(entry)
-        rule_msgs = await get_rule_messages(entry["tp_level_assigned"])
-        message   = rule_msgs.get("message_sl_touched",
-            f"❌ *SL touché sur XAU/USD*\n\nPerte : *{entry['perte_sl']}$*\nRestez discipliné 💪")
-        message += f"\n\n📉 Perte sur ce trade : *{entry['perte_sl']}$*"
-        try:
-            if _bot:
-                await _bot.send_message(chat_id=entry["user_id"], text=message, parse_mode="Markdown")
-                await asyncio.sleep(0.05)
-            notified += 1
-        except Exception as e:
-            logger.warning(f"[trigger_sl] uid={entry['user_id']}: {e}")
+    notified = len(entries)
 
     await _close_simulation_trades(session_id, "sl")
     await _notify_admin_session_closed(session_id, "sl", notified)
