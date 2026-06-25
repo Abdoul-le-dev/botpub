@@ -1,5 +1,14 @@
 """
 gold_broadcast.py — Flux Telegram Gold v5 (MySQL async)
+
+FIX appliqués :
+  1. query.answer() appelé EN PREMIER dans chaque handler de callback,
+     avant toute requête DB. Si answer() échoue (callback expiré),
+     on log et on continue le traitement quand même — le clic reste utile.
+  2. Sémaphore de concurrence sur les callbacks pour protéger le pool
+     MySQL lors des pics de clics juste après un broadcast.
+  3. Try/except enveloppant tout le corps métier de chaque handler,
+     avec message de repli envoyé à l'utilisateur en cas d'erreur.
 """
 
 import asyncio
@@ -22,12 +31,34 @@ from telegram_page.gold.gold_engine import (
     get_tp_level_for_capital,
     calculate_lot,
     calculate_gains_losses,
+    adjust_entry_sl_to_live_price,
+    get_live_gold_price,
     _log_flow_event,
 )
+from telegram_page.gold.gold_write_queue import enqueue_write
 
 logger      = logging.getLogger(__name__)
 ADMIN_ID    = 571718066
 CAPITAL_MIN = 30.0
+
+# Limite le nombre de callbacks Gold traités en parallèle, pour éviter
+# de saturer le pool MySQL quand tout le monde clique en même temps
+# juste après un broadcast.
+_callback_semaphore = asyncio.Semaphore(20)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WRAPPERS QUEUE — toutes les écritures DB de ce flux passent par la queue,
+# pour qu'un seul worker les traite séquentiellement et qu'aucune ne soit
+# jamais exécutée en parallèle massif lors d'un pic post-broadcast.
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def _q_save_user_step(session_id: int, user_id: int, step: str, capital: float = None):
+    await enqueue_write("save_user_step", save_user_step, session_id, user_id, step, capital)
+
+
+async def _q_log_flow_event(session_id: int, user_id: int, event_type: str, payload: dict = None):
+    await enqueue_write("log_flow_event", _log_flow_event, session_id, user_id, event_type, payload)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -88,6 +119,34 @@ async def _safe_delete(bot, chat_id: int, message_id: int):
         return
     try:
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
+
+
+async def _safe_answer(query, text: str = None, show_alert: bool = False) -> bool:
+    """
+    Tente de répondre au callback. Retourne True si ça a marché,
+    False si le callback a expiré (Query is too old) — dans ce cas
+    on log mais on NE BLOQUE PAS le traitement qui suit.
+    """
+    try:
+        if text:
+            await query.answer(text, show_alert=show_alert)
+        else:
+            await query.answer()
+        return True
+    except Exception as e:
+        logger.warning(f"[_safe_answer] callback expiré: {e}")
+        return False
+
+
+async def _notify_user_error(bot, user_id: int):
+    try:
+        await bot.send_message(
+            chat_id=user_id,
+            text="⚠️ Une erreur est survenue. Tape /start ou réessaie dans un instant. "
+                 "Si ça persiste, contacte le support."
+        )
     except Exception:
         pass
 
@@ -185,13 +244,7 @@ async def send_gold_teaser(bot, session: dict,
                             delay: float  = 0.08) -> dict:
     session_id = session["id"]
     user_ids   = await _get_category_user_ids("clients_actifs")
-    print(user_ids)
-
     total      = len(user_ids)
-
-    print(total)
-
-    
 
     if total == 0:
         return {"total": 0, "sent": 0, "errors": 0, "session_id": session_id}
@@ -234,8 +287,8 @@ async def send_gold_teaser(bot, session: dict,
                 reply_markup=_build_disclaimer_keyboard(session_id),
             )
 
-            await save_user_step(session_id, user_id, "teaser")
-            await _log_flow_event(session_id, user_id, "disclaimer_sent", None)
+            await _q_save_user_step(session_id, user_id, "teaser")
+            await _q_log_flow_event(session_id, user_id, "disclaimer_sent", None)
             sent += 1
 
         except Exception as e:
@@ -268,76 +321,103 @@ async def send_gold_teaser(bot, session: dict,
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def handle_disclaimer_ok(update, context):
-    query   = update.callback_query
-    user_id = query.from_user.id
+    async with _callback_semaphore:
+        query   = update.callback_query
+        user_id = query.from_user.id
 
-    try:
-        session_id = int(query.data.split("_")[3])
-    except (IndexError, ValueError):
-        await query.answer("❌ Erreur.", show_alert=True)
-        return
+        try:
+            session_id = int(query.data.split("_")[3])
+        except (IndexError, ValueError):
+            await _safe_answer(query, "❌ Erreur.", show_alert=True)
+            return
 
-    session = await get_active_gold_session()
-    if not session:
-        await query.answer("⏰ Aucun trade actif en ce moment.", show_alert=True)
-        await _safe_delete(context.bot, user_id, query.message.message_id)
-        return
+        # On répond TOUT DE SUITE, avant toute requête DB.
+        # Même si ça échoue (callback expiré), on continue le traitement :
+        # le clic de l'utilisateur reste valide et doit produire un effet.
+        await _safe_answer(query)
 
-    real_session_id = session["id"]
-    await query.answer()
-    await _safe_delete(context.bot, user_id, query.message.message_id)
+        try:
+            session = await get_active_gold_session()
+            if not session:
+                await _safe_delete(context.bot, user_id, query.message.message_id)
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_id, text="⏰ Ce trade n'est plus disponible."
+                    )
+                except Exception:
+                    pass
+                return
 
-    prenom  = await _get_prenom(user_id)
-    message = await _build_teaser_message(session, prenom)
-    kbd     = _build_teaser_keyboard(real_session_id)
+            real_session_id = session["id"]
+            await _safe_delete(context.bot, user_id, query.message.message_id)
 
-    msg = await _send_or_photo(
-        bot=context.bot, chat_id=user_id, text=message,
-        screenshot_url=session.get("screenshot_url"), reply_markup=kbd,
-    )
-    if msg:
-        context.user_data[f"teaser_msg_id_{real_session_id}"] = msg.message_id
+            prenom  = await _get_prenom(user_id)
+            message = await _build_teaser_message(session, prenom)
+            kbd     = _build_teaser_keyboard(real_session_id)
 
-    await _log_flow_event(real_session_id, user_id, "teaser_shown", None)
+            msg = await _send_or_photo(
+                bot=context.bot, chat_id=user_id, text=message,
+                screenshot_url=session.get("screenshot_url"), reply_markup=kbd,
+            )
+            if msg:
+                context.user_data[f"teaser_msg_id_{real_session_id}"] = msg.message_id
+
+            await _q_log_flow_event(real_session_id, user_id, "teaser_shown", None)
+
+        except Exception as e:
+            logger.error(f"[handle_disclaimer_ok] uid={user_id}: {e}", exc_info=True)
+            await _notify_user_error(context.bot, user_id)
 
 
 async def handle_teaser_click(update, context):
-    query   = update.callback_query
-    user_id = query.from_user.id
+    async with _callback_semaphore:
+        query   = update.callback_query
+        user_id = query.from_user.id
 
-    try:
-        session_id = int(query.data.split("_")[2])
-    except (IndexError, ValueError):
-        await query.answer("❌ Erreur — réessaie.", show_alert=True)
-        return
+        try:
+            session_id = int(query.data.split("_")[2])
+        except (IndexError, ValueError):
+            await _safe_answer(query, "❌ Erreur — réessaie.", show_alert=True)
+            return
 
-    session = await get_active_gold_session()
-    if not session:
-        await query.answer("⏰ Aucun trade actif en ce moment.", show_alert=True)
-        await _safe_delete(context.bot, user_id, query.message.message_id)
-        return
+        await _safe_answer(query)
 
-    real_session_id = session["id"]
-    await query.answer()
-    await _log_flow_event(real_session_id, user_id, "teaser_clicked", None)
-    await _safe_delete(context.bot, user_id, query.message.message_id)
+        try:
+            session = await get_active_gold_session()
+            if not session:
+                await _safe_delete(context.bot, user_id, query.message.message_id)
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_id, text="⏰ Ce trade n'est plus disponible."
+                    )
+                except Exception:
+                    pass
+                return
 
-    context.user_data["gold_session_id"] = real_session_id
-    context.user_data["waiting_capital"] = True
-    await save_user_step(real_session_id, user_id, "waiting_capital")
+            real_session_id = session["id"]
+            await _q_log_flow_event(real_session_id, user_id, "teaser_clicked", None)
+            await _safe_delete(context.bot, user_id, query.message.message_id)
 
-    last_capital = await _get_last_capital(user_id)
-    hint = f"\n\n_Dernier capital enregistré : *{last_capital}$*_" if last_capital else ""
+            context.user_data["gold_session_id"] = real_session_id
+            context.user_data["waiting_capital"] = True
+            await _q_save_user_step(real_session_id, user_id, "waiting_capital")
 
-    msg = await context.bot.send_message(
-        chat_id=user_id,
-        text=(f"💼 *Quel est ton capital actuel en $ ?*\n\n"
-              f"Renseigne le montant en chiffres uniquement.{hint}\n\n"
-              f"_Ex : 500 ou 1250_"),
-        parse_mode="Markdown",
-    )
-    if msg:
-        context.user_data[f"capital_msg_id_{real_session_id}"] = msg.message_id
+            last_capital = await _get_last_capital(user_id)
+            hint = f"\n\n_Dernier capital enregistré : *{last_capital}$*_" if last_capital else ""
+
+            msg = await context.bot.send_message(
+                chat_id=user_id,
+                text=(f"💼 *Quel est ton capital actuel en $ ?*\n\n"
+                      f"Renseigne le montant en chiffres uniquement.{hint}\n\n"
+                      f"_Ex : 500 ou 1250_"),
+                parse_mode="Markdown",
+            )
+            if msg:
+                context.user_data[f"capital_msg_id_{real_session_id}"] = msg.message_id
+
+        except Exception as e:
+            logger.error(f"[handle_teaser_click] uid={user_id}: {e}", exc_info=True)
+            await _notify_user_error(context.bot, user_id)
 
 
 async def handle_capital_input(update, context):
@@ -355,6 +435,19 @@ async def handle_capital_input(update, context):
     if not session_id:
         return
 
+    # Même protection de concurrence que les callbacks Gold : ce handler
+    # est aussi exposé au pic de charge post-broadcast (des centaines
+    # d'utilisateurs qui tapent leur capital en même temps), donc il doit
+    # passer par le même sémaphore pour ne pas saturer le pool MySQL.
+    async with _callback_semaphore:
+        try:
+            await _process_capital_input(update, context, user_id, session_id)
+        except Exception as e:
+            logger.error(f"[handle_capital_input] uid={user_id}: {e}", exc_info=True)
+            await _notify_user_error(context.bot, user_id)
+
+
+async def _process_capital_input(update, context, user_id: int, session_id: int):
     raw   = update.message.text.strip()
     clean = raw.replace(",", ".").replace(" ", "").replace("$", "")
     await _safe_delete(context.bot, user_id, update.message.message_id)
@@ -392,22 +485,56 @@ async def handle_capital_input(update, context):
     context.user_data["waiting_capital"] = False
     capital_msg_id = context.user_data.get(f"capital_msg_id_{session_id}")
     await _safe_delete(context.bot, user_id, capital_msg_id)
-    await save_user_step(session_id, user_id, "trade_shown", capital)
-    await _show_trade_detail(context.bot, user_id, session_id, capital)
+    await _q_save_user_step(session_id, user_id, "trade_shown", capital)
+    await _show_trade_detail(context.bot, user_id, session_id, capital, context=context)
 
 
-async def _show_trade_detail(bot, user_id: int, session_id: int, capital: float):
+async def _show_trade_detail(bot, user_id: int, session_id: int, capital: float, context=None):
     session = await get_active_gold_session()
     if not session:
-        await bot.send_message(chat_id=user_id, text="⏰ Aucun trade actif en ce moment.",
+        await bot.send_message(chat_id=user_id, text="⏰ Ce trade n'est plus disponible.",
                                 parse_mode="Markdown")
         return
 
-    session_id  = session["id"]
-    lot         = calculate_lot(capital, session["entry_price"], session["sl"])
-    gains       = calculate_gains_losses(lot=lot, entry=session["entry_price"], sl=session["sl"],
-                                          tp1=session.get("tp1"), tp2=session.get("tp2"),
-                                          tp3=session.get("tp3"))
+    session_id = session["id"]
+
+    # Récupère le prix live et ajuste entry/sl si l'utilisateur a un
+    # meilleur point d'entrée que le prix prévu à l'origine. Les TP
+    # restent toujours ceux d'origine.
+    live_price = await get_live_gold_price()
+    adjustment = adjust_entry_sl_to_live_price(
+        direction=session["direction"],
+        entry=session["entry_price"],
+        sl=session["sl"],
+        live_price=live_price,
+    )
+    effective_entry = adjustment["entry"]
+    effective_sl     = adjustment["sl"]
+    was_adjusted     = adjustment["adjusted"]
+
+    # Mémorise les valeurs effectives pour cet utilisateur — nécessaires
+    # à la confirmation (handle_gold_confirm) pour calculer lot/gains
+    # avec les BONNES valeurs, pas les valeurs d'origine de la session.
+    if context is not None:
+        context.user_data[f"effective_entry_{session_id}"] = effective_entry
+        context.user_data[f"effective_sl_{session_id}"]     = effective_sl
+
+    lot = calculate_lot(capital, effective_entry, effective_sl)
+
+    # Même règle qu'à la confirmation : la perte SL utilise l'entry/sl
+    # effectifs (ajustés), les gains TP utilisent l'entry ORIGINAL — le
+    # gain potentiel annoncé ne change jamais, seul le risque s'ajuste.
+    risk_gains = calculate_gains_losses(lot=lot, entry=effective_entry, sl=effective_sl)
+    tp_gains   = calculate_gains_losses(lot=lot, entry=session["entry_price"], sl=effective_sl,
+                                         tp1=session.get("tp1"), tp2=session.get("tp2"),
+                                         tp3=session.get("tp3"))
+    gains = {
+        "perte_sl": risk_gains["perte_sl"],
+        "gain_tp1": tp_gains["gain_tp1"],
+        "gain_tp2": tp_gains["gain_tp2"],
+        "gain_tp3": tp_gains["gain_tp3"],
+    }
+
     tp_level, _ = await get_tp_level_for_capital(capital)
     tp_labels   = {1: "TP1 seulement", 2: "TP1 + TP2", 3: "TP1 + TP2 + TP3"}
     dir_label   = "📈 Achat (Buy)" if session["direction"] == "buy" else "📉 Vente (Sell)"
@@ -416,14 +543,20 @@ async def _show_trade_detail(bot, user_id: int, session_id: int, capital: float)
     lines = [
         f"📊 *XAU/USD — Trade du jour*", f"_{date_label}_", "",
         f"{dir_label}", "━━━━━━━━━━━━━━━━━━━━",
-        f"🎯 Entrée : *{session['entry_price']}*",
     ]
+
+    if was_adjusted:
+        lines.append(f"🎯 Entrée ajustée : *{effective_entry}*")
+        lines.append(f"_(prix du jour {'plus haut' if session['direction'] == 'sell' else 'plus bas'} que prévu — meilleur point d'entrée pour toi)_")
+    else:
+        lines.append(f"🎯 Entrée : *{effective_entry}*")
+
     if session.get("tp1"):                   lines.append(f"✅ TP1 : *{session['tp1']}*")
     if session.get("tp2") and tp_level >= 2: lines.append(f"🎯 TP2 : *{session['tp2']}*")
     if session.get("tp3") and tp_level >= 3: lines.append(f"🏆 TP3 : *{session['tp3']}*")
 
     lines += [
-        f"❌ SL  : *{session['sl']}*", "━━━━━━━━━━━━━━━━━━━━",
+        f"❌ SL  : *{effective_sl}*", "━━━━━━━━━━━━━━━━━━━━",
         f"💼 Lot recommandé : *{lot}*",
         f"🎯 Objectif : *{tp_labels[tp_level]}*",
         f"💰 Capital déclaré : *{capital}$*", "━━━━━━━━━━━━━━━━━━━━",
@@ -448,74 +581,100 @@ async def _show_trade_detail(bot, user_id: int, session_id: int, capital: float)
 
     await _send_or_photo(bot=bot, chat_id=user_id, text="\n".join(lines),
                           screenshot_url=session.get("screenshot_url"), reply_markup=kbd)
-    await _log_flow_event(session_id, user_id, "trade_shown",
-                           {"capital": capital, "lot": lot, "tp_level": tp_level})
+    await _q_log_flow_event(session_id, user_id, "trade_shown",
+                           {"capital": capital, "lot": lot, "tp_level": tp_level,
+                            "entry": effective_entry, "sl": effective_sl, "adjusted": was_adjusted})
 
 
 async def handle_gold_confirm(update, context):
-    query   = update.callback_query
-    user_id = query.from_user.id
+    async with _callback_semaphore:
+        query   = update.callback_query
+        user_id = query.from_user.id
 
-    try:
-        parts      = query.data.split("_")
-        session_id = int(parts[2])
-        capital    = float(parts[3])
-    except (IndexError, ValueError):
-        await query.answer("❌ Erreur — réessaie.", show_alert=True)
-        return
+        try:
+            parts      = query.data.split("_")
+            session_id = int(parts[2])
+            capital    = float(parts[3])
+        except (IndexError, ValueError):
+            await _safe_answer(query, "❌ Erreur — réessaie.", show_alert=True)
+            return
 
-    await query.answer("⏳ Enregistrement...", show_alert=False)
+        await _safe_answer(query, "⏳ Enregistrement...", show_alert=False)
 
-    try:
-        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([]))
-    except Exception:
-        pass
+        try:
+            await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([]))
+        except Exception:
+            pass
 
-    result = await confirm_gold_entry(session_id, user_id, capital)
+        # Récupère l'entrée/SL effectifs calculés au moment où le détail
+        # du trade a été montré (peuvent différer des valeurs de session
+        # si le prix live offrait un meilleur point d'entrée). Si absents
+        # (ex: contexte perdu après redémarrage du bot), on retombe sur
+        # None — confirm_gold_entry utilisera alors les valeurs de session.
+        effective_entry = context.user_data.get(f"effective_entry_{session_id}")
+        effective_sl    = context.user_data.get(f"effective_sl_{session_id}")
 
-    if "error" in result:
-        await query.message.reply_text(f"❌ {result['error']}", parse_mode="Markdown")
-        return
-
-    await query.message.reply_text(result["message"], parse_mode="Markdown")
-
-    danger = await check_cramed_accounts(session_id)
-    for c in danger.get("already_cramed", []):
-        if c["user_id"] == user_id:
-            await query.message.reply_text(
-                "⚠️ *Attention — Capital très faible !*\n\n"
-                "Si le SL est touché sur ce trade, ton compte sera en très grande difficulté.\n\n"
-                "_Assure-toi d'être à l'aise avec ce risque avant de continuer._",
-                parse_mode="Markdown",
+        try:
+            result = await confirm_gold_entry(
+                session_id, user_id, capital,
+                override_entry=effective_entry,
+                override_sl=effective_sl,
             )
-            break
+
+            if "error" in result:
+                await query.message.reply_text(f"❌ {result['error']}", parse_mode="Markdown")
+                return
+
+            await query.message.reply_text(result["message"], parse_mode="Markdown")
+
+            # Alerte "compte cramé" calculée directement à partir du résultat
+            # déjà en main (capital + perte_sl), SANS relire la DB — l'écriture
+            # de cette confirmation est en queue et pas encore garantie d'être
+            # visible si on refaisait un SELECT ici.
+            entry        = result["entry"]
+            capital_apres = entry["capital"] - abs(entry["perte_sl"] or 0)
+            if capital_apres <= 0:
+                await query.message.reply_text(
+                    "⚠️ *Attention — Capital très faible !*\n\n"
+                    "Si le SL est touché sur ce trade, ton compte sera en très grande difficulté.\n\n"
+                    "_Assure-toi d'être à l'aise avec ce risque avant de continuer._",
+                    parse_mode="Markdown",
+                )
+
+        except Exception as e:
+            logger.error(f"[handle_gold_confirm] uid={user_id}: {e}", exc_info=True)
+            await _notify_user_error(context.bot, user_id)
 
 
 async def handle_gold_skip(update, context):
-    query   = update.callback_query
-    user_id = query.from_user.id
+    async with _callback_semaphore:
+        query   = update.callback_query
+        user_id = query.from_user.id
 
-    try:
-        session_id = int(query.data.split("_")[2])
-    except (IndexError, ValueError):
-        await query.answer()
-        return
+        try:
+            session_id = int(query.data.split("_")[2])
+        except (IndexError, ValueError):
+            await _safe_answer(query)
+            return
 
-    await query.answer("👌 Compris — trade non pris.", show_alert=False)
+        await _safe_answer(query, "👌 Compris — trade non pris.", show_alert=False)
 
-    try:
-        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("❌ Trade non pris — Noté 👌", callback_data="gold_done")
-        ]]))
-    except Exception:
-        pass
+        try:
+            await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("❌ Trade non pris — Noté 👌", callback_data="gold_done")
+            ]]))
+        except Exception:
+            pass
 
-    await save_user_step(session_id, user_id, "cancelled")
-    await _log_flow_event(session_id, user_id, "cancelled", None)
+        try:
+            await _q_save_user_step(session_id, user_id, "cancelled")
+            await _q_log_flow_event(session_id, user_id, "cancelled", None)
+        except Exception as e:
+            logger.error(f"[handle_gold_skip] uid={user_id}: {e}", exc_info=True)
 
 
 async def handle_gold_done(update, context):
-    await update.callback_query.answer("Tu as déjà répondu à ce trade.", show_alert=False)
+    await _safe_answer(update.callback_query, "Tu as déjà répondu à ce trade.", show_alert=False)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

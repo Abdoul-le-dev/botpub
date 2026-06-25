@@ -19,6 +19,8 @@ from form.form_engine import register_form_handlers, setup_background_worker
 from telegram_page.signal_broadcast import register_signal_handlers
 from telegram_page.gold.gold_engine import set_bot as set_gold_bot, daily_cramed_check
 from telegram_page.gold.gold_broadcast import register_gold_handlers
+from telegram_page.gold.gold_write_queue import start_gold_write_worker, get_queue_status
+from telegram_page.gold.error_handler import error_handler
 
 load_dotenv()
 CANAL_B_ID = -1002705005402
@@ -115,6 +117,17 @@ async def schedule_daily_check(bot):
         except Exception as e:
             print(f"[daily_check] Erreur: {e}")
 
+async def cmd_queue_status(update, context):
+        if update.effective_user.id != ADMIN_ID:
+            return
+        status = await get_queue_status()
+        await update.message.reply_text(
+            f"📊 Queue Gold\n"
+            f"En attente : {status['pending_jobs']}\n"
+            f"Worker actif : {'✅' if status['worker_running'] else '❌'}"
+        )
+ 
+    
 
 if __name__ == "__main__":
     # 1. Créer un loop persistant
@@ -131,6 +144,8 @@ if __name__ == "__main__":
     async def _post_init(application):
         await setup_background_worker(application)
         asyncio.create_task(schedule_daily_check(application.bot))
+        start_gold_write_worker(app.bot)
+        print("[main] Worker Gold démarré.")
 
     app.post_init = _post_init
 
@@ -141,6 +156,7 @@ if __name__ == "__main__":
     register_gold_handlers(app)
     register_signal_handlers(app)
     app.add_handler(MessageHandler(filters.TEXT, log_unhandled_message), group=99)
+    app.add_handler(CommandHandler("queue_status", cmd_queue_status))
 
     set_bot(app.bot)
     set_gold_bot(app.bot)
