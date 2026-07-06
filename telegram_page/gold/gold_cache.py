@@ -130,6 +130,26 @@ class SignalCache:
             f"{len(self.last_capitals)} capitaux"
         )
 
+    # ── Auto-refresh ──────────────────────────────────────────────────────
+
+    def start_auto_refresh(self, interval: int = 30):
+        """
+        Recharge session + règles toutes les `interval` secondes (2 requêtes
+        légères). Indispensable si l'API FastAPI tourne dans un AUTRE process
+        que le bot : les sessions créées/fermées via l'API deviennent
+        visibles côté bot en ≤ interval secondes.
+        """
+        async def _loop():
+            while True:
+                await asyncio.sleep(interval)
+                try:
+                    await self.reload()   # sans arg → dernière session ouverte
+                except Exception as e:
+                    logger.warning(f"[gold_cache] auto-refresh échoué: {e}")
+
+        asyncio.create_task(_loop())
+        logger.info(f"[gold_cache] auto-refresh démarré ({interval}s)")
+
     # ── Lectures (0 SQL) ──────────────────────────────────────────────────
 
     def get_session(self) -> dict | None:

@@ -353,6 +353,22 @@ async def _handle_blocked_users(blocked_ids: list[int], source_category: str) ->
 # HANDLERS — chemin chaud : 0 requête SQL
 # ══════════════════════════════════════════════════════════════════════════════
 
+async def _get_open_session():
+    """
+    Retourne la session ouverte depuis le cache. Si le cache est vide ou
+    périmé (ex : session créée via l'API dans un autre process il y a
+    quelques secondes), tente UN reload — throttlé à 1 fois / 2 s pour
+    qu'un pic de clics sans session ouverte ne bombarde pas MySQL.
+    """
+    import time as _t
+    if not signal_cache.is_open() and _t.time() - signal_cache.loaded_at > 2:
+        try:
+            await signal_cache.reload()
+        except Exception as e:
+            logger.warning(f"[gold] reload de secours échoué: {e}")
+    return signal_cache.get_session() if signal_cache.is_open() else None
+
+
 async def handle_disclaimer_ok(update, context):
     query   = update.callback_query
     user_id = query.from_user.id
@@ -363,8 +379,8 @@ async def handle_disclaimer_ok(update, context):
     try:
         await _safe_answer(query)
 
-        session = signal_cache.get_session()          # RAM
-        if not signal_cache.is_open():
+        session = await _get_open_session()
+        if not session:
             await _safe_delete(context.bot, user_id, query.message.message_id)
             await context.bot.send_message(chat_id=user_id,
                                            text="⏰ Ce trade n'est plus disponible.")
@@ -398,8 +414,8 @@ async def handle_teaser_click(update, context):
     try:
         await _safe_answer(query)
 
-        session = signal_cache.get_session()
-        if not signal_cache.is_open():
+        session = await _get_open_session()
+        if not session:
             await _safe_delete(context.bot, user_id, query.message.message_id)
             await context.bot.send_message(chat_id=user_id,
                                            text="⏰ Ce trade n'est plus disponible.")
@@ -445,11 +461,12 @@ async def handle_capital_input(update, context):
 
     # État en RAM, restauré au démarrage → plus de restore_user_context()
     # (1 SELECT JOIN) sur CHAQUE message texte de CHAQUE utilisateur du bot.
-    if st.step != "waiting_capital" or not signal_cache.is_open():
+    if st.step != "waiting_capital":
         return
-
-    session = signal_cache.get_session()
-    sid     = session["id"]
+    session = await _get_open_session()
+    if not session:
+        return
+    sid = session["id"]
 
     try:
         raw   = incoming.text.strip()
@@ -586,8 +603,8 @@ async def handle_gold_confirm(update, context):
         except Exception:
             pass
 
-        session = signal_cache.get_session()
-        if not signal_cache.is_open():
+        session = await _get_open_session()
+        if not session:
             await query.message.reply_text("❌ Ce trade n'est plus ouvert aux participations.")
             return
 

@@ -173,6 +173,7 @@ if __name__ == "__main__":
             await user_state.restore(session["id"])
             print(f"[main] État Gold restauré — session #{session['id']}")
         gold_buffer.start(application.bot)
+        signal_cache.start_auto_refresh(30)
         print("[main] Cache Gold chargé, flusher v6 démarré ✓")
 
     app.post_init = _post_init
@@ -204,4 +205,4 @@ if __name__ == "__main__":
     set_gold_bot(app.bot)
 
     print("running...")
-    app.run_polling(poll_interval=1)  # récupère le loop existant
+    app.run_polling(poll_interval=2)  # récupère le loop existant

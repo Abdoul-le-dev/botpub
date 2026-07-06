@@ -27,7 +27,11 @@ logger = logging.getLogger(__name__)
 # "retour en arrière" volontairement permis : un user peut re-saisir son
 # capital tant qu'il n'a pas confirmé.
 _ALLOWED = {
-    None:               {"teaser"},
+    # IMPORTANT : None (user inconnu de la RAM) doit pouvoir aller vers
+    # waiting_capital et trade_shown — s'il clique sur le bouton, c'est la
+    # preuve qu'il a reçu le teaser, même si CE process ne l'a pas envoyé
+    # (broadcast lancé depuis un autre process, ou restart du bot entre-temps).
+    None:               {"teaser", "waiting_capital", "trade_shown", "cancelled"},
     "teaser":           {"teaser", "waiting_capital", "cancelled"},
     "waiting_capital":  {"waiting_capital", "trade_shown", "cancelled"},
     "trade_shown":      {"waiting_capital", "trade_shown", "confirmed", "cancelled"},
