@@ -37,7 +37,7 @@ uvloop.install()
 from telegram_page.gold.gold_cache import signal_cache
 from telegram_page.gold.gold_state import user_state
 from telegram_page.gold.gold_buffer import gold_buffer
-from telegram_page.gold.gold_broadcast_v6 import register_gold_handlers
+from telegram_page.gold.gold_broadcast import register_gold_handlers
 
 
 async def cmd_queue_status(update, context):
