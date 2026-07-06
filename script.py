@@ -39,17 +39,7 @@ from telegram_page.gold.gold_broadcast import register_gold_handlers
 
 
 
-async def _post_init(application):
-    await setup_background_worker(application)
-    asyncio.create_task(schedule_daily_check(application.bot))
 
-    # v6 : cache + état + flusher
-    await signal_cache.reload()
-    session = signal_cache.get_session()
-    if session:
-        await user_state.restore(session["id"])
-    gold_buffer.start(application.bot)
-    print("[main] Cache Gold chargé, flusher démarré.")
 
 async def cmd_queue_status(update, context):
     if update.effective_user.id != ADMIN_ID:
@@ -148,16 +138,7 @@ async def schedule_daily_check(bot):
         except Exception as e:
             print(f"[daily_check] Erreur: {e}")
 
-async def cmd_queue_status(update, context):
-        if update.effective_user.id != ADMIN_ID:
-            return
-        status = await get_queue_status()
-        await update.message.reply_text(
-            f"📊 Queue Gold\n"
-            f"En attente : {status['pending_jobs']}\n"
-            f"Worker actif : {'✅' if status['worker_running'] else '❌'}"
-        )
- 
+
     
 
 if __name__ == "__main__":
@@ -180,8 +161,14 @@ if __name__ == "__main__":
     async def _post_init(application):
         await setup_background_worker(application)
         asyncio.create_task(schedule_daily_check(application.bot))
-        start_gold_write_worker(app.bot)
-        print("[main] Worker Gold démarré.")
+
+        # v6 : cache + état + flusher
+        await signal_cache.reload()
+        session = signal_cache.get_session()
+        if session:
+            await user_state.restore(session["id"])
+        gold_buffer.start(application.bot)
+        print("[main] Cache Gold chargé, flusher démarré.")
 
     app.post_init = _post_init
 
