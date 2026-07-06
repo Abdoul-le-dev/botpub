@@ -42,6 +42,7 @@ import logging
 from datetime import datetime
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.error import Forbidden
 from telegram.ext import CallbackQueryHandler, MessageHandler, filters
 
 from db import get_db
@@ -60,7 +61,8 @@ logger      = logging.getLogger(__name__)
 ADMIN_ID    = 571718066
 CAPITAL_MIN = 30.0
 
-BROADCAST_RATE = 25   # messages/seconde (limite Telegram ≈ 30/s)
+BROADCAST_RATE   = 25   # messages/seconde (limite Telegram ≈ 30/s)
+CATEGORY_BLOCKED = "clients_bloquer"   # catégorie des users ayant bloqué le bot
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -234,6 +236,7 @@ async def send_gold_teaser(bot, session: dict, category: str = "clients_actifs")
     text = _disclaimer_message(session)
     kbd  = _build_disclaimer_keyboard(session_id)
     sent = errors = 0
+    blocked_ids: list[int] = []
     sem  = asyncio.Semaphore(BROADCAST_RATE)
 
     async def _send_one(uid: int):
@@ -245,6 +248,11 @@ async def send_gold_teaser(bot, session: dict, category: str = "clients_actifs")
                 user_state.get(uid).step = "teaser"
                 gold_buffer.add_step(session_id, uid, "teaser")
                 sent += 1
+            except Forbidden as e:
+                # "bot was blocked by the user" / "user is deactivated"
+                # → injoignable définitivement : à sortir de la liste.
+                logger.info(f"[teaser] uid={uid} a bloqué le bot: {e}")
+                blocked_ids.append(uid)
             except Exception as e:
                 logger.debug(f"[teaser] uid={uid}: {e}")
                 errors += 1
@@ -265,16 +273,71 @@ async def send_gold_teaser(bot, session: dict, category: str = "clients_actifs")
     await asyncio.gather(*tasks, return_exceptions=True)
     progress_task.cancel()
 
+    # ── Traitement des users ayant bloqué le bot ─────────────────────────
+    # Fait APRÈS l'envoi (pas pendant) pour ne pas mélanger requêtes DB et
+    # débit d'envoi. Retirés de la catégorie source, ajoutés à clients_bloquer.
+    blocked_report = await _handle_blocked_users(blocked_ids, category)
+
     try:
         await bot.send_message(
             chat_id=ADMIN_ID,
-            text=f"✅ *Teaser Gold terminé*\nEnvoyés : {sent}/{total} | Erreurs : {errors}",
+            text=(f"✅ *Teaser Gold terminé*\n\n"
+                  f"Envoyés : {sent}/{total}\n"
+                  f"Erreurs : {errors}\n\n"
+                  f"🚫 *Bot bloqué par : {blocked_report['blocked']} client(s)*\n"
+                  f"  • retirés de « Clients_actifs » : {blocked_report['removed']}\n"
+                  f"  • ajoutés à « {CATEGORY_BLOCKED} » : {blocked_report['added']}"
+                  + (f" ({blocked_report['already_in']} déjà présents)"
+                     if blocked_report["already_in"] else "")),
             parse_mode="Markdown")
     except Exception:
         pass
 
     asyncio.create_task(watch_gold_price(session_id))
-    return {"total": total, "sent": sent, "errors": errors, "session_id": session_id}
+    return {"total": total, "sent": sent, "errors": errors,
+            "blocked": blocked_report, "session_id": session_id}
+
+
+async def _handle_blocked_users(blocked_ids: list[int], source_category: str) -> dict:
+    """
+    Pour chaque user ayant bloqué le bot pendant le broadcast :
+      1. ajout à la catégorie CATEGORY_BLOCKED (INSERT IGNORE → pas de doublon) ;
+      2. retrait de la catégorie source du broadcast (sauf si "all",
+         qui n'est pas une vraie catégorie).
+    Utilise les fonctions existantes de telegram_page/categorie.py.
+    """
+    result = {"blocked": len(blocked_ids), "removed": 0, "added": 0, "already_in": 0}
+    if not blocked_ids:
+        return result
+
+    try:
+        from telegram_page.categorie import (
+            add_members_to_category,
+            remove_member_from_category,
+        )
+
+        add_res = await add_members_to_category(
+            CATEGORY_BLOCKED, blocked_ids, added_by="broadcast_blocked"
+        )
+        result["added"]      = add_res.get("added", 0)
+        result["already_in"] = add_res.get("ignored", 0)
+
+        if source_category and source_category != "all":
+            for uid in blocked_ids:
+                try:
+                    await remove_member_from_category(source_category, uid)
+                    result["removed"] += 1
+                except Exception as e:
+                    logger.warning(f"[blocked] retrait uid={uid} de "
+                                   f"'{source_category}' échoué: {e}")
+
+        logger.info(f"[blocked] {result['blocked']} bloqués — "
+                    f"{result['removed']} retirés de '{source_category}', "
+                    f"{result['added']} ajoutés à '{CATEGORY_BLOCKED}'")
+    except Exception as e:
+        logger.error(f"[blocked] traitement échoué: {e}", exc_info=True)
+
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════════════════
