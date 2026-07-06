@@ -1,6 +1,6 @@
 import os
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.error import BadRequest
@@ -29,6 +29,37 @@ ADMIN_ID   = 571718066
 CATEGORIE  = "USER_PUB_1_NON_ACHAT"
 token      = os.getenv("tokens")
 
+import uvloop
+uvloop.install()
+
+from telegram_page.gold.gold_cache import signal_cache
+from telegram_page.gold.gold_state import user_state
+from telegram_page.gold.gold_buffer import gold_buffer
+from telegram_page.gold.gold_broadcast import register_gold_handlers
+
+
+
+async def _post_init(application):
+    await setup_background_worker(application)
+    asyncio.create_task(schedule_daily_check(application.bot))
+
+    # v6 : cache + état + flusher
+    await signal_cache.reload()
+    session = signal_cache.get_session()
+    if session:
+        await user_state.restore(session["id"])
+    gold_buffer.start(application.bot)
+    print("[main] Cache Gold chargé, flusher démarré.")
+
+async def cmd_queue_status(update, context):
+    if update.effective_user.id != ADMIN_ID:
+        return
+    s = await gold_buffer.status()
+    await update.message.reply_text(
+        f"📊 Buffer Gold\nEn attente : {s['pending']} "
+        f"(entries {s['entries']} / steps {s['steps']} / events {s['events']})\n"
+        f"Flusher actif : {'✅' if s['worker_running'] else '❌'}"
+    )
 
 # ── save_user_default async ───────────────────────────────────────────────────
 async def save_user_default(user_id):
@@ -97,7 +128,7 @@ async def schedule_daily_check(bot):
         now    = datetime.now()
         target = now.replace(hour=20, minute=0, second=0, microsecond=0)
         if now >= target:
-            target = target.replace(day=target.day + 1)
+            target = timedelta(days=1)
         await asyncio.sleep((target - now).total_seconds())
 
         try:
@@ -139,7 +170,12 @@ if __name__ == "__main__":
     print("[main] Pool OK ✓")
 
     # 3. Construire l'app PTB
-    app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
+    app = (Application.builder()
+       .token(token)
+       .concurrent_updates(512)      
+       .read_timeout(30).write_timeout(30)
+       .build())
+   # app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
 
     async def _post_init(application):
         await setup_background_worker(application)
