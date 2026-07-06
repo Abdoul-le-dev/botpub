@@ -18,8 +18,7 @@ from validation_formation import register_formation_handler
 from form.form_engine import register_form_handlers, setup_background_worker
 from telegram_page.signal_broadcast import register_signal_handlers
 from telegram_page.gold.gold_engine import set_bot as set_gold_bot, daily_cramed_check
-from telegram_page.gold.gold_broadcast import register_gold_handlers
-from telegram_page.gold.gold_write_queue import start_gold_write_worker, get_queue_status
+from telegram_page.gold.gold_write_queue import start_gold_write_worker
 from telegram_page.gold.error_handler import error_handler
 
 load_dotenv()
@@ -32,13 +31,13 @@ token      = os.getenv("tokens")
 import uvloop
 uvloop.install()
 
+# ── v6 : cache + état + buffer + handlers ─────────────────────────────────
+# FIX 2 : import depuis gold_broadcast_v6 (avant : gold_broadcast = v5,
+# donc le cache/buffer étaient initialisés mais jamais utilisés).
 from telegram_page.gold.gold_cache import signal_cache
 from telegram_page.gold.gold_state import user_state
 from telegram_page.gold.gold_buffer import gold_buffer
-from telegram_page.gold.gold_broadcast import register_gold_handlers
-
-
-
+from telegram_page.gold.gold_broadcast_v6 import register_gold_handlers
 
 
 async def cmd_queue_status(update, context):
@@ -50,6 +49,7 @@ async def cmd_queue_status(update, context):
         f"(entries {s['entries']} / steps {s['steps']} / events {s['events']})\n"
         f"Flusher actif : {'✅' if s['worker_running'] else '❌'}"
     )
+
 
 # ── save_user_default async ───────────────────────────────────────────────────
 async def save_user_default(user_id):
@@ -117,8 +117,10 @@ async def schedule_daily_check(bot):
     while True:
         now    = datetime.now()
         target = now.replace(hour=20, minute=0, second=0, microsecond=0)
+        # FIX 1 : `target = timedelta(days=1)` écrasait la date par une
+        # durée → TypeError au calcul (target - now). C'est bien `+=`.
         if now >= target:
-            target = timedelta(days=1)
+            target += timedelta(days=1)
         await asyncio.sleep((target - now).total_seconds())
 
         try:
@@ -139,8 +141,6 @@ async def schedule_daily_check(bot):
             print(f"[daily_check] Erreur: {e}")
 
 
-    
-
 if __name__ == "__main__":
     # 1. Créer un loop persistant
     loop = asyncio.new_event_loop()
@@ -152,23 +152,28 @@ if __name__ == "__main__":
 
     # 3. Construire l'app PTB
     app = (Application.builder()
-       .token(token)
-       .concurrent_updates(512)      
-       .read_timeout(30).write_timeout(30)
-       .build())
-   # app = Application.builder().token(token).read_timeout(30).write_timeout(30).build()
+           .token(token)
+           .concurrent_updates(512)
+           .read_timeout(30).write_timeout(30)
+           .build())
 
     async def _post_init(application):
         await setup_background_worker(application)
         asyncio.create_task(schedule_daily_check(application.bot))
+
+        # FIX 3 : worker de l'ancienne queue redémarré — la route API
+        # /confirm et d'autres écritures passent encore par gold_write_queue.
+        # Sans lui, ces jobs s'empilent et ne sont JAMAIS écrits en base.
+        start_gold_write_worker(application.bot)
 
         # v6 : cache + état + flusher
         await signal_cache.reload()
         session = signal_cache.get_session()
         if session:
             await user_state.restore(session["id"])
+            print(f"[main] État Gold restauré — session #{session['id']}")
         gold_buffer.start(application.bot)
-        print("[main] Cache Gold chargé, flusher démarré.")
+        print("[main] Cache Gold chargé, flusher v6 démarré ✓")
 
     app.post_init = _post_init
 
@@ -178,8 +183,22 @@ if __name__ == "__main__":
     register_form_handlers(app, app.bot, ADMIN_ID)
     register_gold_handlers(app)
     register_signal_handlers(app)
-    app.add_handler(MessageHandler(filters.TEXT, log_unhandled_message), group=99)
+
+    # FIX 4 : nouveaux messages privés uniquement — les messages édités et
+    # les posts de canal ont update.message = None (AttributeError sinon).
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND
+            & filters.UpdateType.MESSAGE
+            & filters.ChatType.PRIVATE,
+            log_unhandled_message,
+        ),
+        group=99,
+    )
     app.add_handler(CommandHandler("queue_status", cmd_queue_status))
+
+    # FIX 5 : error_handler était importé mais jamais enregistré.
+    app.add_error_handler(error_handler)
 
     set_bot(app.bot)
     set_gold_bot(app.bot)

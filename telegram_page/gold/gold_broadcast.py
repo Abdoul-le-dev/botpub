@@ -62,6 +62,7 @@ ADMIN_ID    = 571718066
 CAPITAL_MIN = 30.0
 
 BROADCAST_RATE   = 25   # messages/seconde (limite Telegram ≈ 30/s)
+CATEGORY_TARGET  = "clients_actifs"    # cible UNIQUE des broadcasts Gold — toujours
 CATEGORY_BLOCKED = "clients_bloquer"   # catégorie des users ayant bloqué le bot
 
 
@@ -201,8 +202,16 @@ def _build_teaser_message(session: dict, prenom: str = "") -> str:
 # BROADCAST — concurrent, à débit contrôlé
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def send_gold_teaser(bot, session: dict, category: str = "clients_actifs") -> dict:
+async def send_gold_teaser(bot, session: dict, category: str = None,
+                           delay: float = None, **_ignored) -> dict:
+    """
+    Le paramètre `category` est accepté pour compatibilité avec les routes
+    existantes mais IGNORÉ : les trades Gold sont TOUJOURS envoyés à la
+    catégorie CATEGORY_TARGET (clients_actifs). `delay` est ignoré aussi
+    (débit géré par BROADCAST_RATE).
+    """
     session_id = session["id"]
+    category   = CATEGORY_TARGET   # cible forcée, quel que soit l'appelant
 
     # 1. Précharge TOUT ce que le pic va lire — quelques requêtes, une fois.
     await signal_cache.reload(session_id)
@@ -227,7 +236,7 @@ async def send_gold_teaser(bot, session: dict, category: str = "clients_actifs")
         await bot.send_message(
             chat_id=ADMIN_ID,
             text=(f"📤 *Envoi teaser Gold démarré*\n"
-                  f"Destinataires : {total} | Session #{session_id}\n"
+                  f"Cible : {category} | Destinataires : {total} | Session #{session_id}\n"
                   f"Débit : {BROADCAST_RATE} msg/s → ~{total // BROADCAST_RATE // 60 + 1} min"),
             parse_mode="Markdown")
     except Exception:
@@ -285,7 +294,7 @@ async def send_gold_teaser(bot, session: dict, category: str = "clients_actifs")
                   f"Envoyés : {sent}/{total}\n"
                   f"Erreurs : {errors}\n\n"
                   f"🚫 *Bot bloqué par : {blocked_report['blocked']} client(s)*\n"
-                  f"  • retirés de « Clients_actifs » : {blocked_report['removed']}\n"
+                  f"  • retirés de « {category} » : {blocked_report['removed']}\n"
                   f"  • ajoutés à « {CATEGORY_BLOCKED} » : {blocked_report['added']}"
                   + (f" ({blocked_report['already_in']} déjà présents)"
                      if blocked_report["already_in"] else "")),
@@ -425,7 +434,13 @@ async def handle_teaser_click(update, context):
 
 
 async def handle_capital_input(update, context):
-    user_id = update.message.from_user.id
+    # Garde : ce handler ne traite que les NOUVEAUX messages privés d'un
+    # utilisateur réel. Messages édités / posts de canal → update.message
+    # est None (crash AttributeError sinon).
+    incoming = update.effective_message
+    if incoming is None or incoming.from_user is None:
+        return
+    user_id = incoming.from_user.id
     st      = user_state.get(user_id)
 
     # État en RAM, restauré au démarrage → plus de restore_user_context()
@@ -437,9 +452,9 @@ async def handle_capital_input(update, context):
     sid     = session["id"]
 
     try:
-        raw   = update.message.text.strip()
+        raw   = incoming.text.strip()
         clean = raw.replace(",", ".").replace(" ", "").replace("$", "")
-        await _safe_delete(context.bot, user_id, update.message.message_id)
+        await _safe_delete(context.bot, user_id, incoming.message_id)
 
         is_numeric = clean.replace(".", "", 1).isdigit() and clean.count(".") <= 1
 
@@ -697,5 +712,13 @@ def register_gold_handlers(app):
     app.add_handler(CallbackQueryHandler(handle_gold_confirm,  pattern=r"^gold_confirm_\d+(_[\d.]+)?$"), group=3)
     app.add_handler(CallbackQueryHandler(handle_gold_skip,     pattern=r"^gold_skip_\d+$"),           group=3)
     app.add_handler(CallbackQueryHandler(handle_gold_done,     pattern=r"^gold_done$"),               group=3)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_capital_input), group=3)
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND
+            & filters.UpdateType.MESSAGE      # exclut edited_message / channel_post
+            & filters.ChatType.PRIVATE,       # exclut groupes et canaux
+            handle_capital_input,
+        ),
+        group=3,
+    )
     print("[gold_broadcast] Handlers Gold v6 enregistrés ✓")
