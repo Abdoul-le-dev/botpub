@@ -1,20 +1,5 @@
 """
-broadcast_send.py — Envoi massif du teaser Gold v7.1.
-
-Remplace send_gold_teaser (v6) qui touchait à signal_cache / user_state v6.
-
-Chaîne d'appel côté route POST /gold/sessions :
-    1. open_new_session()         → registry + snapshot + state + buffer
-    2. send_teaser_broadcast()    → envoi massif à débit contrôlé
-    3. mark_broadcast_done()      → status = ACTIVE, clics acceptés
-
-Notes :
-  - Le callback du disclaimer inclut désormais la VERSION (via make_callback_data)
-    → tout click sur un vieux message d'une session précédente est rejeté par le guard.
-  - Les users ayant bloqué le bot sont retirés de la catégorie source
-    et ajoutés à clients_bloquer, comme en v6.
-  - Les comptes simulation restent appliqués via _apply_to_simulation_accounts
-    de gold_engine (v5) — logique inchangée.
+broadcast_send.py — Envoi massif du teaser Gold v7.
 """
 
 import asyncio
@@ -26,9 +11,9 @@ from telegram.error import Forbidden
 
 from db import get_db
 
-from telegram_page.gold.callback_guard import make_callback_data
-from telegram_page.gold.session_snapshot import SessionSnapshot
-from telegram_page.gold.gold_buffer import gold_buffer_v7
+from .callback_guard import make_callback_data
+from .session_snapshot import SessionSnapshot
+from .buffer_v7 import gold_buffer_v7
 
 logger = logging.getLogger(__name__)
 ADMIN_ID = 571718066
@@ -48,8 +33,7 @@ DISCLAIMER_TEXT = (
     "✅ Vous tradez avec des fonds que vous pouvez vous permettre de perdre\n"
     "✅ Vous suivez nos recommandations à titre informatif uniquement\n"
     "✅ Vous êtes seul responsable de vos positions\n\n"
-    "_Nous partageons nos analyses par passion et transparence. "
-    "Traitez chaque trade comme une opportunité d'apprentissage._"
+    "_Nous partageons nos analyses par passion et transparence._"
 )
 
 
@@ -89,7 +73,6 @@ async def _get_category_user_ids(category: str) -> list:
 
 
 async def _handle_blocked_users(blocked_ids: list, source_category: str) -> dict:
-    """Retire les users bloqués de la catégorie source, les ajoute à clients_bloquer."""
     result = {"blocked": len(blocked_ids), "removed": 0, "added": 0, "already_in": 0}
     if not blocked_ids:
         return result
@@ -119,15 +102,6 @@ async def send_teaser_broadcast(bot, snap: SessionSnapshot, *,
                                   preload_capital: bool = True) -> dict:
     """
     Envoi massif du disclaimer à toute la catégorie cible.
-
-    Étapes :
-      1. Récupère la liste des destinataires
-      2. Précharge le Weekly Capital Cache pour tous → 0 SQL au click
-      3. Applique le trade aux comptes simulation (une fois, hors chemin chaud)
-      4. Envoi concurrent à BROADCAST_RATE msg/s
-      5. Retire les users bloqués de la catégorie source
-
-    Retourne un rapport avec les métriques d'envoi.
     """
     session_id = snap.session_id
     version    = snap.version
@@ -137,8 +111,7 @@ async def send_teaser_broadcast(bot, snap: SessionSnapshot, *,
     user_ids = await _get_category_user_ids(category)
     total = len(user_ids)
 
-    # 2. Précharge le Weekly Capital Cache — critique pour le fast path v7.1.
-    #    Après cet appel, la majorité des users auront leur capital en RAM.
+    # 2. Précharge le Weekly Capital Cache
     if preload_capital:
         try:
             from .weekly_capital_cache import weekly_capital
@@ -150,8 +123,6 @@ async def send_teaser_broadcast(bot, snap: SessionSnapshot, *,
     # 3. Comptes simulation (logique inchangée v5)
     try:
         from telegram_page.gold.gold_engine import _apply_to_simulation_accounts
-        # On passe le dict équivalent à un enregistrement SQL de session pour
-        # que la logique v5 fonctionne à l'identique.
         session_dict = {
             "id":          snap.session_id,
             "season_id":   snap.season_id,
@@ -179,7 +150,6 @@ async def send_teaser_broadcast(bot, snap: SessionSnapshot, *,
     except Exception:
         pass
 
-    # 4. Envoi
     text = _disclaimer_message(snap)
     kbd  = _disclaimer_keyboard(session_id, version)
     sent = errors = 0
@@ -199,7 +169,7 @@ async def send_teaser_broadcast(bot, snap: SessionSnapshot, *,
             except Exception as e:
                 logger.debug(f"[teaser] uid={uid}: {e}")
                 errors += 1
-            await asyncio.sleep(1)   # 1 slot = 1s → débit = BROADCAST_RATE/s
+            await asyncio.sleep(1)
 
     tasks = [asyncio.create_task(_send_one(uid)) for uid in user_ids]
 
@@ -216,7 +186,6 @@ async def send_teaser_broadcast(bot, snap: SessionSnapshot, *,
     await asyncio.gather(*tasks, return_exceptions=True)
     progress_task.cancel()
 
-    # 5. Traitement des bloqués (après envoi, pas pendant)
     blocked_report = await _handle_blocked_users(blocked_ids, category)
 
     try:
@@ -233,18 +202,12 @@ async def send_teaser_broadcast(bot, snap: SessionSnapshot, *,
     except Exception:
         pass
 
-    # Watch prix live (inchangé)
+    # Watch prix live
     try:
         from telegram_page.gold.gold_engine import watch_gold_price
         asyncio.create_task(watch_gold_price(session_id))
     except Exception as e:
         logger.error(f"[broadcast] watch_gold_price: {e}")
 
-    return {
-        "total":      total,
-        "sent":       sent,
-        "errors":     errors,
-        "blocked":    blocked_report,
-        "session_id": session_id,
-        "version":    version,
-    }
+    return {"total": total, "sent": sent, "errors": errors,
+            "blocked": blocked_report, "session_id": session_id, "version": version}
