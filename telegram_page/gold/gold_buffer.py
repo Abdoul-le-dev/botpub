@@ -37,7 +37,7 @@ import traceback
 from datetime import datetime
 
 from db import get_db
-from telegram_page.gold.gold_state import user_state
+from telegram_page.gold.gold_state import user_state_v7
 
 logger   = logging.getLogger(__name__)
 ADMIN_ID = 571718066
@@ -214,9 +214,9 @@ class GoldWriteBuffer:
                 # 5. Agrégats — calculés depuis la RAM (StateManager),
                 #    1 seul UPDATE par session et par flush.
                 for sid in dirty:
-                    if sid != user_state.session_id:
+                    if sid != user_state_v7.session_id:
                         continue
-                    agg = user_state.aggregates()
+                    agg = user_state_v7.aggregates()
                     await cur.execute("""
                         UPDATE gold_trade_sessions SET
                             total_members_in      = %s,
