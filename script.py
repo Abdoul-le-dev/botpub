@@ -48,12 +48,14 @@ uvloop.install()
 # Les fichiers v6 restent importables tant que les routes API n'ont pas migré,
 # mais leurs workers/handlers ne s'enregistrent plus.
 from telegram_page.gold.gold_buffer import (
-    gold_buffer_v7,
+    gold_buffer,
     register_buffer,
     register_gold_handlers_v7,
     run_full_check,
     weekly_capital,
 )
+from telegram_page.gold.gold_buffer import gold_buffer
+
 from telegram_page.gold.weekly_capital_cache import ensure_schema as ensure_capital_schema
 from telegram_page.gold.capital_campaign import (
     ensure_schema as ensure_campaign_schema,
@@ -71,7 +73,7 @@ async def cmd_queue_status(update, context):
     """Status du buffer v7 (remplace l'ancien qui pointait vers gold_buffer v6)."""
     if update.effective_user.id != ADMIN_ID:
         return
-    s = gold_buffer_v7.status()
+    s = gold_buffer.status()
     await update.message.reply_text(
         f"📊 Buffer Gold v7\n"
         f"Attaché à : {s['attached']}\n"
@@ -236,10 +238,11 @@ if __name__ == "__main__":
         # les routes API (POST /gold/sessions/{id}/confirm, etc.)
         # continuent à l'utiliser.
         start_gold_write_worker(application.bot)
+        #gold_buffer.start(app.bot)
 
         # ── V7.1 : buffer + capital cache + scheduler campagne ────────
-        gold_buffer_v7.bind_bot(application.bot)
-        register_buffer(gold_buffer_v7)
+        gold_buffer.bind_bot(application.bot)
+        register_buffer(gold_buffer)
         # PAS d'auto-attach : les sessions s'ouvrent explicitement via
         # lifecycle.open_new_session() depuis la route POST /gold/sessions.
 
