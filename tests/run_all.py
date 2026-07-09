@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 
 sys.path.insert(0, "/home/claude")
 
+from db import init_pool, close_pool
 from tests.user_generator import generate_users, counts_by_persona, Persona
 from tests.simulator import (
     install_mock_session, teardown_mock_session,
@@ -360,6 +361,14 @@ async def scenario_close_reopen_cleanup() -> ScenarioResult:
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def main(loads=None):
+    # ── Initialisation DB ─────────────────────────────────────────────
+    try:
+        await init_pool()
+        print("✓ Pool DB initialisé")
+    except Exception as e:
+        print(f"✗ Échec init DB : {e}")
+        return 1
+
     loads = loads or [100, 1000, 5000, 10000, 30000]
     results: list[ScenarioResult] = []
 
@@ -367,32 +376,46 @@ async def main(loads=None):
     print(" GOLD V7.1 — SUITE DE TESTS")
     print("═" * 76)
 
-    # A. Charge
-    for n in loads:
-        print(f"\n▶ Charge — {n} users ...")
-        t0 = time.perf_counter()
-        r = await scenario_charge(n)
-        m = r.metrics
-        print(f"   {'✅' if r.passed else '❌'} en {time.perf_counter() - t0:.1f}s "
-              f"— {m.get('throughput_ops')} ops/s "
-              f"(from_cache={m.get('processed_from_cache')} "
-              f"after_input={m.get('processed_after_input')})")
-        for d in r.details: print(f"   {d}")
-        results.append(r)
+    try:
+        # A. Charge
+        for n in loads:
+            print(f"\n▶ Charge — {n} users ...")
+            t0 = time.perf_counter()
+            r = await scenario_charge(n)
+            m = r.metrics
+            print(f"   {'✅' if r.passed else '❌'} en {time.perf_counter() - t0:.1f}s "
+                  f"— {m.get('throughput_ops')} ops/s "
+                  f"(from_cache={m.get('processed_from_cache')} "
+                  f"after_input={m.get('processed_after_input')})")
+            for d in r.details: print(f"   {d}")
+            results.append(r)
 
-    # B → H
-    for scen in (scenario_single_session,
-                  scenario_stale_callback,
-                  scenario_idempotent_access,
-                  scenario_cross_trade_isolation,
-                  scenario_capital_cache_lifecycle,
-                  scenario_expired_capital_reprompt,
-                  scenario_close_reopen_cleanup):
-        print(f"\n▶ {scen.__name__} ...")
-        r = await scen()
-        print(f"   {'✅' if r.passed else '❌'} {r.name}")
-        for d in r.details: print(f"   {d}")
-        results.append(r)
+        # B → H
+        for scen in (scenario_single_session,
+                      scenario_stale_callback,
+                      scenario_idempotent_access,
+                      scenario_cross_trade_isolation,
+                      scenario_capital_cache_lifecycle,
+                      scenario_expired_capital_reprompt,
+                      scenario_close_reopen_cleanup):
+            print(f"\n▶ {scen.__name__} ...")
+            r = await scen()
+            print(f"   {'✅' if r.passed else '❌'} {r.name}")
+            for d in r.details: print(f"   {d}")
+            results.append(r)
+
+    except Exception as e:
+        print(f"\n✗ ERREUR FATALE : {e}")
+        import traceback
+        traceback.print_exc()
+
+    finally:
+        # ── Cleanup DB ──────────────────────────────────────────────────
+        try:
+            await close_pool()
+            print("\n✓ Pool DB fermé")
+        except Exception as e:
+            print(f"\n⚠ Erreur fermeture DB : {e}")
 
     # ── Rapport final
     print("\n" + "═" * 76)
