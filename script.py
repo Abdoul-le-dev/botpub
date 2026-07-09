@@ -26,7 +26,7 @@ CANAL_B_ID = -1002705005402
 ADMIN_ID   = 571718066
 
 CATEGORIE  = "USER_PUB_1_NON_ACHAT"
-token      = os.getenv("tokens")
+token      = os.getenv("tokenss")
 
 import uvloop
 uvloop.install()
@@ -241,7 +241,7 @@ if __name__ == "__main__":
         #gold_buffer.start(app.bot)
 
         # ── V7.1 : buffer + capital cache + scheduler campagne ────────
-        gold_buffer.bind_bot(application.bot)
+        gold_buffer.start(application.bot)
         register_buffer(gold_buffer)
         # PAS d'auto-attach : les sessions s'ouvrent explicitement via
         # lifecycle.open_new_session() depuis la route POST /gold/sessions.
