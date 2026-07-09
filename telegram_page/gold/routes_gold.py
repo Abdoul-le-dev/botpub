@@ -44,11 +44,13 @@ from db import get_db
 import telegram_page.gold.gold_engine as gold_engine
 
 # ── V7.1 ──────────────────────────────────────────────────────────────────
-from telegram_page.gold import (
+from telegram_page.gold.lifecycle import (
     open_new_session, close_session, mark_broadcast_done,
-    current_snapshot, current_version, send_teaser_broadcast,
-    session_registry,
+    current_snapshot, current_version, is_open, is_ready_for_confirmations,
+    register_buffer,
 )
+from telegram_page.gold.session_registry import session_registry
+from telegram_page.gold.session_snapshot import SessionSnapshot
 
 router = APIRouter(prefix="/gold", tags=["gold"])
 
