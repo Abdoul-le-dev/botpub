@@ -13,7 +13,7 @@ from db import get_db
 
 from .callback_guard import make_callback_data
 from .session_snapshot import SessionSnapshot
-from .buffer_v7 import gold_buffer_v7
+from .buffer_v7 import gold_buffer
 
 logger = logging.getLogger(__name__)
 ADMIN_ID = 571718066
@@ -162,7 +162,7 @@ async def send_teaser_broadcast(bot, snap: SessionSnapshot, *,
             try:
                 await bot.send_message(chat_id=uid, text=text,
                                         parse_mode="Markdown", reply_markup=kbd)
-                gold_buffer_v7.add_step(session_id, version, uid, "teaser")
+                gold_buffer.add_step(session_id, version, uid, "teaser")
                 sent += 1
             except Forbidden:
                 blocked_ids.append(uid)

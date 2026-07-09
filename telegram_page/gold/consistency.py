@@ -25,7 +25,7 @@ from db import get_db
 from telegram_page.gold.session_registry import session_registry
 from telegram_page.gold.session_snapshot import snapshot_store
 from telegram_page.gold.gold_state import user_state_v7
-from telegram_page.gold.gold_buffer import gold_buffer_v7
+from telegram_page.gold.gold_buffer import gold_buffer
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +98,7 @@ async def check_registry_snapshot_state_alignment(rep: ConsistencyReport):
 async def check_buffer_attached_to_current(rep: ConsistencyReport):
     rep.checks_run += 1
     reg = session_registry.current()
-    status = gold_buffer_v7.status()
+    status = gold_buffer.status()
     attached = status["attached"]
 
     if reg is None:
@@ -154,7 +154,7 @@ async def check_sql_matches_state_aggregates(rep: ConsistencyReport):
 
     # Si le buffer a des lignes en attente, la comparaison n'est pas
     # pertinente — SQL sera à jour après le prochain flush.
-    if gold_buffer_v7.status()["pending"] > 0:
+    if gold_buffer.status()["pending"] > 0:
         return
 
     agg = user_state_v7.aggregates()

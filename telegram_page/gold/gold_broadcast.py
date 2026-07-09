@@ -33,7 +33,7 @@ from telegram_page.gold.lifecycle import current_snapshot, current_version, is_r
 from telegram_page.gold.session_registry import session_registry
 from telegram_page.gold.session_snapshot import SessionSnapshot
 from telegram_page.gold.gold_state import user_state_v7, CalcContext
-from telegram_page.gold.gold_buffer import gold_buffer_v7
+from telegram_page.gold.gold_buffer import gold_buffer
 from .weekly_capital_cache import weekly_capital, MIN_CAPITAL
 
 logger = logging.getLogger(__name__)
@@ -172,7 +172,7 @@ async def handle_disclaimer_ok(update, context, *, session_id, version):
         )]])
         await context.bot.send_message(chat_id=user_id, text=text,
                                         parse_mode="Markdown", reply_markup=kbd)
-        gold_buffer_v7.add_event(session_id, version, user_id, "teaser_shown")
+        gold_buffer.add_event(session_id, version, user_id, "teaser_shown")
     finally:
         user_state_v7.end(user_id, "disclaimer")
 
@@ -220,8 +220,8 @@ async def handle_teaser_access(update, context, *, session_id, version):
         if capital is None:
             # Nouveau user OU capital expiré → demande le capital
             user_state_v7.transition(session_id, version, user_id, "waiting_capital")
-            gold_buffer_v7.add_step(session_id, version, user_id, "waiting_capital")
-            gold_buffer_v7.add_event(session_id, version, user_id, "capital_needed")
+            gold_buffer.add_step(session_id, version, user_id, "waiting_capital")
+            gold_buffer.add_event(session_id, version, user_id, "capital_needed")
             await _safe_delete(context.bot, user_id, query.message.message_id)
             msg = await context.bot.send_message(
                 chat_id=user_id,
@@ -412,13 +412,13 @@ async def _process_trade_full(bot, user_id: int, snap: SessionSnapshot,
         await bot.send_message(user_id, "⏰ Ce trade vient de se fermer.")
         return
 
-    gold_buffer_v7.add_entry(
+    gold_buffer.add_entry(
         sid, ver, user_id, snap.season_id, calc.capital,
         calc.risk_pct, calc.risk_usd, calc.lot, calc.tp_level,
         calc.perte_sl, calc.gain_tp1, calc.gain_tp2, calc.gain_tp3,
     )
-    gold_buffer_v7.add_step(sid, ver, user_id, "processed", capital)
-    gold_buffer_v7.add_event(sid, ver, user_id, "processed",
+    gold_buffer.add_step(sid, ver, user_id, "processed", capital)
+    gold_buffer.add_event(sid, ver, user_id, "processed",
                               {"capital": capital, "lot": calc.lot,
                                "tp_level": calc.tp_level,
                                "capital_source": capital_source})
