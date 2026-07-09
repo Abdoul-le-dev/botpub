@@ -23,13 +23,13 @@ from dataclasses import dataclass, field
 
 sys.path.insert(0, "/home/claude")
 
-from test.user_generator import generate_users, counts_by_persona, Persona
-from test.simulator import (
+from tests.user_generator import generate_users, counts_by_persona, Persona
+from tests.simulator import (
     install_mock_session, teardown_mock_session,
     run_simulation, make_mock_snapshot,
     preseed_cache_ram, preseed_cache_expired, wipe_cache,
 )
-from test.assertions import (
+from tests.assertions import (
     check_users_vs_ram, check_no_cross_session_leak,
     check_deterministic_calc, check_cross_trade_isolation,
 )

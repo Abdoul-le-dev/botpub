@@ -17,13 +17,13 @@ import asyncio
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
-
+from telegram_page.gold.lifecycle import close_session
 from telegram_page.gold.gold_engine import (
     # Saisons
     create_season, get_active_season, get_seasons, reset_season, get_season_stats,
     # Sessions
     create_gold_session, get_active_gold_session, get_gold_session_detail,
-    get_gold_sessions, close_gold_session,
+    get_gold_sessions, 
     # Entrées membres
     confirm_gold_entry,
     # TP / SL
@@ -213,7 +213,7 @@ async def api_close_session(session_id: int, payload: dict):
     if payload["close_type"] not in ("tp1", "tp2", "tp3", "sl", "manual"):
         raise HTTPException(400, "close_type invalide (tp1|tp2|tp3|sl|manual)")
 
-    result = await close_gold_session(session_id, payload)
+    result = await close_session(session_id, payload)
 
     # ── V7 : cleanup si cette session est bien la courante ────────────
     reg = session_registry.current()
