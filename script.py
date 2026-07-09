@@ -31,27 +31,91 @@ token      = os.getenv("tokens")
 import uvloop
 uvloop.install()
 
-# ── v6 : cache + état + buffer + handlers ─────────────────────────────────
-# FIX 2 : import depuis gold_broadcast_v6 (avant : gold_broadcast = v5,
-# donc le cache/buffer étaient initialisés mais jamais utilisés).
-from telegram_page.gold.gold_cache import signal_cache
-from telegram_page.gold.gold_state import user_state
-from telegram_page.gold.gold_buffer import gold_buffer
-from telegram_page.gold.gold_broadcast import register_gold_handlers
+# ══════════════════════════════════════════════════════════════════════════════
+# GOLD V7.1 — Architecture refondue
+# ══════════════════════════════════════════════════════════════════════════════
+# Les handlers Gold v6 (signal_cache/user_state/gold_buffer) sont DÉSACTIVÉS.
+# La v7.1 les remplace intégralement :
+#   - session unique + versionnée (session_registry)
+#   - snapshot immutable du trade actif (session_snapshot)
+#   - état isolé par (session_id, user_id) (state_v7)
+#   - buffer batch attaché à la session (buffer_v7)
+#   - callback guard systématique (callback_guard)
+#   - workflow simplifié : ouvrir = accepter (broadcast_v7)
+#   - Weekly Capital Cache 7 jours (weekly_capital_cache)
+#   - campagne hebdo progressive (capital_campaign)
+#
+# Les fichiers v6 restent importables tant que les routes API n'ont pas migré,
+# mais leurs workers/handlers ne s'enregistrent plus.
+from telegram_page.gold.gold_buffer import (
+    gold_buffer_v7,
+    register_buffer,
+    register_gold_handlers_v7,
+    run_full_check,
+    weekly_capital,
+)
+from telegram_page.gold.weekly_capital_cache import ensure_schema as ensure_capital_schema
+from telegram_page.gold.capital_campaign import (
+    ensure_schema as ensure_campaign_schema,
+    weekly_scheduler_loop,
+    run_campaign,
+    CampaignConfig,
+)
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COMMANDES ADMIN
+# ══════════════════════════════════════════════════════════════════════════════
 
 async def cmd_queue_status(update, context):
+    """Status du buffer v7 (remplace l'ancien qui pointait vers gold_buffer v6)."""
     if update.effective_user.id != ADMIN_ID:
         return
-    s = await gold_buffer.status()
+    s = gold_buffer_v7.status()
     await update.message.reply_text(
-        f"📊 Buffer Gold\nEn attente : {s['pending']} "
+        f"📊 Buffer Gold v7\n"
+        f"Attaché à : {s['attached']}\n"
+        f"En attente : {s['pending']} "
         f"(entries {s['entries']} / steps {s['steps']} / events {s['events']})\n"
-        f"Flusher actif : {'✅' if s['worker_running'] else '❌'}"
+        f"Agg dirty : {s['dirty_agg']}\n"
+        f"Worker actif : {'✅' if s['worker_running'] else '❌'}"
     )
 
 
-# ── save_user_default async ───────────────────────────────────────────────────
+async def cmd_gold_check(update, context):
+    """Vérifie la cohérence RAM / Snapshot / State / Buffer / SQL."""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    rep = await run_full_check()
+    await update.message.reply_text(rep.summary())
+
+
+async def cmd_capital_status(update, context):
+    """État du Weekly Capital Cache."""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    s = weekly_capital.status()
+    await update.message.reply_text(
+        f"💼 Weekly Capital Cache\n"
+        f"Total RAM : {s['total_ram']}\n"
+        f"Actifs : {s['active']}\n"
+        f"Expirés (pas encore purgés) : {s['expired_stale']}\n"
+        f"TTL : {s['ttl_days']} jours"
+    )
+
+
+async def cmd_capital_campaign_now(update, context):
+    """Lance manuellement une campagne capital (test)."""
+    if update.effective_user.id != ADMIN_ID:
+        return
+    await update.message.reply_text("🔄 Campagne lancée en tâche de fond...")
+    asyncio.create_task(run_campaign(context.bot, CampaignConfig()))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# save_user_default async
+# ══════════════════════════════════════════════════════════════════════════════
+
 async def save_user_default(user_id):
     async with get_db() as cur:
         await cur.execute(
@@ -117,8 +181,6 @@ async def schedule_daily_check(bot):
     while True:
         now    = datetime.now()
         target = now.replace(hour=20, minute=0, second=0, microsecond=0)
-        # FIX 1 : `target = timedelta(days=1)` écrasait la date par une
-        # durée → TypeError au calcul (target - now). C'est bien `+=`.
         if now >= target:
             target += timedelta(days=1)
         await asyncio.sleep((target - now).total_seconds())
@@ -141,16 +203,25 @@ async def schedule_daily_check(bot):
             print(f"[daily_check] Erreur: {e}")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════════════════════════════════════════════
+
 if __name__ == "__main__":
-    # 1. Créer un loop persistant
+    # 1. Loop persistant
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-    # 2. Init le pool dans ce loop
+    # 2. Pool DB
     loop.run_until_complete(init_pool())
     print("[main] Pool OK ✓")
 
-    # 3. Construire l'app PTB
+    # 3. Schémas v7 (idempotent — safe à ré-exécuter à chaque boot)
+    loop.run_until_complete(ensure_capital_schema())
+    loop.run_until_complete(ensure_campaign_schema())
+    print("[main] Schémas v7 OK ✓")
+
+    # 4. App PTB
     app = (Application.builder()
            .token(token)
            .concurrent_updates(512)
@@ -161,20 +232,21 @@ if __name__ == "__main__":
         await setup_background_worker(application)
         asyncio.create_task(schedule_daily_check(application.bot))
 
-        # FIX 3 : worker de l'ancienne queue redémarré — la route API
-        # /confirm et d'autres écritures passent encore par gold_write_queue.
-        # Sans lui, ces jobs s'empilent et ne sont JAMAIS écrits en base.
+        # Worker de l'ancienne queue — toujours nécessaire tant que
+        # les routes API (POST /gold/sessions/{id}/confirm, etc.)
+        # continuent à l'utiliser.
         start_gold_write_worker(application.bot)
 
-        # v6 : cache + état + flusher
-        await signal_cache.reload()
-        session = signal_cache.get_session()
-        if session:
-            await user_state.restore(session["id"])
-            print(f"[main] État Gold restauré — session #{session['id']}")
-        gold_buffer.start(application.bot)
-        signal_cache.start_auto_refresh(30)
-        print("[main] Cache Gold chargé, flusher v6 démarré ✓")
+        # ── V7.1 : buffer + capital cache + scheduler campagne ────────
+        gold_buffer_v7.bind_bot(application.bot)
+        register_buffer(gold_buffer_v7)
+        # PAS d'auto-attach : les sessions s'ouvrent explicitement via
+        # lifecycle.open_new_session() depuis la route POST /gold/sessions.
+
+        # Scheduler campagne hebdo (samedi 10h locale par défaut)
+        asyncio.create_task(weekly_scheduler_loop(application.bot))
+
+        print("[main] Gold v7.1 initialisé ✓")
 
     app.post_init = _post_init
 
@@ -182,11 +254,13 @@ if __name__ == "__main__":
     register_validation_handler(app)
     register_formation_handler(app)
     register_form_handlers(app, app.bot, ADMIN_ID)
-    register_gold_handlers(app)
+
+    # ── V7.1 : nouveaux handlers Gold (remplace register_gold_handlers v6)
+    register_gold_handlers_v7(app)
+
     register_signal_handlers(app)
 
-    # FIX 4 : nouveaux messages privés uniquement — les messages édités et
-    # les posts de canal ont update.message = None (AttributeError sinon).
+    # Log des messages non gérés — priorité minimale
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND
@@ -196,13 +270,17 @@ if __name__ == "__main__":
         ),
         group=99,
     )
-    app.add_handler(CommandHandler("queue_status", cmd_queue_status))
 
-    # FIX 5 : error_handler était importé mais jamais enregistré.
+    # ── Commandes admin
+    app.add_handler(CommandHandler("queue_status", cmd_queue_status))
+    app.add_handler(CommandHandler("gold_check", cmd_gold_check))
+    app.add_handler(CommandHandler("capital_status", cmd_capital_status))
+    app.add_handler(CommandHandler("capital_campaign_now", cmd_capital_campaign_now))
+
     app.add_error_handler(error_handler)
 
     set_bot(app.bot)
     set_gold_bot(app.bot)
 
     print("running...")
-    app.run_polling(poll_interval=2)  # récupère le loop existant
+    app.run_polling(poll_interval=2)
