@@ -47,12 +47,12 @@ uvloop.install()
 #
 # Les fichiers v6 restent importables tant que les routes API n'ont pas migré,
 # mais leurs workers/handlers ne s'enregistrent plus.
-from telegram_page.gold import (
+from telegram_page.gold.gold_broadcast import (
     
     register_gold_handlers_v7,
-    run_full_check,
-    weekly_capital,
+   
 )
+from telegram_page.gold.consistency import run_full_check
 from telegram_page.gold.lifecycle import  register_buffer
 from telegram_page.gold.gold_buffer import gold_buffer
 
