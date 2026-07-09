@@ -1,21 +1,16 @@
 """
-routes_gold.py — Routes FastAPI Gold v4 (compatible architecture v6)
+routes_gold.py — Routes FastAPI Gold v7.1
 
-Changements v4 :
-  1. send_gold_teaser importé depuis gold_broadcast_v6, appel sans `delay`
-     (le débit est géré par BROADCAST_RATE dans le module v6).
-  2. Le broadcast part en TÂCHE DE FOND (asyncio.create_task) : la route
-     répond immédiatement au lieu de bloquer la requête HTTP pendant
-     toute la durée de l'envoi (30 000 users ≈ 20 min → timeout garanti
-     si on await inline). Le suivi se fait via les messages admin Telegram.
-  3. BUG corrigé : /calculate-lot appelait get_tp_level_for_capital()
-     (async) SANS await → TypeError "cannot unpack non-iterable coroutine".
-  4. BUG corrigé : DELETE et PATCH /simulations utilisaient encore
-     get_conn() (reliquat SQLite, jamais importé → NameError) avec des
-     placeholders `?` → migrés vers async with get_db() + %s.
-  5. Invalidation du cache v6 : les routes qui modifient les règles TP
-     ou la phase d'une session rechargent signal_cache pour que les
-     handlers du bot lisent des données à jour.
+Changements v7.1 :
+  1. POST /sessions passe par lifecycle.open_new_session() (registry +
+     snapshot + state + buffer, tout en une opération atomique).
+     Le broadcast utilise send_teaser_broadcast() de gold_v7, qui précharge
+     le Weekly Capital Cache et envoie les disclaimers avec versionning.
+  2. POST /sessions/{id}/close et /tp/{n} et /sl passent par
+     lifecycle.close_session() en fin de logique pour drainer le buffer,
+     purger la RAM et retirer la session du registre.
+  3. signal_cache.reload() SUPPRIMÉ partout — le cache v6 n'est plus
+     utilisé côté bot.
 """
 
 import asyncio
@@ -48,16 +43,19 @@ from telegram_page.gold.gold_engine import (
 from db import get_db
 import telegram_page.gold.gold_engine as gold_engine
 
-# v6 — broadcast concurrent + cache
-from telegram_page.gold.gold_broadcast import send_gold_teaser
-from telegram_page.gold.gold_cache import signal_cache
+# ── V7.1 ──────────────────────────────────────────────────────────────────
+from telegram_page.gold import (
+    open_new_session, close_session, mark_broadcast_done,
+    current_snapshot, current_version, send_teaser_broadcast,
+    session_registry,
+)
 
 router = APIRouter(prefix="/gold", tags=["gold"])
 
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 # SAISONS
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 
 @router.get("/seasons")
 async def api_get_seasons(include_closed: bool = True):
@@ -94,9 +92,9 @@ async def api_reset_season(season_id: int, payload: dict):
     return await reset_season(season_id, payload)
 
 
-# ════════════════════════════════════════════════════════════════════════
-# SESSIONS DE TRADE GOLD
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
+# SESSIONS DE TRADE GOLD (v7.1)
+# ══════════════════════════════════════════════════════════════════════════
 
 @router.get("/sessions")
 async def api_get_sessions(
@@ -130,11 +128,12 @@ async def api_session_detail(session_id: int):
 @router.post("/sessions")
 async def api_create_session(payload: dict):
     """
-    Crée une nouvelle session Gold et lance le teaser EN TÂCHE DE FOND.
-
-    La route répond dès que la session est créée et le broadcast démarré.
-    Le suivi de l'envoi (progression, total, erreurs) arrive à l'admin
-    par Telegram — c'est déjà géré dans send_gold_teaser v6.
+    v7.1 :
+      1. Crée la session en base (create_gold_session)
+      2. lifecycle.open_new_session(mode="replace") : registry + snapshot
+         + state + buffer, tout en une transaction atomique.
+      3. Lance le broadcast en tâche de fond (send_teaser_broadcast).
+      4. mark_broadcast_done() une fois l'envoi complet → status ACTIVE.
     """
     required = ("direction", "entry_price", "sl")
     for f in required:
@@ -150,35 +149,52 @@ async def api_create_session(payload: dict):
     if not payload.get("tp1"):
         raise HTTPException(400, "tp1 requis")
 
+    # 1. Crée en SQL
     session = await create_gold_session(payload)
     print(f"[DEBUG] create_gold_session OK: id={session['id']}")
 
+    # 2. Ouvre la session v7 (registry + snapshot + state + buffer).
+    #    mode="replace" : ferme proprement l'éventuelle session précédente
+    #    (drain buffer + purge RAM + close SQL) avant d'ouvrir la nouvelle.
+    try:
+        snap = await open_new_session(session["id"], mode="replace")
+        session["v7_version"] = snap.version
+    except Exception as e:
+        raise HTTPException(500, f"Ouverture session v7 échouée: {e}")
+
+    # 3. Broadcast en tâche de fond
     send_teaser_flag = payload.get("send_teaser", True)
 
     if send_teaser_flag:
         if gold_engine._bot:
-            category = payload.get("category", "clients_actifs")
-            print(f"[DEBUG] Lancement broadcast en tâche de fond, category={category}")
+            print(f"[DEBUG] Lancement broadcast v7 en tâche de fond")
 
             async def _run_broadcast():
                 try:
-                    report = await send_gold_teaser(
+                    report = await send_teaser_broadcast(
                         bot=gold_engine._bot,
-                        session=session,
-                        category=category,
+                        snap=snap,
+                        category=payload.get("category"),   # None = clients_actifs par défaut
                     )
-                    print(f"[DEBUG] Broadcast terminé: {report}")
+                    print(f"[DEBUG] Broadcast v7 terminé: {report}")
+                    # 4. Marque la session ACTIVE — les clics user acceptés
+                    mark_broadcast_done(snap.session_id, snap.version)
                 except Exception as e:
                     import traceback
-                    print(f"[DEBUG] ERREUR broadcast: {type(e).__name__}: {e}")
+                    print(f"[DEBUG] ERREUR broadcast v7: {type(e).__name__}: {e}")
                     traceback.print_exc()
 
             asyncio.create_task(_run_broadcast())
             session["broadcast_status"] = "started"
         else:
             print("[DEBUG] _bot est None, teaser non envoyé")
-            session["broadcast_status"] = "bot_unavailable"
+            # Aucun broadcast → on marque quand même la session ACTIVE
+            # pour que les clics test admin fonctionnent.
+            mark_broadcast_done(snap.session_id, snap.version)
+            session["broadcast_status"] = "bot_unavailable_but_active"
     else:
+        # Pas de broadcast demandé → session directement ACTIVE
+        mark_broadcast_done(snap.session_id, snap.version)
         session["broadcast_status"] = "skipped"
 
     return session
@@ -186,13 +202,26 @@ async def api_create_session(payload: dict):
 
 @router.post("/sessions/{session_id}/close")
 async def api_close_session(session_id: int, payload: dict):
+    """
+    v7.1 : après la logique métier v5, on appelle close_session() v7
+    pour drainer le buffer + purger la RAM + retirer du registre.
+    """
     if not payload.get("close_type"):
         raise HTTPException(400, "close_type requis")
     if payload["close_type"] not in ("tp1", "tp2", "tp3", "sl", "manual"):
         raise HTTPException(400, "close_type invalide (tp1|tp2|tp3|sl|manual)")
+
     result = await close_gold_session(session_id, payload)
-    # Sync cache v6 : la session n'est plus ouverte pour les handlers du bot
-    await signal_cache.reload()
+
+    # ── V7 : cleanup si cette session est bien la courante ────────────
+    reg = session_registry.current()
+    if reg is not None and reg.session_id == session_id:
+        try:
+            await close_session(session_id, reg.version,
+                                 close_type=payload["close_type"])
+        except Exception as e:
+            print(f"[DEBUG] close_session v7 échoué: {e}")
+
     return result
 
 
@@ -200,21 +229,39 @@ async def api_close_session(session_id: int, payload: dict):
 async def api_trigger_tp(session_id: int, tp_level: int):
     if tp_level not in (1, 2, 3):
         raise HTTPException(400, "tp_level doit être 1, 2 ou 3")
+
     result = await trigger_tp_reached(session_id, tp_level)
-    await signal_cache.reload()
+
+    # ── V7 : si TP3, on ferme définitivement la session ───────────────
+    if tp_level == 3:
+        reg = session_registry.current()
+        if reg is not None and reg.session_id == session_id:
+            try:
+                await close_session(session_id, reg.version, close_type="tp3")
+            except Exception as e:
+                print(f"[DEBUG] close_session v7 après tp3 échoué: {e}")
+
     return result
 
 
 @router.post("/sessions/{session_id}/sl")
 async def api_trigger_sl(session_id: int):
     result = await trigger_sl_touched(session_id)
-    await signal_cache.reload()
+
+    # ── V7 : SL = fin de session, cleanup ─────────────────────────────
+    reg = session_registry.current()
+    if reg is not None and reg.session_id == session_id:
+        try:
+            await close_session(session_id, reg.version, close_type="sl")
+        except Exception as e:
+            print(f"[DEBUG] close_session v7 après SL échoué: {e}")
+
     return result
 
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 # PRIX LIVE
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 
 @router.get("/price/live")
 async def api_live_price():
@@ -230,16 +277,16 @@ async def api_start_watch(session_id: int):
     return {"status": "watching", "session_id": session_id}
 
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 # CALCUL LOT
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 
 @router.get("/calculate-lot")
 async def api_calculate_lot(
     capital: float = Query(..., description="Capital en dollars"),
     entry:   float = Query(..., description="Prix d'entrée"),
     sl:      float = Query(..., description="Prix du Stop Loss"),
-    tp1:     Optional[float] = Query(None, description="TP1 (optionnel pour gains)"),
+    tp1:     Optional[float] = Query(None),
     tp2:     Optional[float] = Query(None),
     tp3:     Optional[float] = Query(None),
 ):
@@ -254,9 +301,6 @@ async def api_calculate_lot(
 
     lot   = calculate_lot(capital, entry, sl)
     gains = calculate_gains_losses(lot, entry, sl, tp1, tp2, tp3)
-
-    # FIX v4 : get_tp_level_for_capital est async — il manquait le await,
-    # ce qui levait "cannot unpack non-iterable coroutine object".
     tp_level, risk_pct = await get_tp_level_for_capital(capital)
 
     import math
@@ -278,18 +322,13 @@ async def api_calculate_lot(
     }
 
 
-# ════════════════════════════════════════════════════════════════════════
-# ENTRÉES MEMBRES
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
+# ENTRÉES MEMBRES (confirmation manuelle admin)
+# ══════════════════════════════════════════════════════════════════════════
 
 @router.post("/sessions/{session_id}/confirm")
 async def api_confirm_entry(session_id: int, payload: dict):
-    """
-    Confirmation manuelle côté admin. Passe par le chemin v5
-    (confirm_gold_entry) — acceptable pour un usage ponctuel admin,
-    mais NE PAS utiliser pendant un pic : ce chemin ne met pas à jour
-    les agrégats RAM du StateManager v6.
-    """
+    """Chemin admin manuel — passe encore par v5. NE PAS utiliser pendant un pic."""
     if not payload.get("user_id"):
         raise HTTPException(400, "user_id requis")
     if not payload.get("capital"):
@@ -300,9 +339,9 @@ async def api_confirm_entry(session_id: int, payload: dict):
     return await confirm_gold_entry(session_id, payload["user_id"], capital)
 
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 # COMPTES SIMULATION
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 
 @router.get("/simulations")
 async def api_get_simulations(active_only: bool = True):
@@ -329,10 +368,6 @@ async def api_simulation_detail(account_id: int):
 
 @router.delete("/simulations/{account_id}")
 async def api_delete_simulation(account_id: int):
-    """
-    Hard delete — supprime le compte simulation + tous ses trades.
-    FIX v4 : migré de get_conn()/SQLite (NameError) vers get_db()/MySQL.
-    """
     async with get_db() as cur:
         await cur.execute(
             "SELECT id, name FROM simulation_accounts WHERE id = %s", (account_id,)
@@ -341,22 +376,14 @@ async def api_delete_simulation(account_id: int):
         if not account:
             raise HTTPException(404, "Compte simulation introuvable")
 
-        await cur.execute(
-            "DELETE FROM simulation_trades WHERE account_id = %s", (account_id,)
-        )
-        await cur.execute(
-            "DELETE FROM simulation_accounts WHERE id = %s", (account_id,)
-        )
+        await cur.execute("DELETE FROM simulation_trades WHERE account_id = %s", (account_id,))
+        await cur.execute("DELETE FROM simulation_accounts WHERE id = %s", (account_id,))
 
     return {"deleted": True, "account_id": account_id, "name": account["name"]}
 
 
 @router.patch("/simulations/{account_id}")
 async def api_update_simulation(account_id: int, payload: dict):
-    """
-    Met à jour un compte simulation.
-    FIX v4 : migré de get_conn()/SQLite (NameError) vers get_db()/MySQL.
-    """
     updatable = ("name", "description", "risk_pct_default", "is_active")
     updates   = {k: v for k, v in payload.items() if k in updatable}
     if not updates:
@@ -370,18 +397,16 @@ async def api_update_simulation(account_id: int, payload: dict):
             f"UPDATE simulation_accounts SET {fields}, updated_at = NOW() WHERE id = %s",
             values,
         )
-        await cur.execute(
-            "SELECT * FROM simulation_accounts WHERE id = %s", (account_id,)
-        )
+        await cur.execute("SELECT * FROM simulation_accounts WHERE id = %s", (account_id,))
         row = await cur.fetchone()
         if not row:
             raise HTTPException(404, "Compte simulation introuvable")
         return dict(row)
 
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 # ALERTES COMPTES CRAMÉS
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 
 @router.get("/sessions/{session_id}/danger-check")
 async def api_danger_check(session_id: int):
@@ -393,9 +418,9 @@ async def api_daily_check():
     return await daily_cramed_check()
 
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 # RÈGLES TP
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 
 @router.get("/rules")
 async def api_get_rules():
@@ -410,21 +435,17 @@ async def api_create_rule(payload: dict):
             raise HTTPException(400, f"{f} requis")
     if int(payload["tp_level"]) not in (1, 2, 3):
         raise HTTPException(400, "tp_level doit être 1, 2 ou 3")
-    rule = await create_tp_rule(payload)
-    await signal_cache.reload()   # sync cache v6
-    return rule
+    return await create_tp_rule(payload)
 
 
 @router.patch("/rules/{rule_id}")
 async def api_update_rule(rule_id: int, payload: dict):
-    rule = await update_tp_rule(rule_id, payload)
-    await signal_cache.reload()   # sync cache v6
-    return rule
+    return await update_tp_rule(rule_id, payload)
 
 
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 # DASHBOARD GOLD
-# ════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 
 @router.get("/dashboard")
 async def api_gold_dashboard():
@@ -438,6 +459,9 @@ async def api_gold_dashboard():
     if active_season:
         season_stats = await get_season_stats(active_season["id"])
 
+    # v7 : ajout du status de la session courante en RAM
+    v7_status = session_registry.snapshot()
+
     return {
         "active_session":      active_session,
         "active_season":       active_season,
@@ -445,4 +469,5 @@ async def api_gold_dashboard():
         "simulation_accounts": sim_accounts,
         "recent_sessions":     recent_sessions.get("sessions", []),
         "season_stats":        season_stats,
+        "v7_session_status":   v7_status,
     }

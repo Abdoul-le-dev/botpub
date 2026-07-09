@@ -44,9 +44,9 @@ import logging
 
 from db import get_db
 
-from .session_registry import session_registry, SessionStatus
-from .session_snapshot import snapshot_store, build_snapshot, SessionSnapshot
-from .state_v7 import user_state_v7
+from telegram_page.gold.session_registry import session_registry, SessionStatus
+from telegram_page.gold.session_snapshot import snapshot_store, build_snapshot, SessionSnapshot
+from  telegram_page.gold.gold_state import user_state_v7
 
 logger = logging.getLogger(__name__)
 
