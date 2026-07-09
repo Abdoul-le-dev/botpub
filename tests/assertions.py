@@ -21,7 +21,7 @@ from telegram_page.gold.session_snapshot import snapshot_store
 from telegram_page.gold.gold_state import user_state_v7
 from telegram_page.gold.gold_broadcast import build_calc_context, adjust_entry_sl
 from telegram_page.gold.weekly_capital_cache import weekly_capital
-from test.user_generator import FakeUser
+from tests.user_generator import FakeUser
 
 
 @dataclass

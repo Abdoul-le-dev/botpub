@@ -11,9 +11,9 @@ from telegram.error import Forbidden
 
 from db import get_db
 
-from .callback_guard import make_callback_data
-from .session_snapshot import SessionSnapshot
-from .buffer_v7 import gold_buffer
+from telegram_page.gold.callback_guard import make_callback_data
+from telegram_page.gold.session_snapshot import SessionSnapshot
+from telegram_page.gold.gold_buffer import gold_buffer
 
 logger = logging.getLogger(__name__)
 ADMIN_ID = 571718066
