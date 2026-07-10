@@ -209,10 +209,7 @@ async def schedule_daily_check(bot):
         except Exception as e:
             print(f"[daily_check] Erreur: {e}")
 
-_user_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
 
-def get_user_lock(user_id: int) -> asyncio.Lock:
-    return _user_locks[user_id]
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
