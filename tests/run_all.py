@@ -59,7 +59,7 @@ async def scenario_charge(n_users: int, cache_fraction: float = 0.7,
                             expired_fraction: float = 0.1) -> ScenarioResult:
     res = ScenarioResult(name=f"Charge_{n_users}_users", passed=True)
 
-    wipe_cache()
+    await wipe_cache()
     users = generate_users(n_users, seed=42)
     preseed_cache_ram(users, fraction=cache_fraction)
     preseed_cache_expired(users, fraction=expired_fraction)
@@ -91,7 +91,7 @@ async def scenario_charge(n_users: int, cache_fraction: float = 0.7,
         }
     finally:
         await teardown_mock_session()
-        wipe_cache()
+        await wipe_cache()
     return res
 
 
@@ -154,7 +154,7 @@ async def scenario_stale_callback() -> ScenarioResult:
 async def scenario_idempotent_access() -> ScenarioResult:
     res = ScenarioResult(name="Idempotent_access_click", passed=True)
 
-    wipe_cache()
+    await wipe_cache()
     snap = await install_mock_session(session_id=401)
 
     uid = 777
@@ -186,7 +186,7 @@ async def scenario_idempotent_access() -> ScenarioResult:
                             f"malgré is_processed=True (attendu 1)")
 
     await teardown_mock_session()
-    wipe_cache()
+    await wipe_cache()
     return res
 
 
@@ -230,7 +230,7 @@ async def scenario_cross_trade_isolation() -> ScenarioResult:
         res.details.append(f"{n_leaked} users ont un entry identique entre A et B")
 
     await teardown_mock_session()
-    wipe_cache()
+    await wipe_cache()
     return res
 
 
@@ -240,7 +240,7 @@ async def scenario_cross_trade_isolation() -> ScenarioResult:
 
 async def scenario_capital_cache_lifecycle() -> ScenarioResult:
     res = ScenarioResult(name="Capital_cache_lifecycle", passed=True)
-    wipe_cache()
+    await wipe_cache()
 
     uid = 9999
 
@@ -282,7 +282,7 @@ async def scenario_capital_cache_lifecycle() -> ScenarioResult:
 
 async def scenario_expired_capital_reprompt() -> ScenarioResult:
     res = ScenarioResult(name="Expired_capital_reprompts", passed=True)
-    wipe_cache()
+    await wipe_cache()
 
     users = generate_users(200, seed=7)
     # Tous les users ont un capital EXPIRÉ en cache
@@ -305,7 +305,7 @@ async def scenario_expired_capital_reprompt() -> ScenarioResult:
     }
 
     await teardown_mock_session()
-    wipe_cache()
+    await wipe_cache()
     return res
 
 
@@ -315,7 +315,7 @@ async def scenario_expired_capital_reprompt() -> ScenarioResult:
 
 async def scenario_close_reopen_cleanup() -> ScenarioResult:
     res = ScenarioResult(name="Close_reopen_clean_RAM", passed=True)
-    wipe_cache()
+    await wipe_cache()
 
     # Session 1 avec confirmations
     snap1 = await install_mock_session(session_id=801)
@@ -352,7 +352,7 @@ async def scenario_close_reopen_cleanup() -> ScenarioResult:
         res.details.append(f"Version pas incrémentée : {snap1.version} → {snap2.version}")
 
     await teardown_mock_session()
-    wipe_cache()
+    await wipe_cache()
     return res
 
 

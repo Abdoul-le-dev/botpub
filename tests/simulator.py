@@ -32,6 +32,8 @@ from telegram_page.gold.gold_broadcast import build_calc_context, adjust_entry_s
 from telegram_page.gold.weekly_capital_cache import weekly_capital, CapitalEntry, TTL_SECONDS
 from tests.user_generator import FakeUser, Persona
 
+from db import get_db
+
 logger = logging.getLogger(__name__)
 
 
@@ -113,9 +115,11 @@ def preseed_cache_expired(users: list[FakeUser], fraction: float = 0.1):
             )
 
 
-def wipe_cache():
+async def wipe_cache():
     weekly_capital._entries.clear()
     weekly_capital._load_locks.clear()
+    async with get_db() as cur:
+        await cur.execute("DELETE FROM user_capital_weekly")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
