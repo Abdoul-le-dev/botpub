@@ -18,6 +18,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from telegram_page.gold.lifecycle import close_session
+from telegram_page.gold.broadcast_send import send_teaser_broadcast
 from telegram_page.gold.gold_engine import (
     # Saisons
     create_season, get_active_season, get_seasons, reset_season, get_season_stats,
