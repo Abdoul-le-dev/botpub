@@ -9,6 +9,8 @@ import os
 import uuid
 from pathlib import Path
 
+from user_locks import get_user_lock
+
 from telegram import (
     Update, InlineKeyboardMarkup, InlineKeyboardButton,
     KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove,
@@ -373,64 +375,65 @@ async def relancer_formulaires_incomplets(bot, form_id: int = None, admin_id: in
 async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user        = update.effective_user
     user_id     = user.id
-    text        = update.message.text.strip()
-    command     = "/" + text.lstrip("/").split()[0]
-    args        = text.split()[1:] if len(text.split()) > 1 else []
-    start_param = args[0] if args and command == "/start" else None
+    async with get_user_lock(user_id):
+        text        = update.message.text.strip()
+        command     = "/" + text.lstrip("/").split()[0]
+        args        = text.split()[1:] if len(text.split()) > 1 else []
+        start_param = args[0] if args and command == "/start" else None
 
-    if command == "/start":
-        if start_param == "relancer12345678":
-            ADMIN_ID = 571718066
-            await relancer_formulaires_incomplets(context.bot, form_id=17, admin_id=ADMIN_ID)
+        if command == "/start":
+            if start_param == "relancer12345678":
+                ADMIN_ID = 571718066
+                await relancer_formulaires_incomplets(context.bot, form_id=17, admin_id=ADMIN_ID)
 
-        from telegram_page.start_handler import process_start_link
-        form_id = await process_start_link(update, context, user_id, user.first_name, start_param)
+            from telegram_page.start_handler import process_start_link
+            form_id = await process_start_link(update, context, user_id, user.first_name, start_param)
 
-        if form_id == "__validation__":
-            return FORM_STEP
-        if not form_id:
+            if form_id == "__validation__":
+                return FORM_STEP
+            if not form_id:
+                return ConversationHandler.END
+            form = await get_form_by_id(form_id)
+        else:
+            form = await get_form_by_command(command)
+
+        if not form:
             return ConversationHandler.END
-        form = await get_form_by_id(form_id)
-    else:
-        form = await get_form_by_command(command)
 
-    if not form:
-        return ConversationHandler.END
+        options        = form.get("options", {}) or {}
+        form_completed = await has_completed_form(form["id"], user_id)
 
-    options        = form.get("options", {}) or {}
-    form_completed = await has_completed_form(form["id"], user_id)
+        if options.get("one_per_user") and form_completed:
+            await update.message.reply_text(
+                "✅ Vous avez déjà complété ce formulaire.\n\n"
+                "Notre équipe a bien reçu vos informations. "
+                "Si vous avez des questions, n'hésitez pas à nous contacter ici."
+            )
+            return ConversationHandler.END
 
-    if options.get("one_per_user") and form_completed:
-        await update.message.reply_text(
-            "✅ Vous avez déjà complété ce formulaire.\n\n"
-            "Notre équipe a bien reçu vos informations. "
-            "Si vous avez des questions, n'hésitez pas à nous contacter ici."
-        )
-        return ConversationHandler.END
+        session = await get_or_create_session(form["id"], user_id)
+        context.user_data.update({
+            "form_id": form["id"], "session_id": session["id"],
+            "step": session["step_index"], "progress": options.get("progress", False),
+            "multi_sel": [], "responses": {},
+        })
 
-    session = await get_or_create_session(form["id"], user_id)
-    context.user_data.update({
-        "form_id": form["id"], "session_id": session["id"],
-        "step": session["step_index"], "progress": options.get("progress", False),
-        "multi_sel": [], "responses": {},
-    })
+        fields = form.get("fields", [])
+        if not fields:
+            return ConversationHandler.END
 
-    fields = form.get("fields", [])
-    if not fields:
-        return ConversationHandler.END
+        if form.get("intro"):
+            prenom = await _get_prenom(user_id)
+            await update.message.reply_text(_inject_vars(form["intro"], user_id, prenom=prenom))
+            await asyncio.sleep(0.5)
 
-    if form.get("intro"):
-        prenom = await _get_prenom(user_id)
-        await update.message.reply_text(_inject_vars(form["intro"], user_id, prenom=prenom))
-        await asyncio.sleep(0.5)
+        step = session["step_index"]
+        if step >= len(fields):
+            await update.message.reply_text("Tu as déjà complété ce formulaire.")
+            return ConversationHandler.END
 
-    step = session["step_index"]
-    if step >= len(fields):
-        await update.message.reply_text("Tu as déjà complété ce formulaire.")
-        return ConversationHandler.END
-
-    await _send_field(context.bot, user_id, fields[step], step + 1, len(fields), options.get("progress", False))
-    return FORM_STEP
+        await _send_field(context.bot, user_id, fields[step], step + 1, len(fields), options.get("progress", False))
+        return FORM_STEP
 
 
 # ════════════════════════════════════════════════════════════════════════════

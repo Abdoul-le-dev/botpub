@@ -20,6 +20,11 @@ from telegram_page.signal_broadcast import register_signal_handlers
 from telegram_page.gold.gold_engine import set_bot as set_gold_bot, daily_cramed_check
 from telegram_page.gold.gold_write_queue import start_gold_write_worker
 from telegram_page.gold.error_handler import error_handler
+from telegram_page.gold.weekly_capital_cache import weekly_capital
+from collections import defaultdict
+import asyncio
+
+
 
 load_dotenv()
 CANAL_B_ID = -1002705005402
@@ -204,7 +209,10 @@ async def schedule_daily_check(bot):
         except Exception as e:
             print(f"[daily_check] Erreur: {e}")
 
+_user_locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
 
+def get_user_lock(user_id: int) -> asyncio.Lock:
+    return _user_locks[user_id]
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
@@ -222,7 +230,7 @@ if __name__ == "__main__":
     loop.run_until_complete(ensure_capital_schema())
     loop.run_until_complete(ensure_campaign_schema())
     print("[main] Schémas v7 OK ✓")
-
+    
     # 4. App PTB
     app = (Application.builder()
            .token(token)
