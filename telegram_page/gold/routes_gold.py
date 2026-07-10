@@ -45,7 +45,7 @@ import telegram_page.gold.gold_engine as gold_engine
 
 # ── V7.1 ──────────────────────────────────────────────────────────────────
 from telegram_page.gold.lifecycle import (
-    open_new_session, close_session, mark_broadcast_done,
+    open_new_session,  mark_broadcast_done,
     current_snapshot, current_version, is_open, is_ready_for_confirmations,
     register_buffer,
 )
@@ -202,31 +202,27 @@ async def api_create_session(payload: dict):
     return session
 
 
+#@router.post("/sessions/{session_id}/close")
 @router.post("/sessions/{session_id}/close")
 async def api_close_session(session_id: int, payload: dict):
-    """
-    v7.1 : après la logique métier v5, on appelle close_session() v7
-    pour drainer le buffer + purger la RAM + retirer du registre.
-    """
     if not payload.get("close_type"):
         raise HTTPException(400, "close_type requis")
     if payload["close_type"] not in ("tp1", "tp2", "tp3", "sl", "manual"):
         raise HTTPException(400, "close_type invalide (tp1|tp2|tp3|sl|manual)")
 
-    result = await close_session(session_id, payload)
+    # 1. Logique métier v6 (marquage SQL) — via shim
+    result = await gold_engine.close_session(session_id, payload)   # ← préfixé gold_engine
 
-    # ── V7 : cleanup si cette session est bien la courante ────────────
+    # 2. Cleanup v7 (buffer flush + RAM purge + registry)
     reg = session_registry.current()
     if reg is not None and reg.session_id == session_id:
         try:
             await close_session(session_id, reg.version,
-                                 close_type=payload["close_type"])
+                                close_type=payload["close_type"])   # ← lifecycle.close_session
         except Exception as e:
             print(f"[DEBUG] close_session v7 échoué: {e}")
 
     return result
-
-
 @router.post("/sessions/{session_id}/tp/{tp_level}")
 async def api_trigger_tp(session_id: int, tp_level: int):
     if tp_level not in (1, 2, 3):

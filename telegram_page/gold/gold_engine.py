@@ -927,3 +927,53 @@ async def update_tp_rule(rule_id: int, payload: dict) -> dict:
             await cur.execute(f"UPDATE gold_tp_rules SET {', '.join(fields)} WHERE id = %s", values)
             await cur.execute("SELECT * FROM gold_tp_rules WHERE id = %s", (rule_id,))
             return dict(await cur.fetchone())
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SHIMS V6 → V7 — compat routes API (routes_gold.py)
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def confirm_gold_entry(session_id: int, user_id: int, capital: float) -> dict:
+    from telegram_page.gold.lifecycle import current_snapshot
+    from telegram_page.gold.gold_buffer import gold_buffer
+    from telegram_page.gold.weekly_capital_cache import weekly_capital
+    from telegram_page.gold.gold_broadcast import build_calc_context, adjust_entry_sl
+
+    snap = current_snapshot()
+    if snap is None or snap.session_id != session_id:
+        raise RuntimeError(f"Session v7 active ne correspond pas à session_id={session_id}.")
+
+    await weekly_capital.set(int(user_id), float(capital))
+
+    live_price = await get_live_gold_price()
+    effective_entry, effective_sl, _ = adjust_entry_sl(snap, live_price)
+
+    calc = build_calc_context(
+        snap, int(user_id), float(capital),
+        effective_entry, effective_sl,
+    )
+
+    gold_buffer.add_entry(
+        snap.session_id, int(user_id), snap.season_id,
+        calc.capital, calc.risk_pct, calc.risk_usd,
+        calc.lot, calc.tp_level,
+        calc.perte_sl, calc.gain_tp1, calc.gain_tp2, calc.gain_tp3,
+    )
+
+    return {
+        "ok": True, "session_id": session_id, "user_id": user_id,
+        "capital": calc.capital, "lot": calc.lot, "tp_level": calc.tp_level,
+    }
+
+
+async def trigger_tp_reached(session_id: int, tp_level: int) -> dict:
+    from telegram_page.gold.gold_buffer import gold_buffer
+    gold_buffer.set_phase(session_id, f"tp{tp_level}_reached")
+    gold_buffer.add_event(session_id, 0, f"tp{tp_level}_reached", {"tp_level": tp_level})
+    return {"ok": True, "session_id": session_id, "tp_level": tp_level}
+
+
+async def trigger_sl_touched(session_id: int) -> dict:
+    from telegram_page.gold.gold_buffer import gold_buffer
+    gold_buffer.set_phase(session_id, "sl_touched")
+    gold_buffer.add_event(session_id, 0, "sl_touched", {})
+    return {"ok": True, "session_id": session_id}

@@ -31,7 +31,7 @@ CANAL_B_ID = -1002705005402
 ADMIN_ID   = 571718066
 
 CATEGORIE  = "USER_PUB_1_NON_ACHAT"
-token      = os.getenv("tokens")
+token      = os.getenv("tokenss")
 
 import uvloop
 uvloop.install()
