@@ -28,7 +28,7 @@ from db import get_db
 from telegram_page.gold.session_registry import session_registry
 from telegram_page.gold.session_snapshot import snapshot_store, SessionSnapshot
 from telegram_page.gold.gold_state import user_state_v7, CalcContext
-from telegram_page.gold.gold_buffer import gold_buffer_v7
+from telegram_page.gold.gold_buffer import gold_buffer
 
 logger   = logging.getLogger(__name__)
 ADMIN_ID = 571718066
@@ -176,7 +176,7 @@ async def notify_tp_reached(bot, session_id: int, tp_level: int) -> dict:
                 # Log event si session active
                 reg = session_registry.current()
                 if reg is not None and reg.session_id == session_id:
-                    gold_buffer_v7.add_event(reg.session_id, reg.version,
+                    gold_buffer.add_event(reg.session_id, reg.version,
                                               t["user_id"], f"tp{tp_level}_notified",
                                               {"gain": t.get(f"gain_tp{tp_level}")})
             except Exception as e:
