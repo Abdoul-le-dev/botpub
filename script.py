@@ -21,7 +21,6 @@ from telegram_page.gold.gold_engine import set_bot as set_gold_bot, daily_cramed
 from telegram_page.gold.gold_write_queue import start_gold_write_worker
 from telegram_page.gold.error_handler import error_handler
 from telegram_page.gold.weekly_capital_cache import weekly_capital
-from collections import defaultdict
 
 from aiohttp import web
 from telegram_page.gold.lifecycle import open_new_session, mark_broadcast_done

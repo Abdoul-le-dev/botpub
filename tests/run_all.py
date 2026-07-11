@@ -21,7 +21,11 @@ import sys
 import time
 from dataclasses import dataclass, field
 
-sys.path.insert(0, "/home/claude")
+import os
+# Rend la suite portable : on remonte à la racine projet (parent de tests/)
+_PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 from db import init_pool, close_pool
 from tests.user_generator import generate_users, counts_by_persona, Persona
@@ -272,7 +276,7 @@ async def scenario_capital_cache_lifecycle() -> ScenarioResult:
     if n != 1:
         res.passed = False; res.details.append(f"clear_expired = {n} (attendu 1)")
 
-    wipe_cache()
+    await wipe_cache()
     return res
 
 

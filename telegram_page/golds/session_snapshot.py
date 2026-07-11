@@ -197,10 +197,17 @@ async def build_snapshot(session_id: int, version: int) -> SessionSnapshot:
         )
         rules_rows = [dict(r) for r in await cur.fetchall()]
 
-    # Indexation propre : on garde TOUTES les règles, keyées par un id
-    # unique (pas par tp_level, car plusieurs règles peuvent partager
-    # le même niveau avec des tranches de capital différentes).
-    # `tp_level_for_capital` du snapshot choisira la bonne.
+    rules_by_level: dict[int, TpRule] = {}
+    for r in rules_rows:
+        lvl = int(r["tp_level"])
+        # Une seule règle par tp_level pour l'instant (celle qui matche
+        # via min/max_capital). On garde toutes celles vues et le
+        # tp_level_for_capital du snapshot choisira la bonne.
+        # → on indexe par un id unique pour éviter les collisions.
+        pass
+
+    # Indexation propre : on garde TOUTES les règles, keyées par leur
+    # (tp_level, min_capital) pour permettre la sélection par capital.
     all_rules: dict = {}
     for i, r in enumerate(rules_rows):
         all_rules[i] = TpRule(

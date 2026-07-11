@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from  telegram_page.gold.session_registry import session_registry
+from telegram_page.gold.session_registry import session_registry
 from telegram_page.gold.session_snapshot import snapshot_store
 from telegram_page.gold.gold_state import user_state_v7
 from telegram_page.gold.gold_broadcast import build_calc_context, adjust_entry_sl

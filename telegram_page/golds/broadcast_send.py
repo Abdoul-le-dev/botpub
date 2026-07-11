@@ -183,14 +183,8 @@ async def send_teaser_broadcast(bot, snap: SessionSnapshot, *,
                 pass
 
     progress_task = asyncio.create_task(_progress())
-    try:
-        await asyncio.gather(*tasks, return_exceptions=True)
-    finally:
-        progress_task.cancel()
-        try:
-            await progress_task
-        except (asyncio.CancelledError, Exception):
-            pass
+    await asyncio.gather(*tasks, return_exceptions=True)
+    progress_task.cancel()
 
     blocked_report = await _handle_blocked_users(blocked_ids, category)
 

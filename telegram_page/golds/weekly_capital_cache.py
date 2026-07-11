@@ -138,16 +138,9 @@ class WeeklyCapitalCache:
             raise ValueError(f"Capital minimum : {MIN_CAPITAL}$")
 
         now = time.time()
-        # Version incrémentée : on lit la précédente pour +1.
-        # Si l'entrée n'est pas en RAM mais existe en SQL, on repartait
-        # à tort de v=1 → on consulte SQL en fallback pour garantir la
-        # monotonie stricte de la version.
+        # Version incrémentée : on lit la précédente pour +1
         prev = self._entries.get(user_id)
-        if prev is not None:
-            new_version = prev.version + 1
-        else:
-            row = await self._select(user_id)
-            new_version = (int(row["version"]) + 1) if row else 1
+        new_version = (prev.version + 1) if prev else 1
 
         await self._upsert(user_id, capital, new_version, now, now + TTL_SECONDS)
 
