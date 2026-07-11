@@ -524,11 +524,12 @@ async def watch_gold_price(session_id: int):
     logger.info(f"[gold_watch] Démarrage session {session_id}")
 
     # Import local pour éviter les cycles
-    from telegram_page.gold.gold_v7.tp_notifier import (
+    from telegram_page.gold.tp_notifier import (
         notify_tp_reached, notify_sl_touched,
         apply_tp_closure_in_db, notify_admin_session_closed,
     )
-    from telegram_page.gold.gold_v7 import close_session, session_registry
+    from telegram_page.gold.session_registry import session_registry, close_session
+     
 
     while True:
         try:
