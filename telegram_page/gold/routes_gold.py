@@ -11,9 +11,13 @@ Changements v7.1 :
      purger la RAM et retirer la session du registre.
   3. signal_cache.reload() SUPPRIMÉ partout — le cache v6 n'est plus
      utilisé côté bot.
+  4. Ouverture Gold déléguée au process bot via HTTP interne
+     (http://127.0.0.1:9100/internal/gold/open) pour éviter le problème
+     de registry RAM isolé entre process API et process bot.
 """
 
 import asyncio
+import httpx
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
@@ -24,7 +28,7 @@ from telegram_page.gold.gold_engine import (
     create_season, get_active_season, get_seasons, reset_season, get_season_stats,
     # Sessions
     create_gold_session, get_active_gold_session, get_gold_session_detail,
-    get_gold_sessions, 
+    get_gold_sessions,
     # Entrées membres
     confirm_gold_entry,
     # TP / SL
@@ -46,7 +50,7 @@ import telegram_page.gold.gold_engine as gold_engine
 
 # ── V7.1 ──────────────────────────────────────────────────────────────────
 from telegram_page.gold.lifecycle import (
-    open_new_session,  mark_broadcast_done,
+    open_new_session, mark_broadcast_done,
     current_snapshot, current_version, is_open, is_ready_for_confirmations,
     register_buffer,
 )
@@ -54,6 +58,9 @@ from telegram_page.gold.session_registry import session_registry
 from telegram_page.gold.session_snapshot import SessionSnapshot
 
 router = APIRouter(prefix="/gold", tags=["gold"])
+
+# URL du serveur HTTP interne exposé par le process bot (script.py)
+BOT_INTERNAL_URL = "http://127.0.0.1:9100"
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -133,10 +140,13 @@ async def api_create_session(payload: dict):
     """
     v7.1 :
       1. Crée la session en base (create_gold_session)
-      2. lifecycle.open_new_session(mode="replace") : registry + snapshot
-         + state + buffer, tout en une transaction atomique.
-      3. Lance le broadcast en tâche de fond (send_teaser_broadcast).
-      4. mark_broadcast_done() une fois l'envoi complet → status ACTIVE.
+      2. Délègue au process bot via HTTP interne :
+         - lifecycle.open_new_session() (registry + snapshot + state + buffer)
+         - send_teaser_broadcast() en tâche de fond
+         - mark_broadcast_done() → status ACTIVE
+      Cette délégation est nécessaire car le registry v7 vit en RAM du
+      process — le bot et l'API tournant dans deux process séparés, seul
+      le process bot doit posséder le registry actif.
     """
     required = ("direction", "entry_price", "sl")
     for f in required:
@@ -156,54 +166,29 @@ async def api_create_session(payload: dict):
     session = await create_gold_session(payload)
     print(f"[DEBUG] create_gold_session OK: id={session['id']}")
 
-    # 2. Ouvre la session v7 (registry + snapshot + state + buffer).
-    #    mode="replace" : ferme proprement l'éventuelle session précédente
-    #    (drain buffer + purge RAM + close SQL) avant d'ouvrir la nouvelle.
+    # 2. Délègue au process bot (registry + snapshot + broadcast + mark_active)
     try:
-        snap = await open_new_session(session["id"], mode="replace")
-        session["v7_version"] = snap.version
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.post(
+                f"{BOT_INTERNAL_URL}/internal/gold/open",
+                json={
+                    "session_id": session["id"],
+                    "category": payload.get("category"),
+                    "send_teaser": payload.get("send_teaser", True),
+                },
+            )
+        body = r.json()
     except Exception as e:
-        raise HTTPException(500, f"Ouverture session v7 échouée: {e}")
+        raise HTTPException(500, f"Bot injoignable sur {BOT_INTERNAL_URL}: {e}")
 
-    # 3. Broadcast en tâche de fond
-    send_teaser_flag = payload.get("send_teaser", True)
+    if r.status_code != 200 or not body.get("ok"):
+        raise HTTPException(500, f"Bot a refusé l'ouverture: {body}")
 
-    if send_teaser_flag:
-        if gold_engine._bot:
-            print(f"[DEBUG] Lancement broadcast v7 en tâche de fond")
-
-            async def _run_broadcast():
-                try:
-                    report = await send_teaser_broadcast(
-                        bot=gold_engine._bot,
-                        snap=snap,
-                        category=payload.get("category"),   # None = clients_actifs par défaut
-                    )
-                    print(f"[DEBUG] Broadcast v7 terminé: {report}")
-                    # 4. Marque la session ACTIVE — les clics user acceptés
-                    mark_broadcast_done(snap.session_id, snap.version)
-                except Exception as e:
-                    import traceback
-                    print(f"[DEBUG] ERREUR broadcast v7: {type(e).__name__}: {e}")
-                    traceback.print_exc()
-
-            asyncio.create_task(_run_broadcast())
-            session["broadcast_status"] = "started"
-        else:
-            print("[DEBUG] _bot est None, teaser non envoyé")
-            # Aucun broadcast → on marque quand même la session ACTIVE
-            # pour que les clics test admin fonctionnent.
-            mark_broadcast_done(snap.session_id, snap.version)
-            session["broadcast_status"] = "bot_unavailable_but_active"
-    else:
-        # Pas de broadcast demandé → session directement ACTIVE
-        mark_broadcast_done(snap.session_id, snap.version)
-        session["broadcast_status"] = "skipped"
-
+    session["v7_version"] = body["version"]
+    session["broadcast_status"] = body["broadcast_status"]
     return session
 
 
-#@router.post("/sessions/{session_id}/close")
 @router.post("/sessions/{session_id}/close")
 async def api_close_session(session_id: int, payload: dict):
     if not payload.get("close_type"):
@@ -212,18 +197,23 @@ async def api_close_session(session_id: int, payload: dict):
         raise HTTPException(400, "close_type invalide (tp1|tp2|tp3|sl|manual)")
 
     # 1. Logique métier v6 (marquage SQL) — via shim
-    result = await gold_engine.close_session(session_id, payload)   # ← préfixé gold_engine
+    result = await gold_engine.close_session(session_id, payload)
 
     # 2. Cleanup v7 (buffer flush + RAM purge + registry)
+    #    ⚠️ session_registry.current() renverra None côté API (process séparé).
+    #    Le cleanup v7 réel doit être fait côté bot — à migrer via
+    #    /internal/gold/close plus tard.
     reg = session_registry.current()
     if reg is not None and reg.session_id == session_id:
         try:
             await close_session(session_id, reg.version,
-                                close_type=payload["close_type"])   # ← lifecycle.close_session
+                                close_type=payload["close_type"])
         except Exception as e:
             print(f"[DEBUG] close_session v7 échoué: {e}")
 
     return result
+
+
 @router.post("/sessions/{session_id}/tp/{tp_level}")
 async def api_trigger_tp(session_id: int, tp_level: int):
     if tp_level not in (1, 2, 3):
@@ -459,6 +449,8 @@ async def api_gold_dashboard():
         season_stats = await get_season_stats(active_season["id"])
 
     # v7 : ajout du status de la session courante en RAM
+    # ⚠️ côté API (process séparé), ce sera toujours None.
+    # Pour le vrai status, ajouter un endpoint /internal/gold/status côté bot.
     v7_status = session_registry.snapshot()
 
     return {

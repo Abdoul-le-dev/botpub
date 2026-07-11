@@ -22,9 +22,12 @@ from telegram_page.gold.gold_write_queue import start_gold_write_worker
 from telegram_page.gold.error_handler import error_handler
 from telegram_page.gold.weekly_capital_cache import weekly_capital
 from collections import defaultdict
-import asyncio
 
-
+from aiohttp import web
+from telegram_page.gold.lifecycle import open_new_session, mark_broadcast_done
+from telegram_page.gold.session_registry import session_registry
+from telegram_page.gold.broadcast_send import send_teaser_broadcast
+import telegram_page.gold.gold_engine as gold_engine_mod
 
 load_dotenv()
 CANAL_B_ID = -1002705005402
@@ -39,26 +42,11 @@ uvloop.install()
 # ══════════════════════════════════════════════════════════════════════════════
 # GOLD V7.1 — Architecture refondue
 # ══════════════════════════════════════════════════════════════════════════════
-# Les handlers Gold v6 (signal_cache/user_state/gold_buffer) sont DÉSACTIVÉS.
-# La v7.1 les remplace intégralement :
-#   - session unique + versionnée (session_registry)
-#   - snapshot immutable du trade actif (session_snapshot)
-#   - état isolé par (session_id, user_id) (state_v7)
-#   - buffer batch attaché à la session (buffer_v7)
-#   - callback guard systématique (callback_guard)
-#   - workflow simplifié : ouvrir = accepter (broadcast_v7)
-#   - Weekly Capital Cache 7 jours (weekly_capital_cache)
-#   - campagne hebdo progressive (capital_campaign)
-#
-# Les fichiers v6 restent importables tant que les routes API n'ont pas migré,
-# mais leurs workers/handlers ne s'enregistrent plus.
 from telegram_page.gold.gold_broadcast import (
-    
     register_gold_handlers_v7,
-   
 )
 from telegram_page.gold.consistency import run_full_check
-from telegram_page.gold.lifecycle import  register_buffer
+from telegram_page.gold.lifecycle import register_buffer
 from telegram_page.gold.gold_buffer import gold_buffer
 
 from telegram_page.gold.weekly_capital_cache import ensure_schema as ensure_capital_schema
@@ -75,7 +63,6 @@ from telegram_page.gold.capital_campaign import (
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def cmd_queue_status(update, context):
-    """Status du buffer v7 (remplace l'ancien qui pointait vers gold_buffer v6)."""
     if update.effective_user.id != ADMIN_ID:
         return
     s = gold_buffer.status()
@@ -90,7 +77,6 @@ async def cmd_queue_status(update, context):
 
 
 async def cmd_gold_check(update, context):
-    """Vérifie la cohérence RAM / Snapshot / State / Buffer / SQL."""
     if update.effective_user.id != ADMIN_ID:
         return
     rep = await run_full_check()
@@ -98,7 +84,6 @@ async def cmd_gold_check(update, context):
 
 
 async def cmd_capital_status(update, context):
-    """État du Weekly Capital Cache."""
     if update.effective_user.id != ADMIN_ID:
         return
     s = weekly_capital.status()
@@ -112,7 +97,6 @@ async def cmd_capital_status(update, context):
 
 
 async def cmd_capital_campaign_now(update, context):
-    """Lance manuellement une campagne capital (test)."""
     if update.effective_user.id != ADMIN_ID:
         return
     await update.message.reply_text("🔄 Campagne lancée en tâche de fond...")
@@ -211,6 +195,75 @@ async def schedule_daily_check(bot):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# SERVEUR HTTP INTERNE — reçoit les ordres Gold depuis l'API (autre process)
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def _internal_open_gold(request: web.Request) -> web.Response:
+    """
+    Ouvre une session Gold côté bot :
+      1. lifecycle.open_new_session() (registry + snapshot + state + buffer)
+      2. send_teaser_broadcast() en tâche de fond
+      3. mark_broadcast_done() → status ACTIVE
+    """
+    import logging
+
+    try:
+        data = await request.json()
+        sid = int(data["session_id"])
+        category = data.get("category")
+        send_teaser = bool(data.get("send_teaser", True))
+    except Exception as e:
+        return web.json_response({"ok": False, "error": f"bad_payload: {e}"}, status=400)
+
+    # 1. Ouvre la session v7
+    try:
+        snap = await open_new_session(sid, mode="replace")
+    except Exception as e:
+        logging.exception("[internal] open_new_session failed sid=%s", sid)
+        return web.json_response({"ok": False, "error": f"open_failed: {e}"}, status=500)
+
+    # 2. Broadcast en tâche de fond
+    if send_teaser and gold_engine_mod._bot:
+        async def _run_broadcast():
+            try:
+                report = await send_teaser_broadcast(
+                    bot=gold_engine_mod._bot,
+                    snap=snap,
+                    category=category,
+                )
+                logging.info("[internal] broadcast v7 terminé sid=%s: %s", sid, report)
+                mark_broadcast_done(snap.session_id, snap.version)
+            except Exception as e:
+                logging.exception("[internal] broadcast v7 failed sid=%s", sid)
+
+        asyncio.create_task(_run_broadcast())
+        bstatus = "started"
+    else:
+        # pas de broadcast → marque quand même ACTIVE (tests admin)
+        mark_broadcast_done(snap.session_id, snap.version)
+        bstatus = "skipped" if not send_teaser else "bot_unavailable_but_active"
+
+    return web.json_response({
+        "ok": True,
+        "session_id": snap.session_id,
+        "version": snap.version,
+        "broadcast_status": bstatus,
+    })
+
+
+async def _start_internal_http_server():
+    server_app = web.Application()
+    server_app.router.add_post("/internal/gold/open", _internal_open_gold)
+    runner = web.AppRunner(server_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 9100)
+    await site.start()
+    import logging
+    logging.info("[internal] HTTP server listening on 127.0.0.1:9100")
+    print("[internal] HTTP server listening on 127.0.0.1:9100 ✓")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -223,11 +276,11 @@ if __name__ == "__main__":
     loop.run_until_complete(init_pool())
     print("[main] Pool OK ✓")
 
-    # 3. Schémas v7 (idempotent — safe à ré-exécuter à chaque boot)
+    # 3. Schémas v7
     loop.run_until_complete(ensure_capital_schema())
     loop.run_until_complete(ensure_campaign_schema())
     print("[main] Schémas v7 OK ✓")
-    
+
     # 4. App PTB
     app = (Application.builder()
            .token(token)
@@ -239,20 +292,17 @@ if __name__ == "__main__":
         await setup_background_worker(application)
         asyncio.create_task(schedule_daily_check(application.bot))
 
-        # Worker de l'ancienne queue — toujours nécessaire tant que
-        # les routes API (POST /gold/sessions/{id}/confirm, etc.)
-        # continuent à l'utiliser.
         start_gold_write_worker(application.bot)
-        #gold_buffer.start(app.bot)
 
         # ── V7.1 : buffer + capital cache + scheduler campagne ────────
         gold_buffer.start(application.bot)
         register_buffer(gold_buffer)
-        # PAS d'auto-attach : les sessions s'ouvrent explicitement via
-        # lifecycle.open_new_session() depuis la route POST /gold/sessions.
 
-        # Scheduler campagne hebdo (samedi 10h locale par défaut)
+        # Scheduler campagne hebdo
         asyncio.create_task(weekly_scheduler_loop(application.bot))
+
+        # ── V7.1 : serveur HTTP interne pour ordres Gold depuis l'API ─
+        await _start_internal_http_server()
 
         print("[main] Gold v7.1 initialisé ✓")
 
@@ -263,12 +313,12 @@ if __name__ == "__main__":
     register_formation_handler(app)
     register_form_handlers(app, app.bot, ADMIN_ID)
 
-    # ── V7.1 : nouveaux handlers Gold (remplace register_gold_handlers v6)
+    # ── V7.1 : nouveaux handlers Gold
     register_gold_handlers_v7(app)
 
     register_signal_handlers(app)
 
-    # Log des messages non gérés — priorité minimale
+    # Log messages non gérés — priorité minimale
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND
