@@ -528,7 +528,8 @@ async def watch_gold_price(session_id: int):
         notify_tp_reached, notify_sl_touched,
         apply_tp_closure_in_db, notify_admin_session_closed,
     )
-    from telegram_page.gold.session_registry import session_registry, close_session
+    from telegram_page.gold.session_registry import session_registry
+    from telegram_page.gold.lifecycle import close_session
      
 
     while True:

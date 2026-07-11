@@ -157,13 +157,14 @@ class GoldWriteBuffer:
     # VALIDATION — protection des writes d'anciennes sessions
     # ══════════════════════════════════════════════════════════════════════
 
-    def _accepts(self, session_id: int) -> bool:
+    def _accepts(self, session_id: int, version: int | None = None) -> bool:
         """
-        Renvoie True si un write pour session_id est acceptable.
-        Un write d'une session obsolète est rejeté silencieusement.
+        Rejet silencieux si :
+          - Aucune session attachée
+          - session_id ne matche pas
+          - version fournie et ne matche pas la version attachée
         """
         if self._sid is None:
-            logger.debug(f"[buffer_v7] rejet: aucune session attachée (write sid={session_id})")
             return False
         if session_id != self._sid:
             logger.debug(
@@ -171,38 +172,54 @@ class GoldWriteBuffer:
                 f"≠ session attachée #{self._sid}v{self._ver}"
             )
             return False
+        if version is not None and version != self._ver:
+            logger.debug(
+                f"[buffer_v7] rejet: write v={version} "
+                f"≠ version attachée #{self._sid}v{self._ver}"
+            )
+            return False
         return True
 
-    # ══════════════════════════════════════════════════════════════════════
-    # API — appelée par les handlers Telegram (0 SQL, 0 await bloquant)
-    # ══════════════════════════════════════════════════════════════════════
-
-    def add_entry(self, session_id: int, user_id: int, season_id, capital: float,
-                  risk_pct: float, risk_usd: float, lot: float, tp_level: int,
-                  perte_sl: float, gain_tp1, gain_tp2, gain_tp3):
-        if not self._accepts(session_id):
+    def add_entry(self, session_id: int, version: int, user_id: int, season_id,
+                  capital: float, risk_pct: float, risk_usd: float, lot: float,
+                  tp_level: int, perte_sl: float,
+                  gain_tp1, gain_tp2, gain_tp3):
+        if not self._accepts(session_id, version):
             return
-        ver = self._ver
-        self._entries[(session_id, ver, user_id)] = (
+        self._entries[(session_id, version, user_id)] = (
             session_id, user_id, season_id, capital, risk_pct, risk_usd,
             lot, tp_level, perte_sl, gain_tp1, gain_tp2, gain_tp3, capital,
         )
-        self._dirty_agg.add((session_id, ver))
+        self._dirty_agg.add((session_id, version))
         self._maybe_wake()
 
-    def add_step(self, session_id: int, user_id: int, step: str, capital: float = None):
-        if not self._accepts(session_id):
+    def add_step(self, session_id: int, version: int, user_id: int,
+                 step: str, capital: float = None):
+        if not self._accepts(session_id, version):
             return
-        ver = self._ver
-        self._steps[(session_id, ver, user_id)] = (session_id, user_id, step, capital)
+        # Sanitize capital
+        clean_capital = None
+        if capital is not None:
+            try:
+                if isinstance(capital, str):
+                    capital = capital.replace(" ", "").replace(",", ".").replace("€", "").replace("$", "")
+                clean_capital = float(capital)
+                if clean_capital < 0 or clean_capital > 9_999_999:
+                    logger.warning(f"[buffer_v7] capital hors bornes: {clean_capital} (user={user_id})")
+                    clean_capital = None
+            except (ValueError, TypeError) as e:
+                logger.warning(f"[buffer_v7] capital invalide: {capital!r} (user={user_id}): {e}")
+                clean_capital = None
+
+        self._steps[(session_id, version, user_id)] = (session_id, user_id, step, clean_capital)
         self._maybe_wake()
 
-    def add_event(self, session_id: int, user_id: int, event_type: str, payload: dict = None):
-        if not self._accepts(session_id):
+    def add_event(self, session_id: int, version: int, user_id: int,
+                  event_type: str, payload: dict = None):
+        if not self._accepts(session_id, version):
             return
-        ver = self._ver
         self._events.append((
-            session_id, ver, user_id, event_type,
+            session_id, version, user_id, event_type,
             json.dumps(payload) if payload else None,
         ))
         self._maybe_wake()
