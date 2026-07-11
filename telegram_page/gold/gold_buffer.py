@@ -305,6 +305,8 @@ class GoldWriteBuffer:
                     await cur.execute(sql, params)
 
                 # 3. Étapes utilisateur — 1 requête pour N étapes
+                # Fallback en INSERT par ligne si le batch échoue, pour
+                # isoler et jeter les lignes corrompues (évite la boucle infinie).
                 for i in range(0, len(steps), CHUNK_ROWS):
                     chunk = steps[i:i + CHUNK_ROWS]
                     sql = _multi_insert_sql(
@@ -316,7 +318,28 @@ class GoldWriteBuffer:
                            updated_at = NOW()""",
                     )
                     params = [v for r in chunk for v in r]
-                    await cur.execute(sql, params)
+                    try:
+                        await cur.execute(sql, params)
+                    except Exception as batch_err:
+                        logger.warning(
+                            f"[buffer_v7] batch steps échoué ({batch_err}); "
+                            f"fallback ligne-par-ligne sur {len(chunk)} lignes"
+                        )
+                        sql_one = _multi_insert_sql(
+                            """INSERT INTO gold_user_sessions
+                                   (session_id, user_id, step, capital_input)""",
+                            4, 1,
+                            """step = new_vals.step,
+                               capital_input = new_vals.capital_input,
+                               updated_at = NOW()""",
+                        )
+                        for r in chunk:
+                            try:
+                                await cur.execute(sql_one, list(r))
+                            except Exception as row_err:
+                                logger.error(
+                                    f"[buffer_v7] LIGNE JETÉE (step): {r} — {row_err}"
+                                )
 
                 # 4. Événements de flux — 1 requête pour N événements
                 # Note : le tuple contient (sid, ver, user_id, type, payload)
