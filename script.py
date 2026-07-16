@@ -167,10 +167,10 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
     text=(
         "🎉 <b>Félicitations !</b>\n\n"
         "Vous êtes éligible pour participer à <b>FDK CAPITAL CONCEPT</b>.\n\n"
-        "🎓 Vous bénéficiez gratuitement d'une formation qui vous accompagnera étape par étape dans la création de votre compte.\n\n"
+        "🎓 Vous bénéficiez gratuitement d'une formation qui vous accompagnera étape par étape.\n\n"
         "⚠️ <b>Important :</b> ce capital n'est pas destiné à vos besoins personnels. "
-        "Il est mis à votre disposition pour vous permettre de démarrer le trading dans de bonnes conditions.\n\n"
-        "📅 Les bénéficiaires sont sélectionnés <b>chaque samedi en direct</b>, devant toute la communauté.\n\n"
+        "Il est mis à votre disposition pour vous permettre de démarrer le trading dans de bonnes conditions si vous gagner.\n\n"
+        "📅 Les gagnants sont sélectionnés <b>chaque samedi en direct</b>, devant toute la communauté.\n\n"
         "🤝 Plus vous invitez de personnes à rejoindre <b>FDK CAPITAL CONCEPT</b>, plus vous augmentez vos chances d'être sélectionné.\n\n"
         "Choisissez une option ci-dessous pour commencer."
     ),
