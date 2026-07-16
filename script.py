@@ -32,7 +32,7 @@ load_dotenv()
 CANAL_B_ID = -1002705005402
 ADMIN_ID   = 571718066
 
-CATEGORIE  = "USER_PUB_1_NON_ACHAT"
+CATEGORIE  = "FDK CONCEPT CAPITAL"
 token      = os.getenv("tokens")
 
 import uvloop
