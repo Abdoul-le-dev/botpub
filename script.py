@@ -120,6 +120,19 @@ def build_answer_keyboards():
     ]])
 
 
+
+
+keyboard = InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton(
+            "🎓 Accéder à ma formation",
+            url="https://TON-LIEN-DE-LA-FORMATION.com"
+        )
+    ]
+])
+
+
+
 async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user      = update.chat_join_request.from_user
     user_id   = user.id
@@ -142,24 +155,18 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         print(f"[validation] categorie error: {e}")
 
     await context.bot.send_message(
-        chat_id=user_id,
-        text=(
-            "Bonjour l'ami 👋\n\n"
-            "Je suis <b>Fiacre KPANOU</b>, j'échange directement avec toi via mon assistant bot.\n\n"
-            "J'ai remarqué que tu n'as pas encore profité de l'offre disponible sur la plateforme, mais ce n'est absolument pas grave. "
-            "Je salue d'ailleurs ton initiative d'avoir rejoint mon canal 🙌\n\n"
-            "D'autres opportunités arrivent très bientôt. "
-            "J'organise régulièrement des <b>webinaires</b> où je t'initie pas à pas aux marchés financiers :\n\n"
-            "📊 Comment aborder les marchés avec méthode\n"
-            "🏆 Les résultats concrets de mes apprenants\n"
-            "💡 Des success stories qui vont t'inspirer et te donner envie de te lancer\n\n"
-            "Clique ici pour t'enregistrer en avant-première : /je_menregistre_en_avant_premiere_pour_la_prochaine_masterclass\n\n"
-            "Reste connecté et bien branché 🔥\n"
-            "Je t'enverrai toutes les informations importantes directement via mon assistant.\n\n"
-            "Merci l'ami 🤝"
-        ),
-        parse_mode="HTML"
-    )
+    chat_id=user_id,
+    text=(
+        "🎉 <b>Félicitations !</b>\n\n"
+        "Vous êtes éligible pour participer à <b>FDK CAPITAL CONCEPT</b>.\n\n"
+        "Vous bénéficiez gratuitement d'une formation qui vous accompagnera étape par étape dans la création de votre compte.\n\n"
+        "⚠️ Une précision importante : ce capital n'est <b>pas destiné à vos besoins personnels</b>.\n\n"
+        "Son objectif est de vous permettre de démarrer le trading dans de bonnes conditions, sans prendre de risques inutiles.\n\n"
+        "👇 Cliquez sur le bouton ci-dessous pour accéder à votre formation."
+    ),
+    parse_mode="HTML",
+    reply_markup=keyboard
+)
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
