@@ -128,12 +128,6 @@ keyboard = InlineKeyboardMarkup([
             "🎓 Accéder à la formation",
             url="https://fdksignal.com/formation/formation-debutant"
         )
-    ],
-    [
-        InlineKeyboardButton(
-            "🤝 Inviter mes amis",
-            url="https://fdkservice.com/share"
-        )
     ]
 ])
 
@@ -169,10 +163,8 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         "Vous êtes éligible pour participer à <b>FDK CAPITAL CONCEPT</b>.\n\n"
         "🎓 Vous bénéficiez gratuitement d'une formation qui vous accompagnera étape par étape.\n\n"
         "⚠️ <b>Important :</b> ce capital n'est pas destiné à vos besoins personnels. "
-        "Il est mis à votre disposition pour vous permettre de démarrer le trading dans de bonnes conditions si vous gagner.\n\n"
+        "Il est mis à votre disposition pour vous permettre de démarrer le trading dans de bonnes conditions si vous gagnez.\n\n"
         "📅 Les gagnants sont sélectionnés <b>chaque samedi en direct</b>, devant toute la communauté.\n\n"
-        "🤝 Plus vous invitez de personnes à rejoindre <b>FDK CAPITAL CONCEPT</b>, plus vous augmentez vos chances d'être sélectionné.\n\n"
-        "Choisissez une option ci-dessous pour commencer."
     ),
     parse_mode="HTML",
     reply_markup=keyboard
