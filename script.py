@@ -205,7 +205,7 @@ async def schedule_daily_check(bot):
                         f"📋 *Bilan fin de journée — {datetime.now().strftime('%d/%m/%Y')}*\n\n"
                         f"Comptes en danger : *{total_danger}*\n"
                         f"Sessions surveillées : {len(results)}\n\n"
-                        f"_Consultez le dashboard pour le détail._"
+                        f"_Consultez le dashboard pour le détail. _"
                     ),
                     parse_mode="Markdown"
                 )
