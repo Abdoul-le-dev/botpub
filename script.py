@@ -30,9 +30,9 @@ import telegram_page.gold.gold_engine as gold_engine_mod
 
 load_dotenv()
 CANAL_B_ID = -1002705005402
-ADMIN_ID   = 571718066
+ADMIN_ID   = 6992809421
 
-CATEGORIE  = "FDK CONCEPT CAPITAL"
+CATEGORIE  = "FDK CONCEPT CAPITAL W-2"
 token      = os.getenv("tokens")
 
 import uvloop
@@ -152,24 +152,37 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
     try:
         from telegram_page.categorie import add_members_to_category
-        await add_members_to_category(CATEGORIE, [user_id])
+        await add_members_to_category(CATEGORIE, user_id)
     except Exception as e:
         print(f"[validation] categorie error: {e}")
 
-    await context.bot.send_message(
-    chat_id=user_id,
-    text=(
-        "🎉 <b>Félicitations !</b>\n\n"
-        "Vous êtes éligible pour participer à <b>FDK CAPITAL CONCEPT</b>.\n\n"
-        "🎓 Vous bénéficiez gratuitement d'une formation qui vous accompagnera étape par étape.\n\n"
-        "⚠️ <b>Important :</b> ce capital n'est pas destiné à vos besoins personnels. "
-        "Il est mis à votre disposition pour vous permettre de démarrer le trading dans de bonnes conditions si vous gagnez.\n\n"
-        "📅 Les gagnants sont sélectionnés <b>chaque samedi en direct</b>, devant toute la communauté.\n\n"
-    ),
-    parse_mode="HTML",
-    reply_markup=keyboard
-)
+    try:
+        await context.bot.send_message(
+        chat_id=user_id,
+        text=(
+            "🎉 <b>Félicitations !</b>\n\n"
+            "Vous êtes éligible pour participer à <b>FDK CAPITAL CONCEPT</b>.\n\n"
+            "🎓 Vous bénéficiez gratuitement d'une formation qui vous accompagnera étape par étape.\n\n"
+            "⚠️ <b>Important :</b> ce capital n'est pas destiné à vos besoins personnels. "
+            "Il est mis à votre disposition pour vous permettre de démarrer le trading dans de bonnes conditions si vous gagnez.\n\n"
+            "📅 Les gagnants sont sélectionnés <b>chaque samedi en direct</b>, devant toute la communauté.\n\n"
+        ),
+        parse_mode="HTML",
+        reply_markup=keyboard)
 
+        await context.bot.send_message(
+        chat_id=ADMIN_ID,
+        text=(" User ajouter à la catégorie : " + CATEGORIE),
+        parse_mode="HTML",
+        reply_markup=keyboard)
+        
+    except Exception as e:
+
+        await context.bot.send_message(
+        chat_id=ADMIN_ID,
+        text=(" erreur lors de l'ajout de l'utilisateur à la catégorie : " + str(e)),
+        parse_mode="HTML",
+        reply_markup=keyboard)
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("❌ Annulé.")
