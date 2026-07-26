@@ -173,16 +173,14 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         await context.bot.send_message(
         chat_id=ADMIN_ID,
         text=(" User ajouter à la catégorie : " + CATEGORIE),
-        parse_mode="HTML",
-        reply_markup=keyboard)
+        parse_mode="HTML")
         
     except Exception as e:
 
         await context.bot.send_message(
         chat_id=ADMIN_ID,
         text=(" erreur lors de l'ajout de l'utilisateur à la catégorie : " + str(e)),
-        parse_mode="HTML",
-        reply_markup=keyboard)
+        parse_mode="HTML")
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("❌ Annulé.")
