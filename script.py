@@ -152,7 +152,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
     try:
         from telegram_page.categorie import add_members_to_category
-        await add_members_to_category(CATEGORIE, user_id)
+        await add_members_to_category(CATEGORIE, [user_id])
     except Exception as e:
         print(f"[validation] categorie error: {e}")
 
