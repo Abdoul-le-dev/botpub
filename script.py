@@ -1451,18 +1451,12 @@ async def _start_internal_http_server():
 # ══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    loop.run_until_complete(init_pool())
-    print("[main] Pool OK ✓")
-
-    loop.run_until_complete(ensure_users_schema())
-    print("[main] Schéma users (level_at, name/phone nullable, reminders) OK ✓")
-
-    loop.run_until_complete(ensure_capital_schema())
-    loop.run_until_complete(ensure_campaign_schema())
-    print("[main] Schémas v7 OK ✓")
+    # NOTE : on ne crée PLUS de boucle asyncio manuellement ici.
+    # app.run_polling() en crée une propre. Avec uvloop, mélanger les deux
+    # provoque "RuntimeError: There is no current event loop in thread"
+    # au moment du démarrage.
+    # Toutes les initialisations async (pool, schémas) sont désormais faites
+    # dans _post_init, qui tourne dans la même boucle que le polling.
 
     app = (Application.builder()
            .token(token)
@@ -1472,6 +1466,18 @@ if __name__ == "__main__":
 
     async def _post_init(application):
         try:
+            # ── Init base de données (avant tout le reste) ─────────────
+            await init_pool()
+            print("[main] Pool OK ✓")
+
+            await ensure_users_schema()
+            print("[main] Schéma users (level_at, name/phone nullable, reminders) OK ✓")
+
+            await ensure_capital_schema()
+            await ensure_campaign_schema()
+            print("[main] Schémas v7 OK ✓")
+
+            # ── Reste des inits ────────────────────────────────────────
             await setup_background_worker(application)
             asyncio.create_task(schedule_daily_check(application.bot))
 
@@ -1527,9 +1533,7 @@ if __name__ == "__main__":
         per_chat=False,
         per_user=True,
     )
-    from engagement import register_engagement_handlers
     app.add_handler(registration_conv)
-    
 
     register_validation_handler(app)
     register_formation_handler(app)
@@ -1548,8 +1552,6 @@ if __name__ == "__main__":
         group=99,
     )
 
-    register_engagement_handlers(app) 
-
     app.add_handler(CommandHandler("queue_status", cmd_queue_status))
     app.add_handler(CommandHandler("gold_check", cmd_gold_check))
     app.add_handler(CommandHandler("capital_status", cmd_capital_status))
@@ -1564,4 +1566,4 @@ if __name__ == "__main__":
     set_gold_bot(app.bot)
 
     print("running...")
-    app.run_polling(poll_interval=1)
+    app.run_polling(poll_interval=2)
