@@ -67,8 +67,13 @@ if not token:
         "Variable d'environnement 'tokens' manquante : impossible de démarrer le bot."
     )
 
+import asyncio as _asyncio_for_uvloop
 import uvloop
-uvloop.install()
+# NB : `uvloop.install()` casse `asyncio.get_event_loop()` sur Python 3.12+
+# (voir uvloop issue #702). Or `app.run_polling()` de python-telegram-bot
+# appelle justement get_event_loop() en interne → RuntimeError au démarrage.
+# On passe donc par la policy, qui reste compatible.
+_asyncio_for_uvloop.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LOG D'ERREURS SUR FICHIER + NOTIFS ADMIN
@@ -1566,4 +1571,12 @@ if __name__ == "__main__":
     set_gold_bot(app.bot)
 
     print("running...")
-    app.run_polling(poll_interval=1)
+
+    # uvloop sur Python 3.12+ n'auto-crée plus de boucle depuis
+    # asyncio.get_event_loop() — ce que fait run_polling en interne.
+    # On en crée une explicitement et on l'attache au thread principal
+    # avant l'appel. run_polling la récupérera via get_event_loop().
+    _loop = _asyncio_for_uvloop.new_event_loop()
+    _asyncio_for_uvloop.set_event_loop(_loop)
+
+    app.run_polling(poll_interval=2)
