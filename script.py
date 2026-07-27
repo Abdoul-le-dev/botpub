@@ -1190,7 +1190,7 @@ if __name__ == "__main__":
             register_buffer(gold_buffer)
 
             asyncio.create_task(weekly_scheduler_loop(application.bot))
-            asyncio.create_task(registration_reminder_loop(application.bot))
+            #asyncio.create_task(registration_reminder_loop(application.bot))
 
             # Aligne le compteur "palier 100" sur l'état actuel de la base
             # pour ne pas re-notifier les paliers historiques au redémarrage
