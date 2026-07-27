@@ -1527,7 +1527,9 @@ if __name__ == "__main__":
         per_chat=False,
         per_user=True,
     )
+    from engagement import register_engagement_handlers
     app.add_handler(registration_conv)
+    
 
     register_validation_handler(app)
     register_formation_handler(app)
@@ -1545,6 +1547,8 @@ if __name__ == "__main__":
         ),
         group=99,
     )
+
+    register_engagement_handlers(app) 
 
     app.add_handler(CommandHandler("queue_status", cmd_queue_status))
     app.add_handler(CommandHandler("gold_check", cmd_gold_check))
