@@ -96,27 +96,57 @@ def migrate_categories_to_meta():
 # USERS
 # ════════════════════════════════════════════════════════════════════════════
 
-def save_user(name, phone, country=None, telegram_id=None, contexte_user=None,
-              email=None, motivation=None, level=None, why=None,
-              what=None, expectations=None, discovery=None):
+def save_user(
+    name,
+    phone,
+    country=None,
+    telegram_id=None,
+    contexte_user=None,
+    email=None,
+    motivation=None,
+    level=None,
+    why=None,
+    what=None,
+    expectations=None,
+    discover=None
+):
     with get_db() as conn:
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL, phone TEXT NOT NULL, country TEXT,
-                telegram_id INTEGER, contexte_user TEXT, email TEXT,
-                motivation TEXT, level TEXT, why TEXT, what TEXT,
-                expectations TEXT, discovery TEXT, created_at TEXT NOT NULL
-            )
-        ''')
-        conn.execute('''
-            INSERT INTO users
-                (name, phone, country, created_at, telegram_id, contexte_user,
-                 email, motivation, level, why, what, expectations, discover)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (name, phone, country, datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-              telegram_id, contexte_user, email, motivation, level, why, what, expectations, discovery))
 
+        conn.execute("""
+            INSERT INTO users
+            (
+                name,
+                phone,
+                country,
+                created_at,
+                telegram_id,
+                contexte_user,
+                email,
+                motivation,
+                level,
+                why,
+                what,
+                expectations,
+                discover
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            name,
+            phone,
+            country,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            telegram_id,
+            contexte_user,
+            email,
+            motivation,
+            level,
+            why,
+            what,
+            expectations,
+            discover
+        ))
+
+        conn.commit()
 
 def user_exists(telegram_id):
     with get_db() as conn:
