@@ -50,6 +50,11 @@ ADMIN_ID  = ADMIN_IDS[0]
 NAME, PHONE, JOB = range(3)
 
 CATEGORIE = "FDK CONCEPT CAPITAL LISTE ACTIFS"
+
+# Date de lancement du projet : toutes les statistiques "cumul" sont calculées
+# à partir de cette date (rien avant n'est compté).
+STATS_START_DATE = "2026-07-27"
+
 token     = os.getenv("tokens")
 
 if not token:
@@ -94,6 +99,7 @@ async def ensure_users_schema():
     - Ajoute la colonne 'profession' (absente du schéma d'origine, alors que
       l'ancien code appelait save_user(profession=...) -> TypeError silencieux).
     - Ajoute 'last_reminder_at' pour le suivi des relances.
+    - Ajoute 'reminder_count' pour l'escalade des relances (10min, 30min, 1h...).
     - Rend 'name' et 'phone' NULL-able pour permettre la sauvegarde progressive
       (on peut avoir le nom sans encore avoir le téléphone).
     Idempotent : peut être exécuté à chaque démarrage sans effet de bord si déjà appliqué.
@@ -102,6 +108,7 @@ async def ensure_users_schema():
     ddl_statements = [
         "ALTER TABLE users ADD COLUMN profession VARCHAR(255) NULL",
         "ALTER TABLE users ADD COLUMN last_reminder_at DATETIME NULL",
+        "ALTER TABLE users ADD COLUMN reminder_count INT NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN name_at DATETIME NULL",
         "ALTER TABLE users ADD COLUMN phone_at DATETIME NULL",
         "ALTER TABLE users ADD COLUMN profession_at DATETIME NULL",
@@ -209,10 +216,25 @@ async def get_incomplete_telegram_ids():
     return [r["telegram_id"] for r in rows]
 
 
+async def get_incomplete_users_full():
+    """Comme get_incomplete_telegram_ids mais avec les infos nécessaires à
+    l'escalade des relances (created_at, last_reminder_at, reminder_count)."""
+    async with sync_get_db() as cur:
+        await cur.execute(
+            "SELECT telegram_id, created_at, last_reminder_at, reminder_count "
+            "FROM users WHERE "
+            "(name IS NULL OR name = '') "
+            "OR (phone IS NULL OR phone = '') "
+            "OR (profession IS NULL OR profession = '')"
+        )
+        return await cur.fetchall()
+
+
 async def mark_reminder_sent(telegram_id):
     async with sync_get_db() as cur:
         await cur.execute(
-            "UPDATE users SET last_reminder_at=NOW() WHERE telegram_id=%s",
+            "UPDATE users SET last_reminder_at=NOW(), reminder_count=reminder_count+1 "
+            "WHERE telegram_id=%s",
             (telegram_id,)
         )
 
@@ -278,6 +300,81 @@ keyboard = InlineKeyboardMarkup([
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# TEXTES & OUTILS RÉUTILISABLES POUR LE TUNNEL D'ENREGISTREMENT
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Questions réutilisables (centralisées pour reprise / relance) ────────────
+NAME_Q  = "👤 Quel est votre <b>nom et prénom</b> ?\n\n<i>Exemple :</i>\nFiacre Kpanou"
+PHONE_Q = "📱 Quel est votre numéro WhatsApp ?\n\nExemple : +229 97 00 00 00"
+JOB_Q   = ("💼 Quelle est votre profession ou votre activité ?\n\n"
+           "Exemple :\nÉtudiant\nCommerçant\nEmployé\nEntrepreneur")
+
+# Rempli une fois NAME/PHONE/JOB connus (voir _init_state_questions plus bas)
+_STATE_QUESTION = {}
+
+WELCOME_TEXT = (
+    "🎉 <b>Félicitations !</b>\n\n"
+    "Votre demande a été acceptée et vous êtes <b>éligible</b> pour participer à "
+    "<b>FDK CAPITAL CONCEPT</b>.\n\n"
+    "📝 Pour valider définitivement votre participation, vous devez maintenant vous enregistrer.\n\n"
+    "Commençons.\n\n" + NAME_Q
+)
+
+ALREADY_REGISTERED_TEXT = (
+    "✅ <b>Vous êtes déjà inscrit !</b>\n\n"
+    "Votre enregistrement est complet et vous êtes bien <b>éligible</b>.\n\n"
+    "🎯 Vous figurez officiellement sur la liste des participants de "
+    "<b>FDK CAPITAL CONCEPT</b>.\n\n"
+    "📅 Chaque samedi, les bénéficiaires sont sélectionnés en direct devant toute la communauté."
+)
+
+RESUME_INTRO_TEXT = (
+    "👋 <b>Content de vous revoir !</b>\n\n"
+    "Il vous reste juste quelques informations à compléter pour finaliser votre "
+    "inscription à <b>FDK CAPITAL CONCEPT</b>."
+)
+
+REMINDER_TEXT = (
+    "⏳ <b>Votre inscription n'est pas terminée</b>\n\n"
+    "Il vous manque encore quelques informations pour valider votre participation à "
+    "<b>FDK CAPITAL CONCEPT</b>.\n\n"
+    "👇 Cliquez sur le bouton pour reprendre là où vous vous êtes arrêté."
+)
+
+# Bouton de reprise attaché aux relances
+resume_keyboard = InlineKeyboardMarkup([
+    [InlineKeyboardButton("▶️ Terminer mon enregistrement",
+                          callback_data="resume_registration")]
+])
+
+
+def _init_state_questions():
+    _STATE_QUESTION.update({NAME: NAME_Q, PHONE: PHONE_Q, JOB: JOB_Q})
+
+
+_init_state_questions()
+
+
+def _missing_field_state(name, phone, profession):
+    """Renvoie l'étape (NAME/PHONE/JOB) manquante, ou None si tout est rempli."""
+    if not (name and str(name).strip()):
+        return NAME
+    if not (phone and str(phone).strip()):
+        return PHONE
+    if not (profession and str(profession).strip()):
+        return JOB
+    return None
+
+
+async def _prompt_state(bot, chat_id, state, resume=False):
+    """Envoie la question correspondant à l'étape manquante."""
+    q = _STATE_QUESTION[state]
+    if resume:
+        q = "▶️ <b>Reprenons votre enregistrement.</b>\n\n" + q
+    await bot.send_message(chat_id=chat_id, text=q, parse_mode="HTML")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # TUNNEL D'ENREGISTREMENT (ConversationHandler)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -297,10 +394,7 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         asyncio.create_task(check_and_notify_milestone(context.bot))
 
     try:
-        await update.message.reply_text(
-            "📱 Quel est votre numéro WhatsApp ?\n\n"
-            "Exemple : +229 97 00 00 00"
-        )
+        await update.message.reply_text(PHONE_Q, parse_mode="HTML")
     except Exception as e:
         logger.exception(f"[get_name] échec envoi message pour {user_id}")
         await notify_admin(context.bot, "Échec envoi message (get_name)", f"user_id={user_id}\n{e}")
@@ -324,14 +418,7 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         asyncio.create_task(check_and_notify_milestone(context.bot))
 
     try:
-        await update.message.reply_text(
-            "💼 Quelle est votre profession ou votre activité ?\n\n"
-            "Exemple :\n"
-            "Étudiant\n"
-            "Commerçant\n"
-            "Employé\n"
-            "Entrepreneur"
-        )
+        await update.message.reply_text(JOB_Q, parse_mode="HTML")
     except Exception as e:
         logger.exception(f"[get_phone] échec envoi message pour {user_id}")
         await notify_admin(context.bot, "Échec envoi message (get_phone)", f"user_id={user_id}\n{e}")
@@ -390,6 +477,47 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# REPRISE VIA BOUTON — relit la base et repositionne l'étape manquante
+# (entry point de la conversation : fonctionne même après un redémarrage du bot)
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def resume_registration(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+
+    name = phone = profession = None
+    try:
+        row = await get_user_row(user_id)
+        if row:
+            name, phone, profession = row
+    except Exception as e:
+        logger.exception(f"[resume] échec get_user_row pour {user_id}")
+        await notify_admin(context.bot, "Échec get_user_row (resume)", f"user_id={user_id}\n{e}")
+
+    state = _missing_field_state(name, phone, profession)
+
+    if state is None:
+        # Déjà complet : on confirme simplement
+        try:
+            await context.bot.send_message(chat_id=user_id, text=ALREADY_REGISTERED_TEXT,
+                                           parse_mode="HTML")
+        except Exception as e:
+            logger.warning(f"[resume] échec confirmation à {user_id}: {e}")
+        return ConversationHandler.END
+
+    # On restaure ce qu'on connaît déjà et on reprend à l'étape manquante
+    context.user_data["name"]  = name
+    context.user_data["phone"] = phone
+    try:
+        await _prompt_state(context.bot, user_id, state, resume=True)
+    except Exception as e:
+        logger.warning(f"[resume] échec prompt à {user_id}: {e}")
+        return ConversationHandler.END
+    return state
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # APPROBATION DES DEMANDES D'ADHÉSION — point d'entrée du ConversationHandler
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -430,27 +558,43 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.exception(f"[join] categorie error pour {user_id}")
         await notify_admin(context.bot, "Erreur lors de l'ajout à la catégorie", f"user_id={user_id}\n{e}")
 
-    # 4. Envoi du message d'accueil / démarrage du tunnel d'enregistrement
+    # 4. Vérifier l'état d'enregistrement AVANT d'écrire :
+    #    - déjà complet  -> message "déjà inscrit / éligible"
+    #    - tout nouveau  -> message de bienvenue (demande le nom)
+    #    - incomplet     -> on reprend exactement là où il en était
+    #
     #    ATTENTION : Telegram interdit à un bot d'initier une conversation privée
     #    avec un utilisateur qui n'a jamais démarré /start avec lui. Une demande
     #    d'adhésion à un canal NE GARANTIT PAS cela. C'est la cause la plus probable
     #    d'un enregistrement qui "ne se déclenche jamais" pour certains utilisateurs.
+    name = phone = profession = None
     try:
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=(
-                "🎉 <b>Félicitations !</b>\n\n"
-                "Votre demande a été acceptée et vous êtes <b>éligible</b> pour participer à "
-                "<b>FDK CAPITAL CONCEPT</b>.\n\n"
-                "📝 Pour valider définitivement votre participation, vous devez maintenant vous enregistrer.\n\n"
-                "Commençons.\n\n"
-                "👤 Quel est votre <b>nom et prénom</b> ?\n\n"
-                "<i>Exemple :</i>\n"
-                "Fiacre Kpanou"
-            ),
-            parse_mode="HTML"
-        )
-        return NAME
+        row = await get_user_row(user_id)
+        if row:
+            name, phone, profession = row
+    except Exception as e:
+        logger.exception(f"[join] échec get_user_row pour {user_id}")
+
+    state = _missing_field_state(name, phone, profession)
+
+    try:
+        if state is None:
+            # Déjà inscrit et complet
+            await context.bot.send_message(chat_id=user_id,
+                                           text=ALREADY_REGISTERED_TEXT, parse_mode="HTML")
+            return ConversationHandler.END
+
+        if not name and not phone and not profession:
+            # Tout nouveau → message de bienvenue complet (contient la question du nom)
+            await context.bot.send_message(chat_id=user_id, text=WELCOME_TEXT, parse_mode="HTML")
+            return NAME
+
+        # Incomplet → on reprend exactement là où il en était
+        context.user_data["name"]  = name
+        context.user_data["phone"] = phone
+        await context.bot.send_message(chat_id=user_id, text=RESUME_INTRO_TEXT, parse_mode="HTML")
+        await _prompt_state(context.bot, user_id, state)
+        return state
 
     except Forbidden as e:
         # L'utilisateur n'a jamais démarré de conversation privée avec le bot,
@@ -462,69 +606,81 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
             "Utilisateur non joignable en privé après approbation",
             f"user_id={user_id}\n"
             "L'utilisateur n'a probablement jamais démarré /start avec le bot. "
-            "Il sera relancé automatiquement par le scheduler dès que possible.\n"
+            "Il sera relancé automatiquement dès que possible.\n"
             f"{e}"
         )
         return ConversationHandler.END
 
     except Exception as e:
-        logger.exception(f"[join] erreur inattendue envoi message bienvenue à {user_id}")
-        await notify_admin(context.bot, "Erreur envoi message de bienvenue", f"user_id={user_id}\n{e}")
+        logger.exception(f"[join] erreur inattendue envoi message d'accueil à {user_id}")
+        await notify_admin(context.bot, "Erreur envoi message d'accueil", f"user_id={user_id}\n{e}")
         return ConversationHandler.END
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# RELANCE AUTOMATIQUE — toutes les 3h, utilisateurs incomplets
+# RELANCE AUTOMATIQUE — escalade : 10min, 30min, 1h, 2h, 4h, 8h, 16h, puis 24h
+# Chaque relance porte un bouton "Terminer mon enregistrement".
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Intervalles ENTRE relances (minutes). Une fois la liste épuisée, on reste
+# sur le dernier (24h) indéfiniment.
+REMINDER_OFFSETS_MINUTES = [10, 30, 60, 120, 240, 480, 960, 1440]
+
+
 async def registration_reminder_loop(bot):
-    INTERVAL_SECONDS = 3 * 60 * 60  # 3h
+    CHECK_INTERVAL = 60  # on vérifie chaque minute qui est "dû"
 
     while True:
         try:
-            await asyncio.sleep(INTERVAL_SECONDS)
+            await asyncio.sleep(CHECK_INTERVAL)
 
             try:
-                telegram_ids = await get_incomplete_telegram_ids()
+                rows = await get_incomplete_users_full()
             except Exception as e:
                 logger.exception("[reminder] échec récupération des utilisateurs incomplets")
                 await notify_admin(bot, "Échec requête utilisateurs incomplets", str(e))
                 continue
 
+            now = datetime.now()
             sent, failed = 0, 0
-            for user_id in telegram_ids:
+
+            for r in rows:
+                user_id = r["telegram_id"]
                 if not user_id:
                     continue
+
+                count = int(r.get("reminder_count") or 0)
+                # Étape suivante du barème (plafonnée au dernier = 24h en boucle)
+                idx = min(count, len(REMINDER_OFFSETS_MINUTES) - 1)
+                offset = timedelta(minutes=REMINDER_OFFSETS_MINUTES[idx])
+
+                # Point de départ : dernière relance, sinon date de création
+                last_event = r.get("last_reminder_at") or r.get("created_at")
+                if last_event is None:
+                    continue
+                if now - last_event < offset:
+                    continue  # pas encore l'heure de relancer
+
                 try:
                     await bot.send_message(
                         chat_id=int(user_id),
-                        text=(
-                            "👋 <b>Rappel important</b>\n\n"
-                            f"Vous n'avez pas terminé votre enregistrement pour "
-                            f"<b>{CATEGORIE}</b>.\n\n"
-                            "Merci de reprendre la conversation et de compléter les informations "
-                            "demandées (nom, numéro WhatsApp, profession) pour valider "
-                            "définitivement votre participation."
-                        ),
+                        text=REMINDER_TEXT,
                         parse_mode="HTML",
+                        reply_markup=resume_keyboard,
                     )
                     sent += 1
                     await mark_reminder_sent(user_id)
                     await bump_reminder_counter()
-                    await asyncio.sleep(0.05)  # anti flood
+                    await asyncio.sleep(0.05)  # anti-flood
                 except Forbidden:
-                    # utilisateur n'a jamais démarré le bot ou l'a bloqué : normal, on ignore
+                    # jamais démarré /start ou a bloqué le bot : normal, on ignore
                     failed += 1
                 except Exception as e:
                     failed += 1
                     logger.warning(f"[reminder] échec envoi à {user_id}: {e}")
 
-            if telegram_ids:
-                await notify_admin(
-                    bot,
-                    "📋 Rapport de relance d'enregistrement",
-                    f"Utilisateurs incomplets: {len(telegram_ids)}\nRelances envoyées: {sent}\nÉchecs: {failed}",
-                )
+            if sent or failed:
+                logger.info(f"[reminder] cycle terminé — envoyées={sent} échecs={failed}")
 
         except Exception as e:
             logger.exception("[reminder] erreur inattendue dans la boucle")
@@ -645,6 +801,7 @@ async def cmd_stats_now(update, context):
         reminders_today = _daily_reminders_sent
         completion_rate_global = _pct(s["total_completed"], s["total_users"])
         completion_rate_today  = _pct(s["completed_today"], s["new_today"])
+        completion_rate_week   = _pct(s["completed_this_week"], s["new_this_week"])
         total_stuck = s["stuck_before_name"] + s["stuck_at_phone"] + s["stuck_at_profession"]
 
         report = (
@@ -655,7 +812,11 @@ async def cmd_stats_now(update, context):
             f"• Nouvelles inscriptions complètes : <b>{s['completed_today']}</b>\n"
             f"• Taux de complétion du jour : <b>{completion_rate_today}</b>\n"
             f"• Relances envoyées : <b>{reminders_today}</b>\n\n"
-            f"<b>🌍 Cumul global</b>\n"
+            f"<b>📆 Cette semaine</b>\n"
+            f"• Nouvelles demandes approuvées : <b>{s['new_this_week']}</b>\n"
+            f"• Nouvelles inscriptions complètes : <b>{s['completed_this_week']}</b>\n"
+            f"• Taux de complétion de la semaine : <b>{completion_rate_week}</b>\n\n"
+            f"<b>🌍 Cumul (depuis le {datetime.strptime(STATS_START_DATE, '%Y-%m-%d').strftime('%d/%m/%Y')})</b>\n"
             f"• Total utilisateurs approuvés : <b>{s['total_users']}</b>\n"
             f"• Total inscriptions complètes : <b>{s['total_completed']}</b>\n"
             f"• Taux de complétion global : <b>{completion_rate_global}</b>\n\n"
@@ -699,16 +860,34 @@ async def compute_daily_stats() -> dict:
         )
         stats["completed_today"] = int((await cur.fetchone())["n"])
 
-        # ─── Totaux cumulés ─────────────────────────────────────────
-        await cur.execute("SELECT COUNT(*) AS n FROM users")
+        # ─── Volumes de la semaine en cours (semaine ISO, lundi→dimanche) ──
+        await cur.execute(
+            "SELECT COUNT(*) AS n FROM users "
+            "WHERE YEARWEEK(created_at, 3) = YEARWEEK(CURDATE(), 3)"
+        )
+        stats["new_this_week"] = int((await cur.fetchone())["n"])
+
+        await cur.execute(
+            "SELECT COUNT(*) AS n FROM users "
+            "WHERE YEARWEEK(completed_at, 3) = YEARWEEK(CURDATE(), 3)"
+        )
+        stats["completed_this_week"] = int((await cur.fetchone())["n"])
+
+        # ─── Totaux cumulés (à partir de la date de lancement) ──────
+        await cur.execute(
+            "SELECT COUNT(*) AS n FROM users WHERE created_at >= %s",
+            (STATS_START_DATE,)
+        )
         stats["total_users"] = int((await cur.fetchone())["n"])
 
         await cur.execute(
-            "SELECT COUNT(*) AS n FROM users WHERE completed_at IS NOT NULL"
+            "SELECT COUNT(*) AS n FROM users "
+            "WHERE completed_at IS NOT NULL AND created_at >= %s",
+            (STATS_START_DATE,)
         )
         stats["total_completed"] = int((await cur.fetchone())["n"])
 
-        # ─── Funnel — où les gens abandonnent ───────────────────────
+        # ─── Funnel — où les gens abandonnent (depuis le lancement) ─
         await cur.execute(
             "SELECT "
             "  SUM(CASE WHEN name IS NULL OR name = '' THEN 1 ELSE 0 END)         AS stuck_before_name, "
@@ -716,7 +895,8 @@ async def compute_daily_stats() -> dict:
             "           AND (phone IS NULL OR phone = '') THEN 1 ELSE 0 END)       AS stuck_at_phone, "
             "  SUM(CASE WHEN phone IS NOT NULL AND phone <> '' "
             "           AND (profession IS NULL OR profession = '') THEN 1 ELSE 0 END) AS stuck_at_profession "
-            "FROM users"
+            "FROM users WHERE created_at >= %s",
+            (STATS_START_DATE,)
         )
         row = await cur.fetchone() or {}
         stats["stuck_before_name"]     = int(row.get("stuck_before_name") or 0)
@@ -755,12 +935,20 @@ async def compute_daily_stats() -> dict:
         )
         stats["avg_total_completion_s"] = float((await cur.fetchone())["avg_s"] or 0)
 
-        # ─── Statistiques du jour uniquement (pour comparaison) ─────
+        # ─── Réactivité du jour (pour comparaison) ──────────────────
         await cur.execute(
             "SELECT AVG(TIMESTAMPDIFF(SECOND, created_at, name_at)) AS avg_s "
             "FROM users WHERE DATE(name_at) = CURDATE() AND name_at >= created_at"
         )
         stats["avg_created_to_name_today_s"] = float((await cur.fetchone())["avg_s"] or 0)
+
+        # ─── Réactivité de la semaine en cours ──────────────────────
+        await cur.execute(
+            "SELECT AVG(TIMESTAMPDIFF(SECOND, created_at, name_at)) AS avg_s "
+            "FROM users WHERE YEARWEEK(name_at, 3) = YEARWEEK(CURDATE(), 3) "
+            "AND name_at >= created_at"
+        )
+        stats["avg_created_to_name_week_s"] = float((await cur.fetchone())["avg_s"] or 0)
 
     return stats
 
@@ -798,8 +986,10 @@ async def send_daily_stats_report(bot):
     reminders_today = _daily_reminders_sent
     completion_rate_global = _pct(s["total_completed"], s["total_users"])
     completion_rate_today  = _pct(s["completed_today"], s["new_today"])
+    completion_rate_week   = _pct(s["completed_this_week"], s["new_this_week"])
 
     total_stuck = s["stuck_before_name"] + s["stuck_at_phone"] + s["stuck_at_profession"]
+    start_fr = datetime.strptime(STATS_START_DATE, '%Y-%m-%d').strftime('%d/%m/%Y')
 
     report = (
         f"📊 <b>Bilan quotidien — {datetime.now().strftime('%d/%m/%Y')}</b>\n"
@@ -811,7 +1001,12 @@ async def send_daily_stats_report(bot):
         f"• Taux de complétion du jour : <b>{completion_rate_today}</b>\n"
         f"• Relances envoyées : <b>{reminders_today}</b>\n\n"
 
-        f"<b>🌍 Cumul global</b>\n"
+        f"<b>📆 Cette semaine</b>\n"
+        f"• Nouvelles demandes approuvées : <b>{s['new_this_week']}</b>\n"
+        f"• Nouvelles inscriptions complètes : <b>{s['completed_this_week']}</b>\n"
+        f"• Taux de complétion de la semaine : <b>{completion_rate_week}</b>\n\n"
+
+        f"<b>🌍 Cumul (depuis le {start_fr})</b>\n"
         f"• Total utilisateurs approuvés : <b>{s['total_users']}</b>\n"
         f"• Total inscriptions complètes : <b>{s['total_completed']}</b>\n"
         f"• Taux de complétion global : <b>{completion_rate_global}</b>\n\n"
@@ -822,11 +1017,13 @@ async def send_daily_stats_report(bot):
         f"• Téléphone → Profession : <b>{_fmt_duration(s['avg_phone_to_profession_s'])}</b>\n"
         f"• Durée totale d'inscription : <b>{_fmt_duration(s['avg_total_completion_s'])}</b>\n\n"
 
-        f"<b>⏱ Réactivité du jour</b>\n"
+        f"<b>⏱ Réactivité</b>\n"
         f"• Approbation → 1er message aujourd'hui : "
-        f"<b>{_fmt_duration(s['avg_created_to_name_today_s'])}</b>\n\n"
+        f"<b>{_fmt_duration(s['avg_created_to_name_today_s'])}</b>\n"
+        f"• Approbation → 1er message cette semaine : "
+        f"<b>{_fmt_duration(s['avg_created_to_name_week_s'])}</b>\n\n"
 
-        f"<b>🚨 Funnel — points de blocage (total)</b>\n"
+        f"<b>🚨 Funnel — points de blocage (depuis le lancement)</b>\n"
         f"• N'ont jamais envoyé leur nom : <b>{s['stuck_before_name']}</b> "
         f"({_pct(s['stuck_before_name'], s['total_users'])})\n"
         f"• Bloqués à l'étape téléphone : <b>{s['stuck_at_phone']}</b> "
@@ -966,7 +1163,7 @@ if __name__ == "__main__":
     print("[main] Pool OK ✓")
 
     loop.run_until_complete(ensure_users_schema())
-    print("[main] Schéma users (profession, name/phone nullable) OK ✓")
+    print("[main] Schéma users (profession, name/phone nullable, reminder_count) OK ✓")
 
     loop.run_until_complete(ensure_capital_schema())
     loop.run_until_complete(ensure_campaign_schema())
@@ -1005,14 +1202,20 @@ if __name__ == "__main__":
 
     app.post_init = _post_init
 
-    # ── Tunnel d'enregistrement : déclenché par la demande d'adhésion,
+    # ── Tunnel d'enregistrement : déclenché par la demande d'adhésion OU par le
+    #    bouton "Terminer mon enregistrement" (relance / reprise après restart),
     #    poursuivi par les réponses privées de l'utilisateur.
+    resume_entry = CallbackQueryHandler(resume_registration, pattern="^resume_registration$")
+
     registration_conv = ConversationHandler(
-        entry_points=[ChatJoinRequestHandler(approve_join_request)],
+        entry_points=[
+            ChatJoinRequestHandler(approve_join_request),
+            resume_entry,
+        ],
         states={
-            NAME:  [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
-            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
-            JOB:   [MessageHandler(filters.TEXT & ~filters.COMMAND, get_job)],
+            NAME:  [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name),  resume_entry],
+            PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone), resume_entry],
+            JOB:   [MessageHandler(filters.TEXT & ~filters.COMMAND, get_job),   resume_entry],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         per_chat=False,   # la demande arrive sur le canal, les réponses en privé
