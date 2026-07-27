@@ -396,7 +396,32 @@ phone_share_keyboard = ReplyKeyboardMarkup(
 PHONE_Q = "📱 Partagez votre numéro WhatsApp en un clic 👇"
 
 # ── Étape 3 : Nom ───────────────────────────────────────────────────────────
-NAME_Q = "👤 Envoyez-moi votre <b>nom et prénom</b>.\n\n<i>Exemple :</i>\nFiacre Kpanou"
+NAME_Q = (
+    "⚠️ <b>Attention !</b>\n"
+    "\n"
+    "Nous y sommes presque 😊\n"
+    "\n"
+    "Il ne reste plus qu'une dernière étape pour finaliser votre inscription.\n"
+    "\n"
+    "👤 Envoyez simplement votre <b>nom et votre prénom</b>.\n"
+    "\n"
+    "<i>Exemple :</i>\n"
+    "Fiacre Kpanou\n"
+    "\n"
+    "✅ Dès que vous les envoyez, votre inscription sera finalisée."
+)
+
+# ── Messages de redirection si l'utilisateur envoie du texte au mauvais moment
+LEVEL_REDIRECT_TEXT = (
+    "⚠️ <b>Attention !</b>\n"
+    "\n"
+    "Il faut cliquer sur <b>votre niveau</b> juste en dessous 👇"
+)
+PHONE_REDIRECT_TEXT = (
+    "⚠️ <b>Attention !</b>\n"
+    "\n"
+    "Il faut cliquer sur <b>« 📱 Partager mon numéro »</b> juste au niveau de votre clavier 👇"
+)
 
 WELCOME_TEXT = (
     "🎉 <b>Félicitations !</b>\n\n"
@@ -410,7 +435,7 @@ ALREADY_REGISTERED_TEXT = (
     "Votre enregistrement est complet et vous êtes bien <b>éligible</b>.\n\n"
     "🎯 Vous figurez officiellement sur la liste des participants de "
     "<b>FDK CAPITAL CONCEPT</b>.\n\n"
-    "📅 Chaque samedi, les bénéficiaires sont sélectionnés en direct devant toute la communauté."
+    "📅 Chaque samedi, les gagnants sont sélectionnés en direct devant toute la communauté."
 )
 
 RESUME_INTRO_TEXT = (
@@ -509,21 +534,31 @@ async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Étape 2 : réception du contact (bouton natif) ou fallback texte."""
+    """Étape 2 : réception UNIQUEMENT du contact (bouton natif).
+    Le texte libre est traité par phone_redirect() qui redirige vers le bouton."""
     user_id = update.effective_user.id
 
-    if update.message.contact is not None:
-        phone = update.message.contact.phone_number
-        source = "contact"
-    else:
-        phone = update.message.text.strip()
-        source = "text"
+    # À ce stade on est certain d'avoir un contact (filters.CONTACT sur le handler)
+    if update.message.contact is None:
+        # Filet de sécurité : ne devrait jamais arriver
+        log_error("get_phone appelé sans contact", f"user_id={user_id}")
+        try:
+            await update.message.reply_text(
+                PHONE_REDIRECT_TEXT, parse_mode="HTML",
+                reply_markup=phone_share_keyboard,
+            )
+        except Exception:
+            pass
+        return PHONE
+
+    phone = update.message.contact.phone_number
+    source = "contact"
 
     if not phone:
         log_error("Numéro vide reçu", f"user_id={user_id} source={source}")
         try:
             await update.message.reply_text(
-                "Je n'ai pas reçu votre numéro, réessayez avec le bouton 👇",
+                PHONE_REDIRECT_TEXT, parse_mode="HTML",
                 reply_markup=phone_share_keyboard,
             )
         except Exception:
@@ -591,7 +626,7 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "✅ <b>Vous êtes maintenant enregistré !</b>\n\n"
             "Votre candidature a bien été prise en compte.\n\n"
-            "📅 Chaque samedi, les bénéficiaires sont sélectionnés en direct devant toute la communauté.\n\n"
+            "📅 Chaque samedi, les gagnants sont sélectionnés en direct devant toute la communauté.\n\n"
             "🎯 Vous faites désormais officiellement partie des participants.",
             parse_mode="HTML"
         )
@@ -609,6 +644,34 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data.clear()
     return ConversationHandler.END
+
+
+async def level_redirect(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """L'utilisateur envoie du texte à l'étape LEVEL au lieu de cliquer un bouton :
+    on lui redemande gentiment de cliquer, avec les boutons réattachés."""
+    try:
+        await update.message.reply_text(
+            LEVEL_REDIRECT_TEXT, parse_mode="HTML", reply_markup=level_keyboard,
+        )
+    except Exception as e:
+        logger.exception("[level_redirect] échec envoi")
+        log_error("Échec envoi level_redirect",
+                  f"user_id={update.effective_user.id} — {e}")
+    return LEVEL
+
+
+async def phone_redirect(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """L'utilisateur envoie du texte à l'étape PHONE au lieu de partager son contact :
+    on lui redemande gentiment d'appuyer sur le bouton du clavier."""
+    try:
+        await update.message.reply_text(
+            PHONE_REDIRECT_TEXT, parse_mode="HTML", reply_markup=phone_share_keyboard,
+        )
+    except Exception as e:
+        logger.exception("[phone_redirect] échec envoi")
+        log_error("Échec envoi phone_redirect",
+                  f"user_id={update.effective_user.id} — {e}")
+    return PHONE
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1445,9 +1508,17 @@ if __name__ == "__main__":
             resume_entry,
         ],
         states={
-            LEVEL: [CallbackQueryHandler(get_level, pattern=r"^level:\d+$"), resume_entry],
+            LEVEL: [
+                CallbackQueryHandler(get_level, pattern=r"^level:\d+$"),
+                # Texte reçu à cette étape → on redirige vers les boutons
+                MessageHandler(filters.TEXT & ~filters.COMMAND, level_redirect),
+                resume_entry,
+            ],
             PHONE: [
-                MessageHandler(filters.CONTACT | (filters.TEXT & ~filters.COMMAND), get_phone),
+                # Seul le contact partagé fait avancer
+                MessageHandler(filters.CONTACT, get_phone),
+                # Tout texte → redirection vers le bouton "Partager mon numéro"
+                MessageHandler(filters.TEXT & ~filters.COMMAND, phone_redirect),
                 resume_entry,
             ],
             NAME:  [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name), resume_entry],
