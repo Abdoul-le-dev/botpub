@@ -389,6 +389,9 @@ async def _form_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             from telegram_page.start_handler import process_start_link
             form_id = await process_start_link(update, context, user_id, user.first_name, start_param)
 
+            if form_id == "__engagement__":
+                return ConversationHandler.END
+            
             if form_id == "__validation__":
                 return FORM_STEP
             if not form_id:

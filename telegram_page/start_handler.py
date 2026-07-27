@@ -6,9 +6,31 @@ from db import get_db
 
 VALIDATION_START_PARAM = "fdkgoldsaison"
 
+# Sentinelle retournée quand un scénario d'engagement a traité l'update.
+# form_engine.py doit reconnaître cette valeur et terminer sa conversation.
+ENGAGEMENT_SENTINEL = "__engagement__"
+
 
 async def process_start_link(update, context, user_id: int, first_name: str, start_param: str):
     print(f"[start_handler] process_start_link user={user_id} param={start_param}")
+
+    # ────────────────────────────────────────────────────────────────────
+    # ROUTAGE ENGAGEMENT — priorité absolue.
+    # Les deep links commençant par "fdk_concept_capital_" sont routés
+    # vers le module d'engagement AVANT toute autre logique (pas d'INSERT
+    # users bidon avec phone='0000', pas de lookup dans invite_links).
+    # ────────────────────────────────────────────────────────────────────
+    if start_param:
+        try:
+            from engagement import is_engagement_payload, handle_deeplink
+            if is_engagement_payload(start_param):
+                await handle_deeplink(update, context, start_param)
+                return ENGAGEMENT_SENTINEL
+        except Exception as e:
+            # On log mais on ne casse pas le flow existant : si le module
+            # engagement plante à l'import ou au dispatch, on retombe sur
+            # le comportement historique.
+            print(f"[start_handler] engagement routing error: {e}")
 
     async with get_db() as cur:
         await cur.execute(

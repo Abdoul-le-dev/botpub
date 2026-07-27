@@ -200,33 +200,50 @@ def _append_vote_file(telegram_id: int, name: str, vote: str):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ENTRÉE — dispatch depuis /start <payload>
+# ENTRÉE PUBLIQUE — appelée depuis telegram_page/start_handler.py
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def start_engagement(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Point d'entrée : reçoit /start <payload> et dispatche vers le bon
-    scénario. Les payloads inconnus (ou /start sans payload) sont ignorés
-    pour ne rien casser des usages existants."""
-    args = context.args or []
-    if not args:
-        return  # /start nu : on laisse le reste du bot répondre si besoin
+def is_engagement_payload(start_param: str) -> bool:
+    """Retourne True si le start_param correspond à un scénario d'engagement.
+    Utilisé par process_start_link() pour router avant tout autre traitement."""
+    if not start_param:
+        return False
+    if not start_param.startswith(DEEPLINK_PREFIX):
+        return False
+    key = start_param[len(DEEPLINK_PREFIX):]
+    return key in SCENARIOS
 
-    payload = args[0].strip()
-    if not payload.startswith(DEEPLINK_PREFIX):
-        return  # payload étranger : on ne s'en mêle pas
 
-    key = payload[len(DEEPLINK_PREFIX):]
+async def handle_deeplink(update: Update,
+                          context: ContextTypes.DEFAULT_TYPE,
+                          start_param: str) -> bool:
+    """Route un start_param vers le bon scénario d'engagement.
+
+    Appelée par process_start_link() dans telegram_page/start_handler.py.
+
+    Retourne True si un scénario a été traité (l'appelant doit alors
+    interrompre son traitement normal), False sinon.
+    """
+    if not start_param or not start_param.startswith(DEEPLINK_PREFIX):
+        return False
+
+    key = start_param[len(DEEPLINK_PREFIX):]
     scenario = SCENARIOS.get(key)
     if scenario is None:
         logger.info(f"[engagement] scénario inconnu: {key!r}")
-        return
+        return False
 
     try:
         await scenario(update, context)
+        return True
     except Exception as e:
         logger.exception(f"[engagement] erreur scénario {key}")
         log_error(f"Erreur scénario {key}",
                   f"user_id={update.effective_user.id} — {e}")
+        # Même en cas d'erreur on retourne True : l'utilisateur a reçu
+        # (ou aurait dû recevoir) une réponse d'engagement, l'appelant
+        # ne doit pas enchaîner sur un autre flow.
+        return True
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -678,32 +695,32 @@ SCENARIOS = {
 # ══════════════════════════════════════════════════════════════════════════════
 
 def register_engagement_handlers(app: Application):
-    """Enregistre tous les handlers du module.
+    """Enregistre les handlers du module (hors dispatch /start).
+
+    Le dispatch des deep links (/start fdk_concept_capital_*) est fait
+    par telegram_page/start_handler.py qui appelle handle_deeplink().
+    Ici on enregistre uniquement les handlers de suivi (boutons,
+    capture texte motivation, commande admin).
 
     Doit être appelé APRÈS `app.add_handler(registration_conv)` dans main.py
     pour que le callback 'resume_registration' reste bien capté par le tunnel
     d'inscription existant (priorité au ConversationHandler).
     """
 
-    # 1) Point d'entrée : /start <payload>
-    #    On enregistre en groupe 5 (avant le groupe 99 log_unhandled_message
-    #    et hors du tunnel d'inscription qui n'écoute pas /start).
-    app.add_handler(CommandHandler("start", start_engagement), group=5)
-
-    # 2) Boutons scénario motivation (Voir / Modifier)
+    # 1) Boutons scénario motivation (Voir / Modifier)
     app.add_handler(
         CallbackQueryHandler(_on_motivation_button, pattern=r"^eng:mot:(view|edit)$"),
         group=5,
     )
 
-    # 3) Boutons scénario vote (Voir / Modifier / Cast)
+    # 2) Boutons scénario vote (Voir / Modifier / Cast)
     app.add_handler(
         CallbackQueryHandler(_on_vote_button,
                              pattern=r"^eng:vote:(view|edit|cast:[123])$"),
         group=5,
     )
 
-    # 4) Capture de la réponse texte de motivation.
+    # 3) Capture de la réponse texte de motivation.
     #    Groupe 10 : après le tunnel d'inscription (groupe par défaut 0),
     #    avant le log_unhandled_message (groupe 99). Ne fait rien si le
     #    flag engagement_awaiting n'est pas armé -> aucun impact sur le reste.
@@ -717,10 +734,10 @@ def register_engagement_handlers(app: Application):
         group=10,
     )
 
-    # 5) Commande admin
+    # 4) Commande admin
     app.add_handler(CommandHandler("engagement", cmd_engagement), group=5)
 
-    # 6) S'assure que les nouvelles colonnes existent, au premier démarrage
+    # 5) S'assure que les nouvelles colonnes existent, au premier démarrage
     #    (via post_init pour rester dans la boucle asyncio du bot)
     previous_post_init = app.post_init
 
