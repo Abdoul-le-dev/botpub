@@ -74,7 +74,7 @@ async def notify_admin(bot, title: str, detail: str = ""):
 # SCHÉMA — table `users` réelle : ajout colonne profession + assouplissement NOT NULL
 # ══════════════════════════════════════════════════════════════════════════════
 
-def ensure_users_schema():
+async def ensure_users_schema():
     """
     - Ajoute la colonne 'profession' (absente du schéma d'origine, alors que
       l'ancien code appelait save_user(profession=...) -> TypeError silencieux).
@@ -82,6 +82,7 @@ def ensure_users_schema():
     - Rend 'name' et 'phone' NULL-able pour permettre la sauvegarde progressive
       (on peut avoir le nom sans encore avoir le téléphone).
     Idempotent : peut être exécuté à chaque démarrage sans effet de bord si déjà appliqué.
+    Utilise db.get_db() (aiomysql, pool async) — même connexion que le reste du bot.
     """
     ddl_statements = [
         "ALTER TABLE users ADD COLUMN profession VARCHAR(255) NULL",
@@ -89,103 +90,84 @@ def ensure_users_schema():
         "ALTER TABLE users MODIFY COLUMN name VARCHAR(255) NULL",
         "ALTER TABLE users MODIFY COLUMN phone VARCHAR(50) NULL",
     ]
-    with sync_get_db() as conn:
+    async with sync_get_db() as cur:
         for stmt in ddl_statements:
             try:
-                conn.execute(stmt)
+                await cur.execute(stmt)
             except Exception as e:
+                # 1060 = Duplicate column name (MySQL) -> déjà appliqué, on ignore
                 if "1060" in str(e) or "duplicate column" in str(e).lower():
                     continue
                 logger.exception(f"[schema] échec: {stmt}")
-        conn.commit()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PERSISTENCE — enregistrement progressif directement dans `users`
-# (save_user() d'origine est synchrone -> tout est exécuté via asyncio.to_thread
-#  pour ne jamais bloquer la boucle d'événements)
+# (db.get_db() est async, DictCursor -> les lignes sont des dicts, placeholders %s,
+#  commit automatique en fin de bloc "async with", rollback auto sur exception)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _now():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
-def _sync_ensure_user_row(telegram_id):
-    """Crée une ligne vide dès l'approbation, même si l'utilisateur ne répond jamais tout de suite."""
-    with sync_get_db() as conn:
-        cur = conn.execute("SELECT id FROM users WHERE telegram_id=?", (telegram_id,))
-        if not cur.fetchone():
-            conn.execute(
-                "INSERT INTO users (telegram_id, created_at) VALUES (?, ?)",
-                (telegram_id, _now())
-            )
-            conn.commit()
-
-
-def _sync_get_user_row(telegram_id):
-    with sync_get_db() as conn:
-        cur = conn.execute(
-            "SELECT name, phone, profession FROM users WHERE telegram_id=?",
-            (telegram_id,)
-        )
-        return cur.fetchone()
-
-
-def _sync_save_field(telegram_id, field, value):
-    with sync_get_db() as conn:
-        cur = conn.execute("SELECT id FROM users WHERE telegram_id=?", (telegram_id,))
-        row = cur.fetchone()
-        if row:
-            conn.execute(f"UPDATE users SET {field}=? WHERE telegram_id=?", (value, telegram_id))
-        else:
-            conn.execute(
-                f"INSERT INTO users (telegram_id, created_at, {field}) VALUES (?, ?, ?)",
-                (telegram_id, _now(), value)
-            )
-        conn.commit()
-
-
-def _sync_get_incomplete():
-    with sync_get_db() as conn:
-        cur = conn.execute(
-            "SELECT telegram_id FROM users WHERE "
-            "(name IS NULL OR name = '') "
-            "OR (phone IS NULL OR phone = '') "
-            "OR (profession IS NULL OR profession = '')"
-        )
-        return [r[0] for r in cur.fetchall()]
-
-
-def _sync_mark_reminder_sent(telegram_id):
-    with sync_get_db() as conn:
-        conn.execute(
-            "UPDATE users SET last_reminder_at=? WHERE telegram_id=?",
-            (_now(), telegram_id)
-        )
-        conn.commit()
-
-
 async def ensure_user_row(telegram_id):
-    await asyncio.to_thread(_sync_ensure_user_row, telegram_id)
+    """Crée une ligne vide dès l'approbation, même si l'utilisateur ne répond jamais tout de suite."""
+    async with sync_get_db() as cur:
+        await cur.execute("SELECT id FROM users WHERE telegram_id=%s", (telegram_id,))
+        row = await cur.fetchone()
+        if not row:
+            await cur.execute(
+                "INSERT INTO users (telegram_id, created_at) VALUES (%s, NOW())",
+                (telegram_id,)
+            )
 
 
 async def get_user_row(telegram_id):
-    return await asyncio.to_thread(_sync_get_user_row, telegram_id)
+    async with sync_get_db() as cur:
+        await cur.execute(
+            "SELECT name, phone, profession FROM users WHERE telegram_id=%s",
+            (telegram_id,)
+        )
+        row = await cur.fetchone()
+        if not row:
+            return None
+        return row.get("name"), row.get("phone"), row.get("profession")
 
 
 async def save_registration_field(telegram_id, field: str, value: str):
     """Sauvegarde immédiate d'un champ dès sa saisie (nom, téléphone ou profession)."""
     if field not in ("name", "phone", "profession"):
         raise ValueError(f"Champ non autorisé: {field}")
-    await asyncio.to_thread(_sync_save_field, telegram_id, field, value)
+    async with sync_get_db() as cur:
+        await cur.execute("SELECT id FROM users WHERE telegram_id=%s", (telegram_id,))
+        row = await cur.fetchone()
+        if row:
+            await cur.execute(
+                f"UPDATE users SET {field}=%s WHERE telegram_id=%s",
+                (value, telegram_id)
+            )
+        else:
+            await cur.execute(
+                f"INSERT INTO users (telegram_id, created_at, {field}) VALUES (%s, NOW(), %s)",
+                (telegram_id, value)
+            )
 
 
 async def get_incomplete_telegram_ids():
-    return await asyncio.to_thread(_sync_get_incomplete)
+    async with sync_get_db() as cur:
+        await cur.execute(
+            "SELECT telegram_id FROM users WHERE "
+            "(name IS NULL OR name = '') "
+            "OR (phone IS NULL OR phone = '') "
+            "OR (profession IS NULL OR profession = '')"
+        )
+        rows = await cur.fetchall()
+    return [r["telegram_id"] for r in rows]
 
 
 async def mark_reminder_sent(telegram_id):
-    await asyncio.to_thread(_sync_mark_reminder_sent, telegram_id)
+    async with sync_get_db() as cur:
+        await cur.execute(
+            "UPDATE users SET last_reminder_at=NOW() WHERE telegram_id=%s",
+            (telegram_id,)
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -359,7 +341,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
                 "<b>FDK CAPITAL CONCEPT</b>.\n\n"
                 "📝 Pour valider définitivement votre participation, vous devez maintenant vous enregistrer.\n\n"
                 "Commençons.\n\n"
-                "👤 Quel est votre <b>nom et prénom</b> ? Répondez directement.\n\n"
+                "👤 Quel est votre <b>nom et prénom</b> ?\n\n"
                 "<i>Exemple :</i>\n"
                 "Fiacre Kpanou"
             ),
@@ -415,7 +397,8 @@ async def registration_reminder_loop(bot):
                         chat_id=int(user_id),
                         text=(
                             "👋 <b>Rappel important</b>\n\n"
-                            f"Vous n'avez pas terminé votre enregistrement"
+                            f"Vous n'avez pas terminé votre enregistrement pour "
+                            f"<b>{CATEGORIE}</b>.\n\n"
                             "Merci de reprendre la conversation et de compléter les informations "
                             "demandées (nom, numéro WhatsApp, profession) pour valider "
                             "définitivement votre participation."
@@ -662,7 +645,7 @@ if __name__ == "__main__":
     loop.run_until_complete(init_pool())
     print("[main] Pool OK ✓")
 
-    ensure_users_schema()
+    loop.run_until_complete(ensure_users_schema())
     print("[main] Schéma users (profession, name/phone nullable) OK ✓")
 
     loop.run_until_complete(ensure_capital_schema())
