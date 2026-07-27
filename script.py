@@ -175,10 +175,10 @@ async def save_registration_field(telegram_id, field: str, value: str) -> bool:
         # 1. Upsert atomique avec tracking du premier timestamp
         await cur.execute(
             f"INSERT INTO users (telegram_id, created_at, {field}, {field_at}) "
-            f"VALUES (%s, NOW(), %s, NOW()) "
+            f"VALUES (%s, NOW(), %s, NOW()) AS new_row "
             f"ON DUPLICATE KEY UPDATE "
-            f"  {field} = VALUES({field}), "
-            f"  {field_at} = COALESCE({field_at}, NOW())",
+            f"  {field} = new_row.{field}, "
+            f"  {field_at} = COALESCE(users.{field_at}, NOW())",
             (telegram_id, value)
         )
 
@@ -218,14 +218,18 @@ async def get_incomplete_telegram_ids():
 
 async def get_incomplete_users_full():
     """Comme get_incomplete_telegram_ids mais avec les infos nécessaires à
-    l'escalade des relances (created_at, last_reminder_at, reminder_count)."""
+    l'escalade des relances (created_at, last_reminder_at, reminder_count).
+    Ne renvoie QUE les inscriptions créées depuis la date de lancement
+    (STATS_START_DATE) : on ne relance jamais d'anciennes lignes."""
     async with sync_get_db() as cur:
         await cur.execute(
             "SELECT telegram_id, created_at, last_reminder_at, reminder_count "
-            "FROM users WHERE "
-            "(name IS NULL OR name = '') "
-            "OR (phone IS NULL OR phone = '') "
-            "OR (profession IS NULL OR profession = '')"
+            "FROM users WHERE created_at >= %s AND ("
+            "  (name IS NULL OR name = '') "
+            "  OR (phone IS NULL OR phone = '') "
+            "  OR (profession IS NULL OR profession = '')"
+            ")",
+            (STATS_START_DATE,)
         )
         return await cur.fetchall()
 
