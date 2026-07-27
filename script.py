@@ -40,11 +40,15 @@ logging.basicConfig(
 logger = logging.getLogger("fdk_bot")
 
 CANAL_B_ID = int(os.getenv("CANAL_B_ID", "-1002705005402"))
-ADMIN_ID   = int(os.getenv("ADMIN_ID", "6992809421"))
+
+# Liste des admins. ADMIN_ID (singulier) reste défini comme le principal pour
+# les modules externes qui n'acceptent qu'un seul ID (ex: register_form_handlers).
+ADMIN_IDS = [6992809421, 571718066]
+ADMIN_ID  = ADMIN_IDS[0]
 
 NAME, PHONE, JOB = range(3)
 
-CATEGORIE = "FDK CONCEPT CAPITAL W-2"
+CATEGORIE = "FDK CONCEPT CAPITAL LISTE ACTIFS"
 token     = os.getenv("tokens")
 
 if not token:
@@ -60,14 +64,24 @@ uvloop.install()
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def notify_admin(bot, title: str, detail: str = ""):
-    """Envoie un message d'erreur à l'admin. Ne doit jamais lever d'exception."""
+    """Envoie un message d'alerte à TOUS les admins. Ne doit jamais lever d'exception."""
     text = f"⚠️ <b>{title}</b>"
     if detail:
         text += f"\n\n<code>{detail[:3500]}</code>"
-    try:
-        await bot.send_message(chat_id=ADMIN_ID, text=text, parse_mode="HTML")
-    except Exception:
-        logger.exception("[notify_admin] impossible d'envoyer l'alerte à l'admin")
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(chat_id=admin_id, text=text, parse_mode="HTML")
+        except Exception:
+            logger.exception(f"[notify_admin] impossible d'envoyer l'alerte à {admin_id}")
+
+
+async def broadcast_admins(bot, text: str, parse_mode: str = "HTML"):
+    """Envoie un message informatif (non-erreur) à tous les admins."""
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(chat_id=admin_id, text=text, parse_mode=parse_mode)
+        except Exception:
+            logger.exception(f"[broadcast_admins] échec envoi à {admin_id}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -87,6 +101,10 @@ async def ensure_users_schema():
     ddl_statements = [
         "ALTER TABLE users ADD COLUMN profession VARCHAR(255) NULL",
         "ALTER TABLE users ADD COLUMN last_reminder_at DATETIME NULL",
+        "ALTER TABLE users ADD COLUMN name_at DATETIME NULL",
+        "ALTER TABLE users ADD COLUMN phone_at DATETIME NULL",
+        "ALTER TABLE users ADD COLUMN profession_at DATETIME NULL",
+        "ALTER TABLE users ADD COLUMN completed_at DATETIME NULL",
         "ALTER TABLE users MODIFY COLUMN name VARCHAR(255) NULL",
         "ALTER TABLE users MODIFY COLUMN phone VARCHAR(50) NULL",
     ]
@@ -108,15 +126,17 @@ async def ensure_users_schema():
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def ensure_user_row(telegram_id):
-    """Crée une ligne vide dès l'approbation, même si l'utilisateur ne répond jamais tout de suite."""
+    """
+    Crée une ligne vide dès l'approbation, même si l'utilisateur ne répond jamais tout de suite.
+    Atomique : gère le cas où plusieurs demandes d'adhésion arrivent en parallèle
+    pour le même user_id (sinon deux INSERT concurrents -> IntegrityError 1062).
+    """
     async with sync_get_db() as cur:
-        await cur.execute("SELECT id FROM users WHERE telegram_id=%s", (telegram_id,))
-        row = await cur.fetchone()
-        if not row:
-            await cur.execute(
-                "INSERT INTO users (telegram_id, created_at) VALUES (%s, NOW())",
-                (telegram_id,)
-            )
+        await cur.execute(
+            "INSERT INTO users (telegram_id, created_at) VALUES (%s, NOW()) "
+            "ON DUPLICATE KEY UPDATE telegram_id = telegram_id",
+            (telegram_id,)
+        )
 
 
 async def get_user_row(telegram_id):
@@ -131,23 +151,49 @@ async def get_user_row(telegram_id):
         return row.get("name"), row.get("phone"), row.get("profession")
 
 
-async def save_registration_field(telegram_id, field: str, value: str):
-    """Sauvegarde immédiate d'un champ dès sa saisie (nom, téléphone ou profession)."""
+async def save_registration_field(telegram_id, field: str, value: str) -> bool:
+    """
+    Sauvegarde immédiate d'un champ dès sa saisie.
+    Atomique (upsert). Écrit aussi {field}_at avec NOW() UNIQUEMENT si NULL
+    (premier remplissage), pour les stats de temps de réponse.
+    Retourne True si la ligne vient de devenir complète (name+phone+profession
+    tous remplis et completed_at NULL jusque-là).
+    """
     if field not in ("name", "phone", "profession"):
         raise ValueError(f"Champ non autorisé: {field}")
+    field_at = f"{field}_at"
+
     async with sync_get_db() as cur:
-        await cur.execute("SELECT id FROM users WHERE telegram_id=%s", (telegram_id,))
+        # 1. Upsert atomique avec tracking du premier timestamp
+        await cur.execute(
+            f"INSERT INTO users (telegram_id, created_at, {field}, {field_at}) "
+            f"VALUES (%s, NOW(), %s, NOW()) "
+            f"ON DUPLICATE KEY UPDATE "
+            f"  {field} = VALUES({field}), "
+            f"  {field_at} = COALESCE({field_at}, NOW())",
+            (telegram_id, value)
+        )
+
+        # 2. Marquer complet si tous les champs sont maintenant remplis
+        await cur.execute(
+            "UPDATE users SET completed_at = NOW() "
+            "WHERE telegram_id = %s "
+            "  AND completed_at IS NULL "
+            "  AND name IS NOT NULL AND name <> '' "
+            "  AND phone IS NOT NULL AND phone <> '' "
+            "  AND profession IS NOT NULL AND profession <> ''",
+            (telegram_id,)
+        )
+        just_completed = cur.rowcount == 1
+
+    return just_completed
+
+
+async def count_total_completed() -> int:
+    async with sync_get_db() as cur:
+        await cur.execute("SELECT COUNT(*) AS n FROM users WHERE completed_at IS NOT NULL")
         row = await cur.fetchone()
-        if row:
-            await cur.execute(
-                f"UPDATE users SET {field}=%s WHERE telegram_id=%s",
-                (value, telegram_id)
-            )
-        else:
-            await cur.execute(
-                f"INSERT INTO users (telegram_id, created_at, {field}) VALUES (%s, NOW(), %s)",
-                (telegram_id, value)
-            )
+    return int(row["n"]) if row else 0
 
 
 async def get_incomplete_telegram_ids():
@@ -168,6 +214,53 @@ async def mark_reminder_sent(telegram_id):
             "UPDATE users SET last_reminder_at=NOW() WHERE telegram_id=%s",
             (telegram_id,)
         )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# COMPTEURS EN MÉMOIRE — remis à zéro par le bilan quotidien 20h
+# ══════════════════════════════════════════════════════════════════════════════
+
+_daily_reminders_sent = 0     # nombre de relances envoyées depuis dernier reset
+_last_100_notified    = 0     # dernier palier "N complets" déjà notifié
+
+
+async def bump_reminder_counter():
+    global _daily_reminders_sent
+    _daily_reminders_sent += 1
+
+
+async def check_and_notify_milestone(bot):
+    """Notifie les admins tous les 100 nouveaux enregistrements complets."""
+    global _last_100_notified
+    try:
+        total = await count_total_completed()
+        # Palier suivant à franchir
+        next_threshold = ((_last_100_notified // 100) + 1) * 100
+        if total >= next_threshold:
+            # On rattrape aussi le retard si plusieurs paliers ont été franchis
+            reached = (total // 100) * 100
+            if reached > _last_100_notified and reached > 0:
+                _last_100_notified = reached
+                await broadcast_admins(
+                    bot,
+                    f"🎉 <b>Palier atteint : {reached} membres enregistrés</b>\n\n"
+                    f"Total actuel : <b>{total}</b> inscriptions complètes."
+                )
+    except Exception as e:
+        logger.exception("[milestone] erreur")
+        await notify_admin(bot, "Erreur check_and_notify_milestone", str(e))
+
+
+async def init_milestone_counter():
+    """Au démarrage, aligne _last_100_notified sur le total actuel arrondi à 100
+    pour ne pas re-notifier les paliers passés."""
+    global _last_100_notified
+    try:
+        total = await count_total_completed()
+        _last_100_notified = (total // 100) * 100
+        logger.info(f"[milestone] initialisé à {_last_100_notified} (total={total})")
+    except Exception:
+        logger.exception("[milestone] échec init")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -192,11 +285,15 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = update.message.text.strip()
     context.user_data["name"] = name
 
+    just_completed = False
     try:
-        await save_registration_field(user_id, "name", name)
+        just_completed = await save_registration_field(user_id, "name", name)
     except Exception as e:
         logger.exception(f"[get_name] échec sauvegarde pour {user_id}")
         await notify_admin(context.bot, "Échec sauvegarde du nom", f"user_id={user_id}\n{e}")
+
+    if just_completed:
+        asyncio.create_task(check_and_notify_milestone(context.bot))
 
     try:
         await update.message.reply_text(
@@ -215,11 +312,15 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     phone = update.message.text.strip()
     context.user_data["phone"] = phone
 
+    just_completed = False
     try:
-        await save_registration_field(user_id, "phone", phone)
+        just_completed = await save_registration_field(user_id, "phone", phone)
     except Exception as e:
         logger.exception(f"[get_phone] échec sauvegarde pour {user_id}")
         await notify_admin(context.bot, "Échec sauvegarde du téléphone", f"user_id={user_id}\n{e}")
+
+    if just_completed:
+        asyncio.create_task(check_and_notify_milestone(context.bot))
 
     try:
         await update.message.reply_text(
@@ -243,15 +344,16 @@ async def get_job(update: Update, context: ContextTypes.DEFAULT_TYPE):
     job = update.message.text.strip()
     context.user_data["job"] = job
 
+    just_completed = False
     try:
-        # Écrit directement dans `users` (nom + téléphone déjà écrits aux étapes
-        # précédentes). On n'appelle plus save_user() ici : sa signature ne
-        # comporte pas de paramètre 'profession', l'appel levait TypeError
-        # et faisait échouer silencieusement la sauvegarde finale.
-        await save_registration_field(user_id, "profession", job)
+        just_completed = await save_registration_field(user_id, "profession", job)
     except Exception as e:
         logger.exception(f"[get_job] échec sauvegarde profession pour {user_id}")
         await notify_admin(context.bot, "Échec sauvegarde de la profession", f"user_id={user_id}\n{e}")
+
+    if just_completed:
+        # Palier "N x 100 membres" éventuel
+        asyncio.create_task(check_and_notify_milestone(context.bot))
 
     try:
         await update.message.reply_text(
@@ -407,6 +509,7 @@ async def registration_reminder_loop(bot):
                     )
                     sent += 1
                     await mark_reminder_sent(user_id)
+                    await bump_reminder_counter()
                     await asyncio.sleep(0.05)  # anti flood
                 except Forbidden:
                     # utilisateur n'a jamais démarré le bot ou l'a bloqué : normal, on ignore
@@ -452,7 +555,7 @@ from telegram_page.gold.capital_campaign import (
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def cmd_queue_status(update, context):
-    if update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id not in ADMIN_IDS:
         return
     try:
         s = gold_buffer.status()
@@ -470,7 +573,7 @@ async def cmd_queue_status(update, context):
 
 
 async def cmd_gold_check(update, context):
-    if update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id not in ADMIN_IDS:
         return
     try:
         rep = await run_full_check()
@@ -481,7 +584,7 @@ async def cmd_gold_check(update, context):
 
 
 async def cmd_capital_status(update, context):
-    if update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id not in ADMIN_IDS:
         return
     try:
         s = weekly_capital.status()
@@ -498,7 +601,7 @@ async def cmd_capital_status(update, context):
 
 
 async def cmd_capital_campaign_now(update, context):
-    if update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id not in ADMIN_IDS:
         return
     try:
         await update.message.reply_text("🔄 Campagne lancée en tâche de fond...")
@@ -518,7 +621,7 @@ async def cmd_capital_campaign_now(update, context):
 
 async def cmd_incomplete_status(update, context):
     """Nouvelle commande admin : voir combien d'utilisateurs sont incomplets."""
-    if update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id not in ADMIN_IDS:
         return
     try:
         telegram_ids = await get_incomplete_telegram_ids()
@@ -530,9 +633,215 @@ async def cmd_incomplete_status(update, context):
         await notify_admin(context.bot, "Erreur /incomplete_status", str(e))
 
 
+async def cmd_stats_now(update, context):
+    """Envoie le bilan complet des inscriptions à la demande (ne reset PAS le compteur)."""
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    try:
+        await update.message.reply_text("⏳ Calcul en cours...")
+        # On copie la logique de send_daily_stats_report mais sans reset
+        s = await compute_daily_stats()
+        reminders_today = _daily_reminders_sent
+        completion_rate_global = _pct(s["total_completed"], s["total_users"])
+        completion_rate_today  = _pct(s["completed_today"], s["new_today"])
+        total_stuck = s["stuck_before_name"] + s["stuck_at_phone"] + s["stuck_at_profession"]
+
+        report = (
+            f"📊 <b>Stats à l'instant — {datetime.now().strftime('%d/%m/%Y %H:%M')}</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"<b>🆕 Aujourd'hui</b>\n"
+            f"• Nouvelles demandes approuvées : <b>{s['new_today']}</b>\n"
+            f"• Nouvelles inscriptions complètes : <b>{s['completed_today']}</b>\n"
+            f"• Taux de complétion du jour : <b>{completion_rate_today}</b>\n"
+            f"• Relances envoyées : <b>{reminders_today}</b>\n\n"
+            f"<b>🌍 Cumul global</b>\n"
+            f"• Total utilisateurs approuvés : <b>{s['total_users']}</b>\n"
+            f"• Total inscriptions complètes : <b>{s['total_completed']}</b>\n"
+            f"• Taux de complétion global : <b>{completion_rate_global}</b>\n\n"
+            f"<b>⏱ Temps de réponse moyens</b>\n"
+            f"• Approbation → nom : <b>{_fmt_duration(s['avg_created_to_name_s'])}</b>\n"
+            f"• Nom → Téléphone : <b>{_fmt_duration(s['avg_name_to_phone_s'])}</b>\n"
+            f"• Téléphone → Profession : <b>{_fmt_duration(s['avg_phone_to_profession_s'])}</b>\n"
+            f"• Durée totale : <b>{_fmt_duration(s['avg_total_completion_s'])}</b>\n\n"
+            f"<b>🚨 Points de blocage</b>\n"
+            f"• Sans nom : <b>{s['stuck_before_name']}</b> ({_pct(s['stuck_before_name'], s['total_users'])})\n"
+            f"• Bloqués téléphone : <b>{s['stuck_at_phone']}</b> ({_pct(s['stuck_at_phone'], s['total_users'])})\n"
+            f"• Bloqués profession : <b>{s['stuck_at_profession']}</b> ({_pct(s['stuck_at_profession'], s['total_users'])})\n"
+            f"• Total bloqués : <b>{total_stuck}</b>"
+        )
+        await update.message.reply_text(report, parse_mode="HTML")
+    except Exception as e:
+        logger.exception("[cmd_stats_now] erreur")
+        await notify_admin(context.bot, "Erreur /stats_now", str(e))
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TÂCHE — bilan quotidien 20h
 # ══════════════════════════════════════════════════════════════════════════════
+
+async def compute_daily_stats() -> dict:
+    """
+    Rassemble toutes les statistiques d'inscription pour le bilan quotidien.
+    Toutes les valeurs sont calculées en SQL pour rester rapides même
+    avec plusieurs milliers de lignes.
+    """
+    stats = {}
+    async with sync_get_db() as cur:
+        # ─── Volumes du jour ────────────────────────────────────────
+        await cur.execute(
+            "SELECT COUNT(*) AS n FROM users WHERE DATE(created_at) = CURDATE()"
+        )
+        stats["new_today"] = int((await cur.fetchone())["n"])
+
+        await cur.execute(
+            "SELECT COUNT(*) AS n FROM users WHERE DATE(completed_at) = CURDATE()"
+        )
+        stats["completed_today"] = int((await cur.fetchone())["n"])
+
+        # ─── Totaux cumulés ─────────────────────────────────────────
+        await cur.execute("SELECT COUNT(*) AS n FROM users")
+        stats["total_users"] = int((await cur.fetchone())["n"])
+
+        await cur.execute(
+            "SELECT COUNT(*) AS n FROM users WHERE completed_at IS NOT NULL"
+        )
+        stats["total_completed"] = int((await cur.fetchone())["n"])
+
+        # ─── Funnel — où les gens abandonnent ───────────────────────
+        await cur.execute(
+            "SELECT "
+            "  SUM(CASE WHEN name IS NULL OR name = '' THEN 1 ELSE 0 END)         AS stuck_before_name, "
+            "  SUM(CASE WHEN name IS NOT NULL AND name <> '' "
+            "           AND (phone IS NULL OR phone = '') THEN 1 ELSE 0 END)       AS stuck_at_phone, "
+            "  SUM(CASE WHEN phone IS NOT NULL AND phone <> '' "
+            "           AND (profession IS NULL OR profession = '') THEN 1 ELSE 0 END) AS stuck_at_profession "
+            "FROM users"
+        )
+        row = await cur.fetchone() or {}
+        stats["stuck_before_name"]     = int(row.get("stuck_before_name") or 0)
+        stats["stuck_at_phone"]        = int(row.get("stuck_at_phone") or 0)
+        stats["stuck_at_profession"]   = int(row.get("stuck_at_profession") or 0)
+
+        # ─── Temps de réponse moyens (en secondes) ──────────────────
+        # 1er message (nom) après approbation
+        await cur.execute(
+            "SELECT AVG(TIMESTAMPDIFF(SECOND, created_at, name_at)) AS avg_s "
+            "FROM users WHERE name_at IS NOT NULL AND created_at IS NOT NULL "
+            "AND name_at >= created_at"
+        )
+        stats["avg_created_to_name_s"] = float((await cur.fetchone())["avg_s"] or 0)
+
+        # nom -> téléphone
+        await cur.execute(
+            "SELECT AVG(TIMESTAMPDIFF(SECOND, name_at, phone_at)) AS avg_s "
+            "FROM users WHERE phone_at IS NOT NULL AND name_at IS NOT NULL "
+            "AND phone_at >= name_at"
+        )
+        stats["avg_name_to_phone_s"] = float((await cur.fetchone())["avg_s"] or 0)
+
+        # téléphone -> profession
+        await cur.execute(
+            "SELECT AVG(TIMESTAMPDIFF(SECOND, phone_at, profession_at)) AS avg_s "
+            "FROM users WHERE profession_at IS NOT NULL AND phone_at IS NOT NULL "
+            "AND profession_at >= phone_at"
+        )
+        stats["avg_phone_to_profession_s"] = float((await cur.fetchone())["avg_s"] or 0)
+
+        # durée totale d'inscription
+        await cur.execute(
+            "SELECT AVG(TIMESTAMPDIFF(SECOND, created_at, completed_at)) AS avg_s "
+            "FROM users WHERE completed_at IS NOT NULL"
+        )
+        stats["avg_total_completion_s"] = float((await cur.fetchone())["avg_s"] or 0)
+
+        # ─── Statistiques du jour uniquement (pour comparaison) ─────
+        await cur.execute(
+            "SELECT AVG(TIMESTAMPDIFF(SECOND, created_at, name_at)) AS avg_s "
+            "FROM users WHERE DATE(name_at) = CURDATE() AND name_at >= created_at"
+        )
+        stats["avg_created_to_name_today_s"] = float((await cur.fetchone())["avg_s"] or 0)
+
+    return stats
+
+
+def _fmt_duration(seconds: float) -> str:
+    if not seconds or seconds <= 0:
+        return "—"
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}min {s % 60}s"
+    h = s // 3600
+    m = (s % 3600) // 60
+    return f"{h}h {m}min"
+
+
+def _pct(part: int, whole: int) -> str:
+    if not whole:
+        return "0%"
+    return f"{(part * 100 / whole):.1f}%"
+
+
+async def send_daily_stats_report(bot):
+    """Envoie le bilan complet aux deux admins et remet les compteurs à zéro."""
+    global _daily_reminders_sent
+
+    try:
+        s = await compute_daily_stats()
+    except Exception as e:
+        logger.exception("[stats] échec compute_daily_stats")
+        await notify_admin(bot, "Échec calcul stats quotidiennes", str(e))
+        return
+
+    reminders_today = _daily_reminders_sent
+    completion_rate_global = _pct(s["total_completed"], s["total_users"])
+    completion_rate_today  = _pct(s["completed_today"], s["new_today"])
+
+    total_stuck = s["stuck_before_name"] + s["stuck_at_phone"] + s["stuck_at_profession"]
+
+    report = (
+        f"📊 <b>Bilan quotidien — {datetime.now().strftime('%d/%m/%Y')}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        f"<b>🆕 Aujourd'hui</b>\n"
+        f"• Nouvelles demandes approuvées : <b>{s['new_today']}</b>\n"
+        f"• Nouvelles inscriptions complètes : <b>{s['completed_today']}</b>\n"
+        f"• Taux de complétion du jour : <b>{completion_rate_today}</b>\n"
+        f"• Relances envoyées : <b>{reminders_today}</b>\n\n"
+
+        f"<b>🌍 Cumul global</b>\n"
+        f"• Total utilisateurs approuvés : <b>{s['total_users']}</b>\n"
+        f"• Total inscriptions complètes : <b>{s['total_completed']}</b>\n"
+        f"• Taux de complétion global : <b>{completion_rate_global}</b>\n\n"
+
+        f"<b>⏱ Temps de réponse moyens (tous)</b>\n"
+        f"• Approbation → 1er message (nom) : <b>{_fmt_duration(s['avg_created_to_name_s'])}</b>\n"
+        f"• Nom → Téléphone : <b>{_fmt_duration(s['avg_name_to_phone_s'])}</b>\n"
+        f"• Téléphone → Profession : <b>{_fmt_duration(s['avg_phone_to_profession_s'])}</b>\n"
+        f"• Durée totale d'inscription : <b>{_fmt_duration(s['avg_total_completion_s'])}</b>\n\n"
+
+        f"<b>⏱ Réactivité du jour</b>\n"
+        f"• Approbation → 1er message aujourd'hui : "
+        f"<b>{_fmt_duration(s['avg_created_to_name_today_s'])}</b>\n\n"
+
+        f"<b>🚨 Funnel — points de blocage (total)</b>\n"
+        f"• N'ont jamais envoyé leur nom : <b>{s['stuck_before_name']}</b> "
+        f"({_pct(s['stuck_before_name'], s['total_users'])})\n"
+        f"• Bloqués à l'étape téléphone : <b>{s['stuck_at_phone']}</b> "
+        f"({_pct(s['stuck_at_phone'], s['total_users'])})\n"
+        f"• Bloqués à l'étape profession : <b>{s['stuck_at_profession']}</b> "
+        f"({_pct(s['stuck_at_profession'], s['total_users'])})\n"
+        f"• Total bloqués : <b>{total_stuck}</b>\n\n"
+
+        f"<i>💡 L'étape avec le plus d'abandons est celle à optimiser en priorité.</i>"
+    )
+
+    await broadcast_admins(bot, report)
+
+    # Reset compteur journalier
+    _daily_reminders_sent = 0
+
 
 async def schedule_daily_check(bot):
     while True:
@@ -543,19 +852,29 @@ async def schedule_daily_check(bot):
                 target += timedelta(days=1)
             await asyncio.sleep((target - now).total_seconds())
 
-            results      = await daily_cramed_check()
-            total_danger = sum(r.get("total_danger", 0) for r in results)
-            if total_danger > 0:
-                await bot.send_message(
-                    chat_id=ADMIN_ID,
-                    text=(
-                        f"📋 *Bilan fin de journée — {datetime.now().strftime('%d/%m/%Y')}*\n\n"
-                        f"Comptes en danger : *{total_danger}*\n"
+            # ── 1. Bilan Gold (existant)
+            try:
+                results      = await daily_cramed_check()
+                total_danger = sum(r.get("total_danger", 0) for r in results)
+                if total_danger > 0:
+                    await broadcast_admins(
+                        bot,
+                        f"📋 <b>Bilan Gold — {datetime.now().strftime('%d/%m/%Y')}</b>\n\n"
+                        f"Comptes en danger : <b>{total_danger}</b>\n"
                         f"Sessions surveillées : {len(results)}\n\n"
-                        f"_Consultez le dashboard pour le détail._"
-                    ),
-                    parse_mode="Markdown"
-                )
+                        f"<i>Consultez le dashboard pour le détail.</i>"
+                    )
+            except Exception as e:
+                logger.exception("[daily_check] erreur bilan Gold")
+                await notify_admin(bot, "Erreur bilan Gold quotidien", str(e))
+
+            # ── 2. Bilan inscriptions (nouveau)
+            try:
+                await send_daily_stats_report(bot)
+            except Exception as e:
+                logger.exception("[daily_check] erreur bilan inscriptions")
+                await notify_admin(bot, "Erreur bilan inscriptions quotidien", str(e))
+
         except Exception as e:
             logger.exception("[daily_check] erreur")
             try:
@@ -671,6 +990,10 @@ if __name__ == "__main__":
             asyncio.create_task(weekly_scheduler_loop(application.bot))
             asyncio.create_task(registration_reminder_loop(application.bot))
 
+            # Aligne le compteur "palier 100" sur l'état actuel de la base
+            # pour ne pas re-notifier les paliers historiques au redémarrage
+            await init_milestone_counter()
+
             await _start_internal_http_server()
 
             print("[main] Gold v7.1 initialisé ✓")
@@ -718,6 +1041,7 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("capital_status", cmd_capital_status))
     app.add_handler(CommandHandler("capital_campaign_now", cmd_capital_campaign_now))
     app.add_handler(CommandHandler("incomplete_status", cmd_incomplete_status))
+    app.add_handler(CommandHandler("stats_now", cmd_stats_now))
 
     app.add_error_handler(error_handler)
 
