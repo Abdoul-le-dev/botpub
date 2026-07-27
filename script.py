@@ -86,7 +86,36 @@ _asyncio_for_uvloop.set_event_loop_policy(uvloop.EventLoopPolicy())
 # EN PLUS une notif Telegram immédiate via notify_admin_critical().
 # ══════════════════════════════════════════════════════════════════════════════
 
-ERRORS_LOG_PATH = Path(os.getenv("ERRORS_LOG_PATH", "errors.log"))
+ERRORS_LOG_PATH = Path(
+    os.getenv("ERRORS_LOG_PATH")
+    or (Path(__file__).resolve().parent / "errors.log")
+)
+
+
+def _ensure_errors_log_writable():
+    """Vérifie qu'on peut bien écrire dans errors.log. Si non (permissions
+    ou disque plein), on retombe sur /tmp — mieux vaut un fichier qu'aucun log."""
+    global ERRORS_LOG_PATH
+    try:
+        # Test d'écriture : crée le fichier s'il n'existe pas, ne le modifie pas sinon
+        ERRORS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with ERRORS_LOG_PATH.open("a", encoding="utf-8") as f:
+            pass
+    except (PermissionError, OSError) as e:
+        fallback = Path("/tmp") / "fdk_bot_errors.log"
+        logger.warning(
+            f"[log_error] impossible d'écrire dans {ERRORS_LOG_PATH} ({e}), "
+            f"repli sur {fallback}"
+        )
+        try:
+            with fallback.open("a", encoding="utf-8") as f:
+                pass
+            ERRORS_LOG_PATH = fallback
+        except Exception:
+            logger.exception("[log_error] même /tmp est indisponible, logs perdus")
+
+
+_ensure_errors_log_writable()
 
 
 def log_error(title: str, detail: str = ""):
@@ -908,7 +937,9 @@ async def registration_reminder_loop(bot):
                 continue
 
             now = datetime.now()
-            sent, failed = 0, 0
+            sent = 0
+            forbidden_dropped = 0     # bot bloqué / user inaccessible -> consomme 1 tentative
+            other_errors = 0          # autres erreurs (rate-limit, réseau...) -> NE consomme PAS
 
             for r in rows:
                 user_id = r.get("telegram_id")
@@ -951,15 +982,28 @@ async def registration_reminder_loop(bot):
                     await bump_reminder_counter()
                     await asyncio.sleep(0.05)  # anti-flood
                 except Forbidden:
-                    # Utilisateur a bloqué le bot : normal, on ignore silencieusement
-                    failed += 1
+                    # Le user a bloqué le bot / n'a jamais démarré /start.
+                    # IMPORTANT : on incrémente reminder_count quand même pour
+                    # qu'il consomme ses tentatives et sorte du barème.
+                    # Sinon, il serait retenté à chaque cycle indéfiniment.
+                    forbidden_dropped += 1
+                    try:
+                        await mark_reminder_sent(user_id)
+                    except Exception:
+                        pass
                 except Exception as e:
-                    failed += 1
+                    # Erreurs transitoires (rate-limit, timeout réseau) :
+                    # on NE consomme PAS de tentative, on réessaiera au prochain
+                    # cycle.
+                    other_errors += 1
                     logger.warning(f"[reminder] échec envoi à {user_id}: {e}")
                     log_error("Échec envoi relance", f"user_id={user_id} — {e}")
 
-            if sent or failed:
-                logger.info(f"[reminder] cycle — envoyées={sent} échecs={failed}")
+            if sent or forbidden_dropped or other_errors:
+                logger.info(
+                    f"[reminder] cycle — envoyées={sent} "
+                    f"forbidden={forbidden_dropped} autres={other_errors}"
+                )
 
         except Exception as e:
             logger.exception("[reminder] erreur inattendue dans la boucle")
@@ -1481,6 +1525,21 @@ if __name__ == "__main__":
             await ensure_capital_schema()
             await ensure_campaign_schema()
             print("[main] Schémas v7 OK ✓")
+
+            # ── Schéma du module engagement (module optionnel) ─────────
+            # On l'appelle explicitement pour ne PAS dépendre du chaînage
+            # de post_init interne à engagement.py (qui peut être écrasé
+            # selon l'ordre d'enregistrement des handlers).
+            try:
+                from engagement import ensure_engagement_schema
+                await ensure_engagement_schema()
+                print("[main] Schéma engagement (vote, motivation_at, vote_at) OK ✓")
+            except ImportError:
+                # Le module engagement n'est pas déployé : on continue.
+                pass
+            except Exception as e:
+                logger.exception("[post_init] échec ensure_engagement_schema")
+                log_error("Échec ensure_engagement_schema", str(e))
 
             # ── Reste des inits ────────────────────────────────────────
             await setup_background_worker(application)
