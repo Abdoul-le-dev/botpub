@@ -37,6 +37,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("fdk_bot")
 
 CANAL_B_ID = int(os.getenv("CANAL_B_ID", "-1002705005402"))
