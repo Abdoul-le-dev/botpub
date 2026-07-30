@@ -245,7 +245,10 @@ async def handle_deeplink(update: Update,
     Retourne True si un scénario a été traité (l'appelant doit alors
     interrompre son traitement normal), False sinon.
     """
+    logger.info(f"[engagement] handle_deeplink appelé param={start_param!r} "
+                f"user={update.effective_user.id}")
     if not start_param or not start_param.startswith(DEEPLINK_PREFIX):
+        logger.info(f"[engagement] payload ne matche pas le préfixe")
         return False
 
     key = start_param[len(DEEPLINK_PREFIX):]
@@ -254,16 +257,15 @@ async def handle_deeplink(update: Update,
         logger.info(f"[engagement] scénario inconnu: {key!r}")
         return False
 
+    logger.info(f"[engagement] dispatch vers scénario '{key}'")
     try:
         await scenario(update, context)
+        logger.info(f"[engagement] scénario '{key}' terminé OK")
         return True
     except Exception as e:
         logger.exception(f"[engagement] erreur scénario {key}")
         log_error(f"Erreur scénario {key}",
                   f"user_id={update.effective_user.id} — {e}")
-        # Même en cas d'erreur on retourne True : l'utilisateur a reçu
-        # (ou aurait dû recevoir) une réponse d'engagement, l'appelant
-        # ne doit pas enchaîner sur un autre flow.
         return True
 
 
@@ -594,8 +596,7 @@ async def capture_engagement_response(update: Update,
             )
         except Exception:
             pass
-        # Flag toujours armé, on empêche la propagation vers form_engine
-        raise ApplicationHandlerStop
+        return
 
     # Sauvegarde DB
     try:
@@ -626,11 +627,6 @@ async def capture_engagement_response(update: Update,
     except Exception as e:
         logger.exception(f"[engagement] échec confirmation motivation {user_id}")
         log_error("Échec confirmation motivation", f"user_id={user_id} — {e}")
-
-    # IMPORTANT : on stoppe la propagation aux autres groupes.
-    # Sinon le ConversationHandler de form_engine (groupe 1) réagirait
-    # aussi au message texte s'il est en état actif.
-    raise ApplicationHandlerStop
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -733,28 +729,22 @@ def register_engagement_handlers(app: Application):
     d'inscription existant (priorité au ConversationHandler).
     """
 
-    # 1) Boutons scénario motivation (Voir / Modifier) — groupe -1 pour
-    #    prévalence sur d'éventuels autres CallbackQueryHandler.
+    # 1) Boutons scénario motivation (Voir / Modifier)
     app.add_handler(
         CallbackQueryHandler(_on_motivation_button, pattern=r"^eng:mot:(view|edit)$"),
-        group=-1,
+        group=5,
     )
 
-    # 2) Boutons scénario vote (Voir / Modifier / Cast) — même logique
+    # 2) Boutons scénario vote (Voir / Modifier / Cast)
     app.add_handler(
         CallbackQueryHandler(_on_vote_button,
                              pattern=r"^eng:vote:(view|edit|cast:[123])$"),
-        group=-1,
+        group=5,
     )
 
     # 3) Capture de la réponse texte de motivation.
-    #    Groupe -1 : AVANT tous les autres handlers (form_engine est en
-    #    groupe 1). C'est nécessaire parce que le ConversationHandler de
-    #    form_engine capte tout texte quand un user est en état FORM_STEP.
-    #    Le handler ne fait rien tant que le flag engagement_awaiting
-    #    n'est pas armé -> aucun impact sur les autres flows.
-    #    Il lève ApplicationHandlerStop quand il traite un message pour
-    #    empêcher form_engine de le récupérer aussi.
+    #    Groupe 10 : après les autres handlers. Ne fait rien tant que le
+    #    flag module-level _awaiting_motivation ne contient pas l'user_id.
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND
@@ -762,7 +752,7 @@ def register_engagement_handlers(app: Application):
             & filters.ChatType.PRIVATE,
             capture_engagement_response,
         ),
-        group=-1,
+        group=10,
     )
 
     # 4) Commande admin
