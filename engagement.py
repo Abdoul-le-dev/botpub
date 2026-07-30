@@ -35,20 +35,20 @@ from telegram import (
 )
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, ContextTypes, filters,
+    MessageHandler, ContextTypes, filters, ApplicationHandlerStop,
 )
 
 # On réutilise ce qui existe déjà dans main.py — jamais de duplication.
 # - ADMIN_IDS : liste des admins (autorisation /engagement)
 # - sync_get_db : pool aiomysql du reste du bot
 # - log_error : journalisation d'erreurs dans errors.log (envoyé à 20h)
-from script import ADMIN_IDS
+from main import ADMIN_IDS
 from db import get_db as sync_get_db
 
 try:
     # log_error existe dans main.py (log fichier). En cas d'import circulaire
     # improbable, on tombe sur un fallback silencieux.
-    from script import log_error
+    from main import log_error
 except Exception:  # pragma: no cover
     def log_error(title, detail=""):
         logging.getLogger("engagement").warning(f"{title} — {detail}")
@@ -78,6 +78,27 @@ VOTE_LABELS = {
     "2": "🥈 2 gagnants",
     "3": "🥉 3 gagnants",
 }
+
+# ── Flag "en attente d'une motivation" — stocké au niveau MODULE
+# et non dans context.user_data. Raison : context.user_data peut être
+# scopé différemment selon les handlers (ConversationHandler, etc.), et
+# on veut être 100% sûr que le flag armé dans handle_deeplink() soit
+# visible depuis capture_engagement_response() quel que soit le groupe
+# / handler qui déclenche le texte suivant. Ce dict est indexé par
+# telegram_id, indépendant du contexte.
+_awaiting_motivation: set = set()
+
+
+def _arm_motivation_wait(telegram_id: int):
+    _awaiting_motivation.add(int(telegram_id))
+
+
+def _disarm_motivation_wait(telegram_id: int):
+    _awaiting_motivation.discard(int(telegram_id))
+
+
+def _is_awaiting_motivation(telegram_id: int) -> bool:
+    return int(telegram_id) in _awaiting_motivation
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -341,7 +362,7 @@ async def handle_motivation(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _ask_motivation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Envoie la question et arme le flag pour capter la réponse suivante."""
-    context.user_data["engagement_awaiting"] = "motivation"
+    _arm_motivation_wait(update.effective_user.id)
 
     # On envoie via update.message si dispo, sinon via bot.send_message
     text = (
@@ -558,11 +579,10 @@ async def handle_share(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def capture_engagement_response(update: Update,
                                        context: ContextTypes.DEFAULT_TYPE):
-    awaiting = context.user_data.get("engagement_awaiting")
-    if awaiting != "motivation":
-        return  # rien à intercepter
-
     user_id = update.effective_user.id
+    if not _is_awaiting_motivation(user_id):
+        return  # rien à intercepter, on laisse passer aux autres groupes
+
     motivation = (update.message.text or "").strip()
 
     if not motivation:
@@ -574,7 +594,8 @@ async def capture_engagement_response(update: Update,
             )
         except Exception:
             pass
-        return
+        # Flag toujours armé, on empêche la propagation vers form_engine
+        raise ApplicationHandlerStop
 
     # Sauvegarde DB
     try:
@@ -591,7 +612,7 @@ async def capture_engagement_response(update: Update,
     _append_motivation_file(user_id, name, motivation)
 
     # Désarme le flag
-    context.user_data.pop("engagement_awaiting", None)
+    _disarm_motivation_wait(user_id)
 
     try:
         await update.message.reply_text(
@@ -605,6 +626,11 @@ async def capture_engagement_response(update: Update,
     except Exception as e:
         logger.exception(f"[engagement] échec confirmation motivation {user_id}")
         log_error("Échec confirmation motivation", f"user_id={user_id} — {e}")
+
+    # IMPORTANT : on stoppe la propagation aux autres groupes.
+    # Sinon le ConversationHandler de form_engine (groupe 1) réagirait
+    # aussi au message texte s'il est en état actif.
+    raise ApplicationHandlerStop
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -707,23 +733,28 @@ def register_engagement_handlers(app: Application):
     d'inscription existant (priorité au ConversationHandler).
     """
 
-    # 1) Boutons scénario motivation (Voir / Modifier)
+    # 1) Boutons scénario motivation (Voir / Modifier) — groupe -1 pour
+    #    prévalence sur d'éventuels autres CallbackQueryHandler.
     app.add_handler(
         CallbackQueryHandler(_on_motivation_button, pattern=r"^eng:mot:(view|edit)$"),
-        group=5,
+        group=-1,
     )
 
-    # 2) Boutons scénario vote (Voir / Modifier / Cast)
+    # 2) Boutons scénario vote (Voir / Modifier / Cast) — même logique
     app.add_handler(
         CallbackQueryHandler(_on_vote_button,
                              pattern=r"^eng:vote:(view|edit|cast:[123])$"),
-        group=5,
+        group=-1,
     )
 
     # 3) Capture de la réponse texte de motivation.
-    #    Groupe 10 : après le tunnel d'inscription (groupe par défaut 0),
-    #    avant le log_unhandled_message (groupe 99). Ne fait rien si le
-    #    flag engagement_awaiting n'est pas armé -> aucun impact sur le reste.
+    #    Groupe -1 : AVANT tous les autres handlers (form_engine est en
+    #    groupe 1). C'est nécessaire parce que le ConversationHandler de
+    #    form_engine capte tout texte quand un user est en état FORM_STEP.
+    #    Le handler ne fait rien tant que le flag engagement_awaiting
+    #    n'est pas armé -> aucun impact sur les autres flows.
+    #    Il lève ApplicationHandlerStop quand il traite un message pour
+    #    empêcher form_engine de le récupérer aussi.
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND
@@ -731,7 +762,7 @@ def register_engagement_handlers(app: Application):
             & filters.ChatType.PRIVATE,
             capture_engagement_response,
         ),
-        group=10,
+        group=-1,
     )
 
     # 4) Commande admin
