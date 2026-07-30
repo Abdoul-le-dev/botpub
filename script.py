@@ -968,7 +968,6 @@ async def registration_reminder_loop(bot):
                         continue
                     if now - last_event < timedelta(hours=CAS_B_INTERVAL_HOURS):
                         continue
-
                 # Envoi
                 try:
                     await bot.send_message(
@@ -981,23 +980,38 @@ async def registration_reminder_loop(bot):
                     await mark_reminder_sent(user_id)
                     await bump_reminder_counter()
                     await asyncio.sleep(0.05)  # anti-flood
-                except Forbidden:
-                    # Le user a bloqué le bot / n'a jamais démarré /start.
-                    # IMPORTANT : on incrémente reminder_count quand même pour
-                    # qu'il consomme ses tentatives et sorte du barème.
-                    # Sinon, il serait retenté à chaque cycle indéfiniment.
-                    forbidden_dropped += 1
-                    try:
-                        await mark_reminder_sent(user_id)
-                    except Exception:
-                        pass
+                except (Forbidden, BadRequest) as e:
+                    # Forbidden : le user a bloqué le bot / n'a jamais démarré /start.
+                    # BadRequest "Chat not found" : chat_id invalide / jamais de
+                    # conversation privée établie — erreur définitive, pas
+                    # transitoire (on filtre sur le message pour ne pas traiter
+                    # d'autres BadRequest, potentiellement transitoires, de la
+                    # même façon).
+                    #
+                    # IMPORTANT : dans les deux cas on incrémente reminder_count
+                    # pour que l'utilisateur consomme ses tentatives et sorte du
+                    # barème. Sinon il serait retenté à chaque cycle indéfiniment
+                    # (c'était le bug : "Chat not found" tombait dans le except
+                    # Exception générique ci-dessous et n'était jamais consommé).
+                    is_permanent = isinstance(e, Forbidden) or "chat not found" in str(e).lower()
+                    if is_permanent:
+                        forbidden_dropped += 1
+                        try:
+                            await mark_reminder_sent(user_id)
+                        except Exception:
+                            pass
+                    else:
+                        other_errors += 1
+                        logger.warning(f"[reminder] BadRequest non-définitive à {user_id}: {e}")
+                        log_error("BadRequest inattendue (relance)", f"user_id={user_id} — {e}")
                 except Exception as e:
-                    # Erreurs transitoires (rate-limit, timeout réseau) :
+                    # Erreurs réellement transitoires (rate-limit, timeout réseau) :
                     # on NE consomme PAS de tentative, on réessaiera au prochain
                     # cycle.
                     other_errors += 1
                     logger.warning(f"[reminder] échec envoi à {user_id}: {e}")
                     log_error("Échec envoi relance", f"user_id={user_id} — {e}")
+        
 
             if sent or forbidden_dropped or other_errors:
                 logger.info(
@@ -1572,7 +1586,7 @@ if __name__ == "__main__":
     # Entrées : demande d'adhésion approuvée, OU bouton "Terminer" d'une relance.
     resume_entry = CallbackQueryHandler(resume_registration, pattern="^resume_registration$")
     from engagement import register_engagement_handlers
-    
+
     registration_conv = ConversationHandler(
         entry_points=[
             ChatJoinRequestHandler(approve_join_request),
