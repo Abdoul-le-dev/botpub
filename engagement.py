@@ -35,20 +35,20 @@ from telegram import (
 )
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, ContextTypes, filters, ApplicationHandlerStop,
+    MessageHandler, ContextTypes, filters,
 )
 
 # On réutilise ce qui existe déjà dans main.py — jamais de duplication.
 # - ADMIN_IDS : liste des admins (autorisation /engagement)
 # - sync_get_db : pool aiomysql du reste du bot
 # - log_error : journalisation d'erreurs dans errors.log (envoyé à 20h)
-from main import ADMIN_IDS
+from script import ADMIN_IDS
 from db import get_db as sync_get_db
 
 try:
     # log_error existe dans main.py (log fichier). En cas d'import circulaire
     # improbable, on tombe sur un fallback silencieux.
-    from main import log_error
+    from script import log_error
 except Exception:  # pragma: no cover
     def log_error(title, detail=""):
         logging.getLogger("engagement").warning(f"{title} — {detail}")
@@ -78,27 +78,6 @@ VOTE_LABELS = {
     "2": "🥈 2 gagnants",
     "3": "🥉 3 gagnants",
 }
-
-# ── Flag "en attente d'une motivation" — stocké au niveau MODULE
-# et non dans context.user_data. Raison : context.user_data peut être
-# scopé différemment selon les handlers (ConversationHandler, etc.), et
-# on veut être 100% sûr que le flag armé dans handle_deeplink() soit
-# visible depuis capture_engagement_response() quel que soit le groupe
-# / handler qui déclenche le texte suivant. Ce dict est indexé par
-# telegram_id, indépendant du contexte.
-_awaiting_motivation: set = set()
-
-
-def _arm_motivation_wait(telegram_id: int):
-    _awaiting_motivation.add(int(telegram_id))
-
-
-def _disarm_motivation_wait(telegram_id: int):
-    _awaiting_motivation.discard(int(telegram_id))
-
-
-def _is_awaiting_motivation(telegram_id: int) -> bool:
-    return int(telegram_id) in _awaiting_motivation
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -245,10 +224,7 @@ async def handle_deeplink(update: Update,
     Retourne True si un scénario a été traité (l'appelant doit alors
     interrompre son traitement normal), False sinon.
     """
-    logger.info(f"[engagement] handle_deeplink appelé param={start_param!r} "
-                f"user={update.effective_user.id}")
     if not start_param or not start_param.startswith(DEEPLINK_PREFIX):
-        logger.info(f"[engagement] payload ne matche pas le préfixe")
         return False
 
     key = start_param[len(DEEPLINK_PREFIX):]
@@ -257,15 +233,16 @@ async def handle_deeplink(update: Update,
         logger.info(f"[engagement] scénario inconnu: {key!r}")
         return False
 
-    logger.info(f"[engagement] dispatch vers scénario '{key}'")
     try:
         await scenario(update, context)
-        logger.info(f"[engagement] scénario '{key}' terminé OK")
         return True
     except Exception as e:
         logger.exception(f"[engagement] erreur scénario {key}")
         log_error(f"Erreur scénario {key}",
                   f"user_id={update.effective_user.id} — {e}")
+        # Même en cas d'erreur on retourne True : l'utilisateur a reçu
+        # (ou aurait dû recevoir) une réponse d'engagement, l'appelant
+        # ne doit pas enchaîner sur un autre flow.
         return True
 
 
@@ -364,7 +341,7 @@ async def handle_motivation(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _ask_motivation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Envoie la question et arme le flag pour capter la réponse suivante."""
-    _arm_motivation_wait(update.effective_user.id)
+    context.user_data["engagement_awaiting"] = "motivation"
 
     # On envoie via update.message si dispo, sinon via bot.send_message
     text = (
@@ -581,10 +558,11 @@ async def handle_share(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def capture_engagement_response(update: Update,
                                        context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if not _is_awaiting_motivation(user_id):
-        return  # rien à intercepter, on laisse passer aux autres groupes
+    awaiting = context.user_data.get("engagement_awaiting")
+    if awaiting != "motivation":
+        return  # rien à intercepter
 
+    user_id = update.effective_user.id
     motivation = (update.message.text or "").strip()
 
     if not motivation:
@@ -613,7 +591,7 @@ async def capture_engagement_response(update: Update,
     _append_motivation_file(user_id, name, motivation)
 
     # Désarme le flag
-    _disarm_motivation_wait(user_id)
+    context.user_data.pop("engagement_awaiting", None)
 
     try:
         await update.message.reply_text(
@@ -743,8 +721,9 @@ def register_engagement_handlers(app: Application):
     )
 
     # 3) Capture de la réponse texte de motivation.
-    #    Groupe 10 : après les autres handlers. Ne fait rien tant que le
-    #    flag module-level _awaiting_motivation ne contient pas l'user_id.
+    #    Groupe 10 : après le tunnel d'inscription (groupe par défaut 0),
+    #    avant le log_unhandled_message (groupe 99). Ne fait rien si le
+    #    flag engagement_awaiting n'est pas armé -> aucun impact sur le reste.
     app.add_handler(
         MessageHandler(
             filters.TEXT & ~filters.COMMAND
