@@ -1571,7 +1571,8 @@ if __name__ == "__main__":
     # Ordre : LEVEL (boutons inline) → PHONE (contact) → NAME (texte).
     # Entrées : demande d'adhésion approuvée, OU bouton "Terminer" d'une relance.
     resume_entry = CallbackQueryHandler(resume_registration, pattern="^resume_registration$")
-
+    from engagement import register_engagement_handlers
+    
     registration_conv = ConversationHandler(
         entry_points=[
             ChatJoinRequestHandler(approve_join_request),
@@ -1599,6 +1600,7 @@ if __name__ == "__main__":
     )
     app.add_handler(registration_conv)
 
+    register_engagement_handlers(app)
     register_validation_handler(app)
     register_formation_handler(app)
     register_form_handlers(app, app.bot, ADMIN_ID)
