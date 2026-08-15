@@ -3,7 +3,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
 from typing import Optional
-from telegram_page.broadcast_engine import _notify_admin
+from telegram_page.broadcast_engine import _notify_admins
 import os
 from telegram import Bot
 from dotenv import load_dotenv
