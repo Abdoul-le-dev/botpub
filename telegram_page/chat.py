@@ -17,7 +17,7 @@ def set_bot(bot_instance):
     global _bot
     _bot = bot_instance
 
-from telegram_page.broadcast_engine import _send_one
+from broadcast.worker import _send_one
 
 PLANS = {
     "mensuel":     30,
