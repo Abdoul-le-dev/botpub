@@ -14,7 +14,7 @@ from telegram.ext import (
     CallbackQueryHandler, ConversationHandler, ContextTypes, filters
 )
 from dotenv import load_dotenv
-
+from broadcast.cleanup import register_broadcast_admin_handlers
 from database.database import save_user
 
 from db import get_db as sync_get_db, init_pool
@@ -1639,6 +1639,8 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("incomplete_status", cmd_incomplete_status))
     app.add_handler(CommandHandler("stats_now", cmd_stats_now))
     app.add_handler(CommandHandler("errors_now", cmd_errors_now))
+
+    register_broadcast_admin_handlers(app)
 
     app.add_error_handler(error_handler)
 
