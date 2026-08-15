@@ -28,6 +28,28 @@ logger = logging.getLogger(__name__)
 # RÉSOLUTION DES DESTINATAIRES
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _dedupe_preserve_order(ids: Iterable[int], exclude: set[int]) -> list[int]:
+    """
+    Dédoublonne en gardant l'ordre de première apparition. Filtre les
+    exclusions et les valeurs None/invalides. Garantit qu'un telegram_id
+    ne sera jamais contacté 2× dans une même diffusion.
+    """
+    seen: set[int] = set()
+    out: list[int] = []
+    for raw in ids:
+        if raw is None:
+            continue
+        try:
+            uid = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if uid in seen or uid in exclude:
+            continue
+        seen.add(uid)
+        out.append(uid)
+    return out
+
+
 async def resolve_user_ids(
     category: Optional[str],
     user_ids: Optional[Iterable[int]],
@@ -35,7 +57,7 @@ async def resolve_user_ids(
     filters: Optional[dict],
 ) -> list[int]:
     """
-    Résout la liste finale des telegram_id destinataires.
+    Résout la liste finale des telegram_id destinataires — SANS DOUBLON.
 
     Règles (identiques à v1 pour compat) :
       - Si `user_ids` fourni, on l'utilise tel quel (moins les exclusions).
@@ -43,11 +65,14 @@ async def resolve_user_ids(
       - Sinon si `category` fourni → users de cette catégorie, avec filtres
         optionnels sur categories.created_at.
       - Sinon → liste vide.
+
+    La dédup finale garantit qu'un user en double dans `categories` (ou
+    présent 2× dans user_ids) n'est contacté qu'une seule fois.
     """
-    exclude = set(exclude_user_ids or [])
+    exclude = {int(x) for x in (exclude_user_ids or []) if x is not None}
 
     if user_ids:
-        return [int(uid) for uid in user_ids if int(uid) not in exclude]
+        return _dedupe_preserve_order(user_ids, exclude)
 
     async with get_db() as cur:
         if category == "all":
@@ -55,7 +80,9 @@ async def resolve_user_ids(
                 "SELECT telegram_id FROM users WHERE telegram_id IS NOT NULL"
             )
             rows = await cur.fetchall()
-            return [int(r["telegram_id"]) for r in rows if int(r["telegram_id"]) not in exclude]
+            return _dedupe_preserve_order(
+                (r["telegram_id"] for r in rows), exclude
+            )
 
         if category:
             query = "SELECT id_user FROM categories WHERE name_categorie = %s"
@@ -71,7 +98,9 @@ async def resolve_user_ids(
 
             await cur.execute(query, params)
             rows = await cur.fetchall()
-            return [int(r["id_user"]) for r in rows if int(r["id_user"]) not in exclude]
+            return _dedupe_preserve_order(
+                (r["id_user"] for r in rows), exclude
+            )
 
     return []
 
