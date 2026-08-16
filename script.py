@@ -46,6 +46,20 @@ logger = logging.getLogger("fdk_bot")
 
 CANAL_B_ID = int(os.getenv("CANAL_B_ID", "-1002705005402"))
 
+# ══════════════════════════════════════════════════════════════════════════════
+# CANAL SECONDAIRE — Master Class
+# ══════════════════════════════════════════════════════════════════════════════
+
+SECOND_CANAL_ID = int(os.getenv("SECOND_CANAL_ID", "0"))  # 0 = désactivé
+
+SECOND_CANAL_TITLE = os.getenv("SECOND_CANAL_TITLE", "").strip()
+
+# Catégorie dédiée aux membres validés du canal secondaire
+SECOND_CANAL_CATEGORIE = "FDK MASTER CLASS Aout"
+
+# Durée minimale d'abonnement (en jours) exigée pour l'accès Master Class
+MASTERCLASS_MIN_DURATION_DAYS = 70
+
 # Liste des admins. ADMIN_ID (singulier) reste défini comme le principal pour
 # les modules externes qui n'acceptent qu'un seul ID (ex: register_form_handlers).
 ADMIN_IDS = [6992809421, 571718066]
@@ -55,6 +69,8 @@ ADMIN_ID  = ADMIN_IDS[0]
 LEVEL, PHONE, NAME = range(3)
 
 CATEGORIE = "FDK CONCEPT CAPITAL LISTE ACTIFS"
+
+
 
 # Date de lancement du projet : toutes les statistiques "cumul" sont calculées
 # à partir de cette date (rien avant n'est compté).
@@ -69,11 +85,227 @@ if not token:
 
 import asyncio as _asyncio_for_uvloop
 import uvloop
-# NB : `uvloop.install()` casse `asyncio.get_event_loop()` sur Python 3.12+
-# (voir uvloop issue #702). Or `app.run_polling()` de python-telegram-bot
-# appelle justement get_event_loop() en interne → RuntimeError au démarrage.
-# On passe donc par la policy, qui reste compatible.
 _asyncio_for_uvloop.set_event_loop_policy(uvloop.EventLoopPolicy())
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HELPERS — CANAL SECONDAIRE
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _is_secondary_channel(chat_id: int, chat_title: str) -> bool:
+    """
+    True si la demande concerne le canal secondaire (Master Class).
+    Match par ID en priorité, fallback sur le title exact.
+    """
+    if SECOND_CANAL_ID and chat_id == SECOND_CANAL_ID:
+        return True
+    if SECOND_CANAL_TITLE and chat_title and chat_title.strip() == SECOND_CANAL_TITLE:
+        return True
+    return False
+
+
+async def _get_user_full_row(telegram_id: int):
+    """Renvoie name, email, phone du user, ou None si inexistant."""
+    async with sync_get_db() as cur:
+        await cur.execute(
+            "SELECT name, email, phone FROM users WHERE telegram_id = %s",
+            (telegram_id,),
+        )
+        return await cur.fetchone()
+
+
+async def _find_valid_masterclass_subscription(email: str):
+    """
+    Cherche un abonnement encore actif et d'au moins 70 jours de durée.
+    Retourne la ligne (dict) ou None.
+    """
+    if not email:
+        return None
+    async with sync_get_db() as cur:
+        await cur.execute(
+            """
+            SELECT id, plan, duration_days, expires_at
+            FROM subscription_info
+            WHERE LOWER(TRIM(email)) = LOWER(TRIM(%s))
+              AND duration_days >= %s
+              AND expires_at > NOW()
+            ORDER BY expires_at DESC
+            LIMIT 1
+            """,
+            (email, MASTERCLASS_MIN_DURATION_DAYS),
+        )
+        return await cur.fetchone()
+
+
+def _first_name(full_name: str, fallback: str = "") -> str:
+    """Extrait le prénom (premier mot, max 30 chars)."""
+    if not full_name or not full_name.strip():
+        return fallback
+    first = full_name.strip().split()[0]
+    return first if 1 <= len(first) <= 30 else fallback
+
+
+async def _handle_secondary_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Flow spécifique canal secondaire (Master Class).
+
+    Règles :
+      1. User absent de `users`         → refus + invitation à s'inscrire au principal
+      2. User sans email en base        → refus + invitation à /valider
+      3. Pas d'abonnement >= 70j actif  → refus + message @fiacrekpanou
+      4. Tout OK                         → approve + confirmation + catégorie
+    """
+    user = update.chat_join_request.from_user
+    user_id = user.id
+
+    # 1. Le user est-il déjà connu ?
+    try:
+        user_row = await _get_user_full_row(user_id)
+    except Exception as e:
+        logger.exception(f"[join/master] échec lookup user {user_id}")
+        log_error("Échec lookup user master class", f"user_id={user_id} — {e}")
+        user_row = None
+
+    # ── CAS 1 : user inconnu → refus (n'a jamais fait le tunnel principal)
+    if not user_row:
+        try:
+            await update.chat_join_request.decline()
+        except Exception as e:
+            logger.warning(f"[join/master] échec decline() user inconnu {user_id}: {e}")
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "❌ <b>Demande refusée</b>\n\n"
+                    "Vous devez d'abord vous inscrire sur notre canal principal "
+                    "avant de pouvoir rejoindre la Master Class.\n\n"
+                    "Une fois inscrit et votre abonnement validé, "
+                    "vous pourrez refaire votre demande ici.\n\n"
+                    "L'équipe El Lobo"
+                ),
+                parse_mode="HTML",
+            )
+        except Forbidden:
+            log_error("Refus master class + user non joignable",
+                      f"user_id={user_id} (jamais démarré /start)")
+        except Exception as e:
+            logger.warning(f"[join/master] échec envoi msg refus à {user_id}: {e}")
+        return ConversationHandler.END
+
+    email = (user_row.get("email") or "").strip()
+    name = user_row.get("name") or ""
+
+    # ── CAS 2 : user connu mais sans email → redirection vers /valider
+    if not email:
+        try:
+            await update.chat_join_request.decline()
+        except Exception as e:
+            logger.warning(f"[join/master] échec decline() sans email {user_id}: {e}")
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "📧 <b>Vérification requise</b>\n\n"
+                    "Pour rejoindre la <b>Master Class</b>, nous devons d'abord "
+                    "valider votre paiement via votre adresse email.\n\n"
+                    "👉 Tapez la commande /valider et suivez les instructions.\n\n"
+                    "Une fois votre email confirmé, refaites votre demande d'adhésion "
+                    "à la Master Class — elle sera automatiquement validée si un "
+                    "paiement éligible est trouvé.\n\n"
+                    "L'équipe El Lobo"
+                ),
+                parse_mode="HTML",
+            )
+        except Forbidden:
+            log_error("Master class : user sans email et non joignable",
+                      f"user_id={user_id}")
+        except Exception as e:
+            logger.warning(f"[join/master] échec envoi msg validation à {user_id}: {e}")
+        return ConversationHandler.END
+
+    # ── CAS 3 : email présent → recherche abonnement >= 70j actif
+    try:
+        valid_sub = await _find_valid_masterclass_subscription(email)
+    except Exception as e:
+        logger.exception(f"[join/master] échec lookup subscription {email}")
+        log_error("Échec lookup abonnement master class",
+                  f"user_id={user_id} email={email} — {e}")
+        valid_sub = None
+
+    if not valid_sub:
+        try:
+            await update.chat_join_request.decline()
+        except Exception as e:
+            logger.warning(f"[join/master] échec decline() no sub {user_id}: {e}")
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "❌ <b>Votre demande d'adhésion n'a pas pu être validée</b>\n\n"
+                    "Aucun paiement actif ne semble associé à votre compte "
+                    "pour le canal Master Class.\n\n"
+                    "Si vous pensez qu'il s'agit d'une erreur ou si vous souhaitez "
+                    "une vérification manuelle, contactez directement Fiacre : "
+                    "@fiacrekpanou\n\n"
+                    "L'équipe El Lobo"
+                ),
+                parse_mode="HTML",
+            )
+        except Forbidden:
+            log_error("Refus master class + user non joignable",
+                      f"user_id={user_id} email={email}")
+        except Exception as e:
+            logger.warning(f"[join/master] échec envoi msg refus à {user_id}: {e}")
+        return ConversationHandler.END
+
+    # ── CAS 4 : tout est OK → approbation + message + ajout catégorie
+    try:
+        await update.chat_join_request.approve()
+    except BadRequest as e:
+        msg = str(e).lower()
+        if "already" in msg or "participant" in msg:
+            logger.info(f"[join/master] {user_id} déjà membre")
+        else:
+            logger.exception(f"[join/master] échec approve() {user_id}")
+            log_error("Échec approbation master class", f"user_id={user_id} — {e}")
+            return ConversationHandler.END
+    except Exception as e:
+        logger.exception(f"[join/master] erreur inattendue approve() {user_id}")
+        log_error("Erreur inattendue approve master class", f"user_id={user_id} — {e}")
+        return ConversationHandler.END
+
+    prenom = _first_name(name)
+    signature = f"L'équipe El Lobo à votre service{', ' + prenom if prenom else ''}"
+
+    try:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=(
+                "✅ <b>Bienvenue dans la Master Class !</b>\n\n"
+                "Votre accès au canal a bien été validé.\n\n"
+                "📌 <b>Épinglez ce canal ainsi que le bot</b> en haut de votre liste : "
+                "à tout moment une actualité importante peut être publiée et vous devez "
+                "pouvoir réagir vite.\n\n"
+                "Restez actif — les meilleures opportunités se prennent en quelques minutes.\n\n"
+                f"{signature}"
+            ),
+            parse_mode="HTML",
+        )
+    except Forbidden:
+        log_error("Master class approuvé + user non joignable en privé",
+                  f"user_id={user_id}")
+    except Exception as e:
+        logger.warning(f"[join/master] échec envoi msg confirmation à {user_id}: {e}")
+
+    # Ajout à la catégorie master class
+    try:
+        from telegram_page.categorie import add_members_to_category
+        await add_members_to_category(SECOND_CANAL_CATEGORIE, [user_id])
+    except Exception as e:
+        logger.exception(f"[join/master] categorie error pour {user_id}")
+        log_error("Erreur ajout catégorie master class",
+                  f"user_id={user_id} — {e}")
+
+    return ConversationHandler.END
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LOG D'ERREURS SUR FICHIER + NOTIFS ADMIN
@@ -760,7 +992,7 @@ async def resume_registration(update: Update, context: ContextTypes.DEFAULT_TYPE
 # APPROBATION DES DEMANDES D'ADHÉSION
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def approve_join_requests(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Nouveau flow :
       1. Créer la ligne DB
@@ -863,7 +1095,119 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
     return return_state
 
+async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Point d'entrée pour toutes les demandes d'adhésion.
+    Dispatch selon le canal :
+      - Canal secondaire (Master Class) → flow de vérification paiement
+      - Canal principal                 → flow d'inscription existant
+    """
+    user = update.chat_join_request.from_user
+    user_id = user.id
+    chat = update.chat_join_request.chat
+    chat_id = chat.id
+    chat_title = chat.title or ""
 
+    # Log systématique : permet de découvrir l'ID d'un nouveau canal
+    logger.info(
+        f"[join] request user={user_id} chat_id={chat_id} title={chat_title!r}"
+    )
+
+    # ── Dispatch canal secondaire (Master Class) ─────────────────────────
+    if _is_secondary_channel(chat_id, chat_title):
+        return await _handle_secondary_join(update, context)
+
+    # ── Canal principal : flow historique (INCHANGÉ) ─────────────────────
+
+    # 1. Ligne DB
+    try:
+        await ensure_user_row(user_id)
+    except Exception as e:
+        logger.exception(f"[join] échec ensure_user_row pour {user_id}")
+        log_error("Échec création ligne users", f"user_id={user_id} — {e}")
+
+    # 2. Approbation
+    try:
+        await update.chat_join_request.approve()
+    except BadRequest as e:
+        msg = str(e).lower()
+        if "already" in msg or "participant" in msg:
+            logger.info(f"[join] {user_id} déjà membre.")
+        else:
+            logger.exception(f"[join] échec approve() pour {user_id}")
+            log_error("Échec approbation demande d'adhésion", f"user_id={user_id} — {e}")
+        return ConversationHandler.END
+    except Exception as e:
+        logger.exception(f"[join] erreur inattendue approve() pour {user_id}")
+        log_error("Erreur inattendue lors de l'approbation", f"user_id={user_id} — {e}")
+        return ConversationHandler.END
+
+    # 3. Lire l'état actuel de l'utilisateur pour choisir le bon message
+    name = phone = level = None
+    try:
+        row = await get_user_row(user_id)
+        if row:
+            name, phone, level = row
+    except Exception as e:
+        logger.exception(f"[join] échec get_user_row pour {user_id}")
+        log_error("Échec get_user_row (join)", f"user_id={user_id} — {e}")
+
+    state = _missing_field_state(name, phone, level)
+
+    # 4. Essayer d'envoyer le message d'accueil
+    sent_ok = False
+    return_state = ConversationHandler.END
+
+    try:
+        if state is None:
+            await context.bot.send_message(chat_id=user_id,
+                                           text=ALREADY_REGISTERED_TEXT, parse_mode="HTML")
+            sent_ok = True
+            return_state = ConversationHandler.END
+
+        elif not name and not phone and not level:
+            # Tout nouveau → message de bienvenue qui contient déjà les boutons de niveau
+            await context.bot.send_message(chat_id=user_id, text=WELCOME_TEXT,
+                                           parse_mode="HTML", reply_markup=level_keyboard)
+            sent_ok = True
+            return_state = LEVEL
+
+        else:
+            # Incomplet → on reprend exactement là où il en était
+            context.user_data["name"]  = name
+            context.user_data["phone"] = phone
+            context.user_data["level"] = level
+            await context.bot.send_message(chat_id=user_id, text=RESUME_INTRO_TEXT,
+                                           parse_mode="HTML")
+            await _prompt_state(context.bot, user_id, state)
+            sent_ok = True
+            return_state = state
+
+    except Forbidden as e:
+        # L'utilisateur n'a jamais démarré /start avec le bot, ou l'a bloqué.
+        # Conformément à la règle : on NE l'ajoute PAS à la catégorie
+        # (sinon il figurerait dans les relances alors qu'on ne peut pas lui parler).
+        logger.warning(f"[join] impossible d'écrire en privé à {user_id}: {e}")
+        log_error("Utilisateur non joignable en privé après approbation",
+                  f"user_id={user_id} — {e}")
+        return ConversationHandler.END
+
+    except Exception as e:
+        logger.exception(f"[join] erreur inattendue envoi message d'accueil à {user_id}")
+        log_error("Erreur envoi message d'accueil", f"user_id={user_id} — {e}")
+        return ConversationHandler.END
+
+    # 5. Envoi OK → on l'ajoute à la catégorie (donc relançable)
+    if sent_ok:
+        try:
+            from telegram_page.categorie import add_members_to_category
+            await add_members_to_category(CATEGORIE, [user_id])
+        except Exception as e:
+            logger.exception(f"[join] categorie error pour {user_id}")
+            log_error("Erreur lors de l'ajout à la catégorie",
+                      f"user_id={user_id} — {e}")
+
+    return return_state
 # ══════════════════════════════════════════════════════════════════════════════
 # RELANCE AUTOMATIQUE
 # ══════════════════════════════════════════════════════════════════════════════

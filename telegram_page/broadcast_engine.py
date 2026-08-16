@@ -66,6 +66,7 @@ import httpx
 from broadcast import config
 from broadcast import media_cache
 from broadcast.cleanup import propose_cleanup
+from broadcast.cleanup_mode import is_cleanup_mode, strip_cleanup_token
 from broadcast.error_classifier import ErrorCategory
 from broadcast.rate_limiter import get_global_limiter
 from broadcast.recipients import (
@@ -137,6 +138,18 @@ async def _notify_admins(bot, text: str) -> None:
             logger.warning(f"[notify] échec admin {admin_id} : {e}")
 
 
+async def _notify_admin(bot, admin_id: int, message: str) -> None:
+    """
+    COMPAT v1 : ancienne signature à 3 args (bot, admin_id, message).
+    Conservée pour les modules externes (subscription.py, etc.) qui
+    l'importaient depuis broadcast_engine.
+    """
+    try:
+        await bot.send_message(chat_id=admin_id, text=message)
+    except Exception as e:
+        logger.warning(f"[notify_admin] échec {admin_id} : {e}")
+
+
 async def _call_webhook(callback_url: str, report: dict) -> None:
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -199,6 +212,17 @@ async def broadcast_engine(bot, payload: dict) -> dict:
         logger.info(f"[{tag}] payload.retry=True ignoré (règle : aucun retry user)")
     if payload.get("delay") is not None:
         logger.debug(f"[{tag}] payload.delay ignoré (rate limiter global actif)")
+
+    # ── Détection MODE NETTOYAGE (analogue à +prenom) ────────────────────────
+    # Si le message contient +nettoyage, on entre en mode vérification :
+    #   * envoi silencieux (disable_notification=True)
+    #   * token retiré du message avant envoi
+    #   * rapport final formulé "Rapport nettoyage"
+    #   * erreurs network exclues de la proposition de suppression
+    cleanup_mode = is_cleanup_mode(message)
+    if cleanup_mode:
+        message = strip_cleanup_token(message)
+        logger.info(f"[{tag}] MODE NETTOYAGE activé (+nettoyage détecté)")
 
     if not message and fmt == "text":
         return {"error": "message vide"}
@@ -290,6 +314,7 @@ async def broadcast_engine(bot, payload: dict) -> dict:
         variables=variables,
         tag=tag,
         limiter=limiter,
+        silent=cleanup_mode,  # mode nettoyage → envois silencieux
     )
     if initial_cached_file_id:
         ctx.cached_file_id = initial_cached_file_id
@@ -378,17 +403,20 @@ async def broadcast_engine(bot, payload: dict) -> dict:
     csv_paths = generate_csv_reports(ctx.errors_by_category, tag, broadcast_id)
 
     # ── 11. Notification finale admin ────────────────────────────────────────
-    await _notify_admins(bot, format_admin_report(stats))
+    await _notify_admins(bot, format_admin_report(stats, cleanup_mode=cleanup_mode))
 
     # Envoi CSV en tâche de fond (les CSV sont supprimés après envoi)
     if csv_paths:
         asyncio.create_task(_send_csv_files(bot, csv_paths, tag))
 
     # ── 12. Proposition de nettoyage DB si blocked/deleted détectés ──────────
+    #     Network est EXCLU (règle : un timeout n'implique pas user mort).
     if blocked > 0 or deleted > 0:
         blocked_ids = [e["telegram_id"] for e in ctx.errors_by_category[ErrorCategory.BLOCKED]]
         deleted_ids = [e["telegram_id"] for e in ctx.errors_by_category[ErrorCategory.DELETED]]
-        asyncio.create_task(propose_cleanup(bot, blocked_ids, deleted_ids, tag))
+        asyncio.create_task(
+            propose_cleanup(bot, blocked_ids, deleted_ids, tag, cleanup_mode=cleanup_mode)
+        )
 
     # ── 13. Persistance DB (historique + stats détaillées) ──────────────────
     await save_broadcast_history(

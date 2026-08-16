@@ -73,10 +73,13 @@ async def propose_cleanup(
     blocked_ids: list[int],
     deleted_ids: list[int],
     tag: str = "",
+    cleanup_mode: bool = False,
 ) -> None:
     """
     Envoie aux admins la proposition de nettoyage. Ne fait rien si les deux
     listes sont vides.
+
+    Si cleanup_mode=True, wording adapté "vérification effectuée".
     """
     if not blocked_ids and not deleted_ids:
         return
@@ -91,12 +94,22 @@ async def propose_cleanup(
         )
 
     tag_prefix = f"[{tag}] " if tag else ""
-    text = (
-        f"🧹 {tag_prefix}Nettoyage de base proposé\n\n"
-        f"{len(blocked_ids)} utilisateurs ont bloqué le bot.\n"
-        f"{len(deleted_ids)} utilisateurs semblent supprimés.\n\n"
-        f"Souhaitez-vous les supprimer de la base ?"
-    )
+
+    if cleanup_mode:
+        text = (
+            f"🧹 {tag_prefix}Vérification terminée\n\n"
+            f"{len(blocked_ids)} utilisateurs ont bloqué le bot.\n"
+            f"{len(deleted_ids)} utilisateurs sont introuvables (supprimés).\n\n"
+            f"Souhaitez-vous purger ces {len(blocked_ids) + len(deleted_ids)} "
+            f"utilisateurs de la base ?"
+        )
+    else:
+        text = (
+            f"🧹 {tag_prefix}Nettoyage de base proposé\n\n"
+            f"{len(blocked_ids)} utilisateurs ont bloqué le bot.\n"
+            f"{len(deleted_ids)} utilisateurs semblent supprimés.\n\n"
+            f"Souhaitez-vous les supprimer de la base ?"
+        )
 
     kb = InlineKeyboardMarkup([[
         InlineKeyboardButton("✅ Supprimer", callback_data=f"{config.CB_CLEANUP_DELETE}{token}"),

@@ -201,12 +201,36 @@ async def save_broadcast_stats(stats: dict) -> None:
 # RAPPORT TEXTE ADMIN
 # ══════════════════════════════════════════════════════════════════════════════
 
-def format_admin_report(stats: dict) -> str:
+def format_admin_report(stats: dict, cleanup_mode: bool = False) -> str:
     """
-    Formate le rapport final envoyé à l'admin selon le brief.
+    Formate le rapport final envoyé à l'admin.
+    Si cleanup_mode=True, wording adapté "Rapport nettoyage".
     """
     tag_prefix = f"[{stats['tag']}] " if stats.get("tag") else ""
     minutes = round(stats["duration_seconds"] / 60, 1)
+
+    if cleanup_mode:
+        return (
+            f"🧹 {tag_prefix}Rapport nettoyage\n"
+            f"\n"
+            f"Vérifiés : {stats['total']}\n"
+            f"\n"
+            f"Accessibles : {stats['sent']}\n"
+            f"\n"
+            f"Injoignables : {stats['errors']}\n"
+            f"\n"
+            f"Blocked : {stats['blocked']}\n"
+            f"\n"
+            f"Deleted : {stats['deleted']}\n"
+            f"\n"
+            f"Erreurs réseau (ignorées) : {stats['network_errors']}\n"
+            f"\n"
+            f"Unknown : {stats['unknown_errors']}\n"
+            f"\n"
+            f"Durée : {minutes} minutes\n"
+            f"\n"
+            f"Débit moyen : {stats['average_msg_per_second']} msg/s"
+        )
 
     return (
         f"✅ {tag_prefix}Diffusion terminée\n"

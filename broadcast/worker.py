@@ -50,6 +50,7 @@ class BroadcastContext:
         variables: Optional[dict],
         tag: str,
         limiter: AdaptiveRateLimiter,
+        silent: bool = False,
     ):
         self.bot = bot
         self.fmt = fmt
@@ -60,6 +61,8 @@ class BroadcastContext:
         self.variables = variables or {}
         self.tag = tag
         self.limiter = limiter
+        # Mode nettoyage : envoi en silencieux (disable_notification=True)
+        self.silent = silent
 
         # Media : file_id Telegram réutilisable une fois obtenu
         self.cached_file_id: Optional[str] = None
@@ -94,7 +97,14 @@ def _clip_text(text: str, max_len: int) -> str:
     return text[: max_len - 1] + "…"
 
 
-async def _do_send(bot, user_id: int, fmt: str, text: str, media) -> Optional[object]:
+async def _do_send(
+    bot,
+    user_id: int,
+    fmt: str,
+    text: str,
+    media,
+    silent: bool = False,
+) -> Optional[object]:
     """
     Effectue l'appel Telegram brut. Retourne l'objet Message renvoyé par PTB
     (utile pour extraire le file_id après upload), ou None pour un envoi texte.
@@ -103,19 +113,28 @@ async def _do_send(bot, user_id: int, fmt: str, text: str, media) -> Optional[ob
       - Si texte ≤ TG_CAPTION_SAFE_LEN → caption sur le média.
       - Sinon → texte envoyé en message séparé + média sans caption.
     Le brief impose de ne jamais dépasser la limite Telegram.
+
+    Paramètre `silent` : si True, tous les envois utilisent
+    disable_notification=True (mode nettoyage : ping muet).
     """
+    kw = {"disable_notification": True} if silent else {}
+
     if fmt == "text":
-        await bot.send_message(chat_id=user_id, text=_clip_text(text, config.TG_MAX_MESSAGE_LEN))
+        await bot.send_message(
+            chat_id=user_id,
+            text=_clip_text(text, config.TG_MAX_MESSAGE_LEN),
+            **kw,
+        )
         return None
 
     if fmt == "image":
-        return await bot.send_photo(chat_id=user_id, photo=media)
+        return await bot.send_photo(chat_id=user_id, photo=media, **kw)
 
     if fmt == "video":
-        return await bot.send_video(chat_id=user_id, video=media)
+        return await bot.send_video(chat_id=user_id, video=media, **kw)
 
     if fmt == "document":
-        return await bot.send_document(chat_id=user_id, document=media)
+        return await bot.send_document(chat_id=user_id, document=media, **kw)
 
     if fmt in _FORMATS_WITH_CAPTION:
         # image+text ou video+text
@@ -123,26 +142,31 @@ async def _do_send(bot, user_id: int, fmt: str, text: str, media) -> Optional[ob
             await bot.send_message(
                 chat_id=user_id,
                 text=_clip_text(text, config.TG_MAX_MESSAGE_LEN),
+                **kw,
             )
             if fmt == "image+text":
-                return await bot.send_photo(chat_id=user_id, photo=media)
-            return await bot.send_video(chat_id=user_id, video=media)
+                return await bot.send_photo(chat_id=user_id, photo=media, **kw)
+            return await bot.send_video(chat_id=user_id, video=media, **kw)
         else:
             if fmt == "image+text":
-                return await bot.send_photo(chat_id=user_id, photo=media, caption=text)
-            return await bot.send_video(chat_id=user_id, video=media, caption=text)
+                return await bot.send_photo(chat_id=user_id, photo=media, caption=text, **kw)
+            return await bot.send_video(chat_id=user_id, video=media, caption=text, **kw)
 
     if fmt == "document+text":
-        # Document : historiquement le texte est envoyé séparément (compat v1)
         if text:
             await bot.send_message(
                 chat_id=user_id,
                 text=_clip_text(text, config.TG_MAX_MESSAGE_LEN),
+                **kw,
             )
-        return await bot.send_document(chat_id=user_id, document=media)
+        return await bot.send_document(chat_id=user_id, document=media, **kw)
 
     # Fallback : format inconnu → traité comme text
-    await bot.send_message(chat_id=user_id, text=_clip_text(text, config.TG_MAX_MESSAGE_LEN))
+    await bot.send_message(
+        chat_id=user_id,
+        text=_clip_text(text, config.TG_MAX_MESSAGE_LEN),
+        **kw,
+    )
     return None
 
 
@@ -247,7 +271,8 @@ async def _send_one(ctx: BroadcastContext, user_id: int, worker_id: int) -> None
                         try:
                             try:
                                 msg = await _do_send(
-                                    ctx.bot, user_id, ctx.fmt, personalized, media_param
+                                    ctx.bot, user_id, ctx.fmt, personalized, media_param,
+                                    silent=ctx.silent,
                                 )
                             finally:
                                 try:
@@ -290,7 +315,10 @@ async def _send_one(ctx: BroadcastContext, user_id: int, worker_id: int) -> None
 
         # ── Chemin normal : file_id cached OU URL distante OU format text ──
         try:
-            msg = await _do_send(ctx.bot, user_id, ctx.fmt, personalized, media_param)
+            msg = await _do_send(
+                ctx.bot, user_id, ctx.fmt, personalized, media_param,
+                silent=ctx.silent,
+            )
             ctx.sent += 1
             await ctx.limiter.notify_success()
             return
