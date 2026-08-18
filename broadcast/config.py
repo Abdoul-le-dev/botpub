@@ -46,7 +46,7 @@ RATE_RECOVERY_INCREMENT: float    = float(os.getenv("BROADCAST_RATE_RECOVERY_INC
 # Nombre de coroutines qui consomment la queue en parallèle. Le vrai débit est
 # borné par le rate limiter global : ces workers passent l'essentiel de leur
 # temps à attendre le token. 32 suffit largement pour saturer 30 msg/s.
-NUM_WORKERS: int  = int(os.getenv("BROADCAST_WORKERS", "1000"))
+NUM_WORKERS: int  = int(os.getenv("BROADCAST_WORKERS", "200"))
 QUEUE_MAXSIZE: int = int(os.getenv("BROADCAST_QUEUE_MAXSIZE", "2000"))
 
 
