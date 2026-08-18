@@ -210,18 +210,17 @@ def format_admin_report(stats: dict, cleanup_mode: bool = False) -> str:
     minutes = round(stats["duration_seconds"] / 60, 1)
 
     if cleanup_mode:
+        purged = stats.get("purged", 0)
         return (
             f"🧹 {tag_prefix}Rapport nettoyage\n"
             f"\n"
             f"Vérifiés : {stats['total']}\n"
             f"\n"
-            f"Accessibles : {stats['sent']}\n"
+            f"Accessibles (message envoyé + supprimé) : {stats['sent']}\n"
             f"\n"
-            f"Injoignables : {stats['errors']}\n"
-            f"\n"
-            f"Blocked : {stats['blocked']}\n"
-            f"\n"
-            f"Deleted : {stats['deleted']}\n"
+            f"Utilisateurs purgés en base : {purged}\n"
+            f"  ├─ Blocked : {stats['blocked']}\n"
+            f"  └─ Deleted : {stats['deleted']}\n"
             f"\n"
             f"Erreurs réseau (ignorées) : {stats['network_errors']}\n"
             f"\n"

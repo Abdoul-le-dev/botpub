@@ -314,7 +314,7 @@ async def broadcast_engine(bot, payload: dict) -> dict:
         variables=variables,
         tag=tag,
         limiter=limiter,
-        silent=cleanup_mode,  # mode nettoyage → envois silencieux
+        cleanup_mode=cleanup_mode,  # mode nettoyage → silent + delete-msg + purge live
     )
     if initial_cached_file_id:
         ctx.cached_file_id = initial_cached_file_id
@@ -397,6 +397,8 @@ async def broadcast_engine(bot, payload: dict) -> dict:
         "average_msg_per_second": round(avg_rate, 2),
         "max_msg_per_second":     metrics_snap["max_rate"],
         "min_msg_per_second":     metrics_snap["min_rate"],
+        # Mode nettoyage : nb d'utilisateurs purgés en temps réel
+        "purged":                 ctx.purged,
     }
 
     # ── 10. Génération et envoi des CSV ──────────────────────────────────────
@@ -409,13 +411,13 @@ async def broadcast_engine(bot, payload: dict) -> dict:
     if csv_paths:
         asyncio.create_task(_send_csv_files(bot, csv_paths, tag))
 
-    # ── 12. Proposition de nettoyage DB si blocked/deleted détectés ──────────
-    #     Network est EXCLU (règle : un timeout n'implique pas user mort).
-    if blocked > 0 or deleted > 0:
+    # ── 12. Proposition de nettoyage DB (UNIQUEMENT si PAS en mode nettoyage)
+    #     En mode nettoyage, la purge est déjà faite en live par les workers.
+    if not cleanup_mode and (blocked > 0 or deleted > 0):
         blocked_ids = [e["telegram_id"] for e in ctx.errors_by_category[ErrorCategory.BLOCKED]]
         deleted_ids = [e["telegram_id"] for e in ctx.errors_by_category[ErrorCategory.DELETED]]
         asyncio.create_task(
-            propose_cleanup(bot, blocked_ids, deleted_ids, tag, cleanup_mode=cleanup_mode)
+            propose_cleanup(bot, blocked_ids, deleted_ids, tag, cleanup_mode=False)
         )
 
     # ── 13. Persistance DB (historique + stats détaillées) ──────────────────

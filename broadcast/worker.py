@@ -8,6 +8,14 @@ l'essentiel de leur temps dans `await limiter.acquire()`.
 Politique d'erreur (par le brief) :
   - RetryAfter : PAUSE globale + retry de CE message uniquement (pas d'échec).
   - Toute autre erreur : classification + collecte, PAS de retry, passer au suivant.
+
+Mode nettoyage (+nettoyage dans le message, ctx.cleanup_mode=True) :
+  - Envoi silencieux (disable_notification=True).
+  - Après envoi réussi → suppression IMMÉDIATE du message côté user
+    (bot.delete_message pour chaque Message renvoyé par Telegram).
+  - Sur erreur BLOCKED ou DELETED → purge IMMÉDIATE du user en DB
+    (users + categories) avant de passer au user suivant.
+  - Erreurs network → ignorées (ni purge, ni delete-msg).
 """
 
 from __future__ import annotations
@@ -20,6 +28,7 @@ from typing import Optional
 from telegram.error import RetryAfter, TelegramError
 
 from . import config, media_cache
+from .cleanup import delete_user_immediately
 from .error_classifier import ErrorCategory, classify
 from .rate_limiter import AdaptiveRateLimiter
 from .recipients import inject_variables
@@ -32,11 +41,7 @@ logger = logging.getLogger(__name__)
 # ══════════════════════════════════════════════════════════════════════════════
 
 class BroadcastContext:
-    """
-    État mutable partagé entre le feeder et les N workers d'UN broadcast.
-    Les compteurs sont modifiés sans lock : Python + asyncio single-threaded
-    garantit qu'un `+= 1` est atomique tant qu'on ne yield pas au milieu.
-    """
+    """État mutable partagé entre le feeder et les N workers d'UN broadcast."""
 
     def __init__(
         self,
@@ -50,7 +55,7 @@ class BroadcastContext:
         variables: Optional[dict],
         tag: str,
         limiter: AdaptiveRateLimiter,
-        silent: bool = False,
+        cleanup_mode: bool = False,
     ):
         self.bot = bot
         self.fmt = fmt
@@ -61,20 +66,23 @@ class BroadcastContext:
         self.variables = variables or {}
         self.tag = tag
         self.limiter = limiter
-        # Mode nettoyage : envoi en silencieux (disable_notification=True)
-        self.silent = silent
+
+        # Mode nettoyage : envoi silencieux + delete du msg + purge DB live
+        self.cleanup_mode = cleanup_mode
+        # Silent = True dès qu'on est en cleanup_mode (pas de vibration user)
+        self.silent = cleanup_mode
 
         # Media : file_id Telegram réutilisable une fois obtenu
         self.cached_file_id: Optional[str] = None
-        # Événement signalant que le premier upload est terminé (workers attendent)
         self.file_id_ready = asyncio.Event()
-        # Lock qui sérialise le PREMIER upload d'un fichier local : sans lui,
-        # 32 workers uploaderaient le même fichier en parallèle.
+        # Lock qui sérialise le PREMIER upload d'un fichier local
         self.first_upload_lock = asyncio.Lock()
 
         # Compteurs
         self.sent: int = 0
         self.errors: int = 0
+        # Compteur spécifique au mode nettoyage : users purgés en live
+        self.purged: int = 0
 
         # Collecte d'erreurs par catégorie
         self.errors_by_category: dict[ErrorCategory, list[dict]] = {
@@ -86,9 +94,8 @@ class BroadcastContext:
 # ENVOI UNITAIRE
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Formats qui portent un média
 _MEDIA_FORMATS = {"image", "video", "document", "image+text", "video+text", "document+text"}
-_FORMATS_WITH_CAPTION = {"image+text", "video+text"}  # document+text est traité séparément
+_FORMATS_WITH_CAPTION = {"image+text", "video+text"}
 
 
 def _clip_text(text: str, max_len: int) -> str:
@@ -104,70 +111,89 @@ async def _do_send(
     text: str,
     media,
     silent: bool = False,
-) -> Optional[object]:
+) -> list:
     """
-    Effectue l'appel Telegram brut. Retourne l'objet Message renvoyé par PTB
-    (utile pour extraire le file_id après upload), ou None pour un envoi texte.
+    Effectue l'appel Telegram brut. Retourne la LISTE des objets Message
+    envoyés (0, 1 ou 2 selon le format).
+
+    Le mode nettoyage utilise cette liste pour supprimer chaque message
+    envoyé.  Le cache file_id utilise le dernier élément (le média).
 
     Gestion des captions :
       - Si texte ≤ TG_CAPTION_SAFE_LEN → caption sur le média.
       - Sinon → texte envoyé en message séparé + média sans caption.
-    Le brief impose de ne jamais dépasser la limite Telegram.
 
     Paramètre `silent` : si True, tous les envois utilisent
     disable_notification=True (mode nettoyage : ping muet).
     """
     kw = {"disable_notification": True} if silent else {}
+    sent: list = []
 
     if fmt == "text":
-        await bot.send_message(
+        m = await bot.send_message(
             chat_id=user_id,
             text=_clip_text(text, config.TG_MAX_MESSAGE_LEN),
             **kw,
         )
-        return None
+        sent.append(m)
+        return sent
 
     if fmt == "image":
-        return await bot.send_photo(chat_id=user_id, photo=media, **kw)
+        m = await bot.send_photo(chat_id=user_id, photo=media, **kw)
+        sent.append(m)
+        return sent
 
     if fmt == "video":
-        return await bot.send_video(chat_id=user_id, video=media, **kw)
+        m = await bot.send_video(chat_id=user_id, video=media, **kw)
+        sent.append(m)
+        return sent
 
     if fmt == "document":
-        return await bot.send_document(chat_id=user_id, document=media, **kw)
+        m = await bot.send_document(chat_id=user_id, document=media, **kw)
+        sent.append(m)
+        return sent
 
     if fmt in _FORMATS_WITH_CAPTION:
-        # image+text ou video+text
         if len(text) > config.TG_CAPTION_SAFE_LEN:
-            await bot.send_message(
+            m1 = await bot.send_message(
                 chat_id=user_id,
                 text=_clip_text(text, config.TG_MAX_MESSAGE_LEN),
                 **kw,
             )
+            sent.append(m1)
             if fmt == "image+text":
-                return await bot.send_photo(chat_id=user_id, photo=media, **kw)
-            return await bot.send_video(chat_id=user_id, video=media, **kw)
+                m2 = await bot.send_photo(chat_id=user_id, photo=media, **kw)
+            else:
+                m2 = await bot.send_video(chat_id=user_id, video=media, **kw)
+            sent.append(m2)
         else:
             if fmt == "image+text":
-                return await bot.send_photo(chat_id=user_id, photo=media, caption=text, **kw)
-            return await bot.send_video(chat_id=user_id, video=media, caption=text, **kw)
+                m = await bot.send_photo(chat_id=user_id, photo=media, caption=text, **kw)
+            else:
+                m = await bot.send_video(chat_id=user_id, video=media, caption=text, **kw)
+            sent.append(m)
+        return sent
 
     if fmt == "document+text":
         if text:
-            await bot.send_message(
+            m1 = await bot.send_message(
                 chat_id=user_id,
                 text=_clip_text(text, config.TG_MAX_MESSAGE_LEN),
                 **kw,
             )
-        return await bot.send_document(chat_id=user_id, document=media, **kw)
+            sent.append(m1)
+        m2 = await bot.send_document(chat_id=user_id, document=media, **kw)
+        sent.append(m2)
+        return sent
 
     # Fallback : format inconnu → traité comme text
-    await bot.send_message(
+    m = await bot.send_message(
         chat_id=user_id,
         text=_clip_text(text, config.TG_MAX_MESSAGE_LEN),
         **kw,
     )
-    return None
+    sent.append(m)
+    return sent
 
 
 def _extract_file_id(msg, fmt: str) -> Optional[str]:
@@ -186,35 +212,54 @@ def _extract_file_id(msg, fmt: str) -> Optional[str]:
     return None
 
 
-async def _prepare_media_for_send(ctx: BroadcastContext, worker_id: int) -> object:
+async def _delete_sent_messages(bot, user_id: int, messages: list) -> None:
     """
-    Retourne le paramètre à passer à Telegram pour le média :
-      - Un file_id str si déjà connu (cache RAM ou déjà uploadé).
-      - Une URL http(s) si media_url est une URL externe (Telegram la fetch).
-      - Un file handle si c'est le PREMIER upload local (un seul worker le fait,
-        les autres attendent l'event).
+    Supprime tous les messages que l'on vient d'envoyer côté user.
+    Best-effort : chaque échec est loggé en debug (non bloquant).
     """
-    if ctx.fmt not in _MEDIA_FORMATS or not ctx.media_url:
-        return None
+    for m in messages:
+        try:
+            await bot.delete_message(chat_id=user_id, message_id=m.message_id)
+        except Exception as e:
+            logger.debug(
+                f"[cleanup] delete_message échoué uid={user_id} "
+                f"mid={getattr(m, 'message_id', '?')} : {e}"
+            )
 
-    # Déjà cached en RAM (broadcast en cours)
-    if ctx.cached_file_id:
-        return ctx.cached_file_id
 
-    if not ctx.is_local_media:
-        # URL distante : Telegram la télécharge, pas besoin de gérer localement
-        return ctx.media_url
+async def _handle_user_error(
+    ctx: BroadcastContext,
+    user_id: int,
+    exc: Exception,
+    worker_id: int,
+) -> None:
+    """
+    Classifie l'erreur, l'enregistre, et en mode nettoyage :
+    purge immédiate du user en DB si blocked ou deleted.
+    """
+    cat = classify(exc)
+    ctx.errors_by_category[cat].append({
+        "telegram_id":   user_id,
+        "error_type":    type(exc).__name__,
+        "error_message": str(exc)[:500],
+        "date":          datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "broadcast_tag": ctx.tag,
+    })
+    ctx.errors += 1
+    logger.debug(
+        f"[worker {worker_id}] échec uid={user_id} cat={cat.value} "
+        f"err={type(exc).__name__}"
+    )
 
-    # Fichier local → premier envoi doit uploader.
-    # Un seul worker fait l'upload ; les autres attendent l'événement.
-    if not ctx.file_id_ready.is_set():
-        # Le worker qui arrive ici en premier va uploader.
-        # Le lock implicite : on renvoie None spécial pour signaler
-        # "toi tu uploades". Simplification : on utilise une race sur l'event.
-        # Approche propre : lock dédié.
-        pass
-
-    return None  # signal : uploader depuis ctx.media_url
+    # ── MODE NETTOYAGE : purge immédiate si user injoignable ──────────
+    if ctx.cleanup_mode and cat in (ErrorCategory.BLOCKED, ErrorCategory.DELETED):
+        users_del, cats_del = await delete_user_immediately(user_id)
+        if users_del > 0:
+            ctx.purged += 1
+            logger.info(
+                f"[worker {worker_id}] purge uid={user_id} "
+                f"(cat={cat.value}, cats_rows={cats_del})"
+            )
 
 
 async def _send_one(ctx: BroadcastContext, user_id: int, worker_id: int) -> None:
@@ -225,7 +270,6 @@ async def _send_one(ctx: BroadcastContext, user_id: int, worker_id: int) -> None
     personalized = inject_variables(ctx.message, user_id, ctx.prenoms, ctx.variables)
 
     # Boucle interne UNIQUEMENT pour re-tenter après RetryAfter (règle brief).
-    # Aucun autre type d'erreur ne provoque de retry.
     while True:
         await ctx.limiter.acquire()
 
@@ -250,29 +294,15 @@ async def _send_one(ctx: BroadcastContext, user_id: int, worker_id: int) -> None
                             media_param = open(ctx.media_url, "rb")
                             uploading_locally = True
                         except OSError as e:
-                            # Fichier introuvable → on log, on marque en unknown,
-                            # on ne retente pas.
-                            cat = classify(e)
-                            ctx.errors_by_category[cat].append({
-                                "telegram_id":   user_id,
-                                "error_type":    type(e).__name__,
-                                "error_message": f"média local introuvable: {e}",
-                                "date":          datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                "broadcast_tag": ctx.tag,
-                            })
-                            ctx.errors += 1
+                            await _handle_user_error(ctx, user_id, e, worker_id)
                             return
 
-                    # Si on est uploader, on GARDE le lock jusqu'à ce que
-                    # l'upload soit terminé et le file_id caché : sinon un
-                    # autre worker verrait cached_file_id encore vide et
-                    # ré-uploaderait aussi.
                     if uploading_locally:
                         try:
                             try:
-                                msg = await _do_send(
-                                    ctx.bot, user_id, ctx.fmt, personalized, media_param,
-                                    silent=ctx.silent,
+                                sent_messages = await _do_send(
+                                    ctx.bot, user_id, ctx.fmt, personalized,
+                                    media_param, silent=ctx.silent,
                                 )
                             finally:
                                 try:
@@ -280,13 +310,22 @@ async def _send_one(ctx: BroadcastContext, user_id: int, worker_id: int) -> None
                                 except Exception:
                                     pass
 
-                            fid = _extract_file_id(msg, ctx.fmt)
+                            # Extract file_id du dernier message (le média)
+                            fid = None
+                            for m in reversed(sent_messages):
+                                fid = _extract_file_id(m, ctx.fmt)
+                                if fid:
+                                    break
                             if fid:
                                 ctx.cached_file_id = fid
                                 ctx.file_id_ready.set()
                                 asyncio.create_task(
                                     media_cache.store_file_id(ctx.media_url, ctx.fmt, fid)
                                 )
+
+                            # Mode nettoyage : supprime le message après confirmation
+                            if ctx.cleanup_mode and sent_messages:
+                                await _delete_sent_messages(ctx.bot, user_id, sent_messages)
 
                             ctx.sent += 1
                             await ctx.limiter.notify_success()
@@ -298,27 +337,23 @@ async def _send_one(ctx: BroadcastContext, user_id: int, worker_id: int) -> None
                                 f"[worker {worker_id}] RetryAfter {wait}s pendant upload initial"
                             )
                             await ctx.limiter.notify_retry_after(wait)
-                            # Sort du lock, retentera au prochain tour de boucle
                             continue
 
                         except Exception as e:
-                            cat = classify(e)
-                            ctx.errors_by_category[cat].append({
-                                "telegram_id":   user_id,
-                                "error_type":    type(e).__name__,
-                                "error_message": str(e)[:500],
-                                "date":          datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                "broadcast_tag": ctx.tag,
-                            })
-                            ctx.errors += 1
+                            await _handle_user_error(ctx, user_id, e, worker_id)
                             return
 
         # ── Chemin normal : file_id cached OU URL distante OU format text ──
         try:
-            msg = await _do_send(
+            sent_messages = await _do_send(
                 ctx.bot, user_id, ctx.fmt, personalized, media_param,
                 silent=ctx.silent,
             )
+
+            # Mode nettoyage : supprime le message après confirmation d'envoi
+            if ctx.cleanup_mode and sent_messages:
+                await _delete_sent_messages(ctx.bot, user_id, sent_messages)
+
             ctx.sent += 1
             await ctx.limiter.notify_success()
             return
@@ -330,19 +365,9 @@ async def _send_one(ctx: BroadcastContext, user_id: int, worker_id: int) -> None
             continue
 
         except Exception as e:
-            cat = classify(e)
-            ctx.errors_by_category[cat].append({
-                "telegram_id":   user_id,
-                "error_type":    type(e).__name__,
-                "error_message": str(e)[:500],
-                "date":          datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "broadcast_tag": ctx.tag,
-            })
-            ctx.errors += 1
-            logger.debug(
-                f"[worker {worker_id}] échec uid={user_id} cat={cat.value} err={type(e).__name__}"
-            )
+            await _handle_user_error(ctx, user_id, e, worker_id)
             return
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # WORKER LOOP
@@ -355,7 +380,6 @@ async def worker_loop(
 ) -> None:
     """
     Boucle worker : consomme la queue jusqu'à recevoir None (sentinel).
-    Chaque item de la queue est un telegram_id (int).
     """
     while True:
         try:
@@ -368,8 +392,7 @@ async def worker_loop(
             try:
                 await _send_one(ctx, int(item), worker_id)
             except Exception as e:
-                # Filet de sécurité : ne doit jamais arriver, _send_one
-                # capture tout. Mais si oui, on ne veut pas tuer le worker.
+                # Filet de sécurité : _send_one capture normalement tout.
                 logger.exception(f"[worker {worker_id}] erreur non gérée uid={item} : {e}")
                 ctx.errors += 1
                 ctx.errors_by_category[ErrorCategory.UNKNOWN].append({

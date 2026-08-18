@@ -164,6 +164,32 @@ async def _delete_users_from_db(telegram_ids: list[int]) -> tuple[int, int]:
     return users_deleted, cats_deleted
 
 
+async def delete_user_immediately(telegram_id: int) -> tuple[int, int]:
+    """
+    Purge UN utilisateur en temps réel (utilisé par le mode nettoyage
+    pendant le broadcast, dès qu'un blocked/deleted est détecté).
+
+    Retourne (users_deleted, categories_deleted). Best-effort : en cas
+    d'échec DB on log en warning et on renvoie (0, 0) sans lever.
+    """
+    try:
+        async with get_db() as cur:
+            await cur.execute(
+                "DELETE FROM categories WHERE id_user = %s",
+                (telegram_id,),
+            )
+            cats = cur.rowcount or 0
+            await cur.execute(
+                "DELETE FROM users WHERE telegram_id = %s",
+                (telegram_id,),
+            )
+            users = cur.rowcount or 0
+        return users, cats
+    except Exception as e:
+        logger.warning(f"[cleanup] échec purge uid={telegram_id} : {e}")
+        return 0, 0
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # HANDLERS CALLBACKQUERY
 # ══════════════════════════════════════════════════════════════════════════════

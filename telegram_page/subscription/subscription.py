@@ -197,39 +197,39 @@ async def _send_reabo_message(telegram_id: int, prenom: str, plan: str, new_expi
         logger.warning(f"[reabo_message] échec envoi message 1 à {telegram_id} : {e}")
         return False
 
-    # ── Message 2 : rappel accès canal Master Class ──────────────────────────
-    try:
-        await bot.send_message(
-            chat_id=telegram_id,
-            text=(
-                "*Votre accès au canal Master Class est prêt\\.*\n"
-                "\n"
-                "Cliquez sur le bouton ci\\-dessous pour rejoindre le canal\\.\n"
-                "\n"
-                "\n"
-                "*Instructions importantes*\n"
-                "\n"
-                "Épinglez le canal en haut de votre liste dès votre arrivée\\.\n"
-                "\n"
-                "Activez les notifications pour être informé de chaque publication\\.\n"
-                "\n"
-                "Consultez régulièrement le canal afin de rester à jour\\.\n"
-                "\n"
-                "\n"
-                "*Petit conseil*\n"
-                "\n"
-                "Prenez le temps de lire les premières publications épinglées\\. "
-                "Elles contiennent les informations essentielles pour bien démarrer\\."
-            ),
-            parse_mode="MarkdownV2",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("Accéder au canal Master Class",
-                                      url="https://t.me/+-1hIhAeAvc1hMWM0")]
-            ]),
-        )
-    except Exception as e:
-        logger.warning(f"[reabo_message] échec envoi message 2 (canal) à {telegram_id} : {e}")
-        # On ne renvoie PAS False : le message principal est bien parti.
+    # # ── Message 2 : rappel accès canal Master Class ──────────────────────────
+    # try:
+    #     await bot.send_message(
+    #         chat_id=telegram_id,
+    #         text=(
+    #             "*Votre accès au canal Master Class est prêt\\.*\n"
+    #             "\n"
+    #             "Cliquez sur le bouton ci\\-dessous pour rejoindre le canal\\.\n"
+    #             "\n"
+    #             "\n"
+    #             "*Instructions importantes*\n"
+    #             "\n"
+    #             "Épinglez le canal en haut de votre liste dès votre arrivée\\.\n"
+    #             "\n"
+    #             "Activez les notifications pour être informé de chaque publication\\.\n"
+    #             "\n"
+    #             "Consultez régulièrement le canal afin de rester à jour\\.\n"
+    #             "\n"
+    #             "\n"
+    #             "*Petit conseil*\n"
+    #             "\n"
+    #             "Prenez le temps de lire les premières publications épinglées\\. "
+    #             "Elles contiennent les informations essentielles pour bien démarrer\\."
+    #         ),
+    #         parse_mode="MarkdownV2",
+    #         reply_markup=InlineKeyboardMarkup([
+    #             [InlineKeyboardButton("Accéder au canal Master Class",
+    #                                   url="https://t.me/+-1hIhAeAvc1hMWM0")]
+    #         ]),
+    #     )
+    # except Exception as e:
+    #     logger.warning(f"[reabo_message] échec envoi message 2 (canal) à {telegram_id} : {e}")
+    #     # On ne renvoie PAS False : le message principal est bien parti.
 
     return True
 
