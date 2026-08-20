@@ -35,20 +35,6 @@ from telegram_page.gold.session_registry import session_registry
 from telegram_page.gold.broadcast_send import send_teaser_broadcast
 import telegram_page.gold.gold_engine as gold_engine_mod
 
-# ══════════════════════════════════════════════════════════════════════════════
-# NOUVEAU : moteur de relance externalisé (cf. reminder_engine.py)
-# ══════════════════════════════════════════════════════════════════════════════
-from reminder_engine import (
-    registration_reminder_loop,
-    add_to_prospect,
-    promote_prospect_to_main_active,
-    normalize_phone_text,
-    PHONE_FORMAT_HINT,
-    PROSPECT_CATEGORY,
-    peek_daily_counter,
-    get_and_reset_daily_counter,
-)
-
 load_dotenv()
 
 logging.basicConfig(
@@ -60,19 +46,37 @@ logger = logging.getLogger("fdk_bot")
 
 CANAL_B_ID = int(os.getenv("CANAL_B_ID", "-1002705005402"))
 
+# ══════════════════════════════════════════════════════════════════════════════
+# CANAL SECONDAIRE — Master Class
+# ══════════════════════════════════════════════════════════════════════════════
+
+SECOND_CANAL_ID = int(os.getenv("SECOND_CANAL_ID", "0"))  # 0 = désactivé
+
+SECOND_CANAL_TITLE = os.getenv("SECOND_CANAL_TITLE", "").strip()
+
+# Catégorie dédiée aux membres validés du canal secondaire
+SECOND_CANAL_CATEGORIE = "FDK MASTER CLASS Aout"
+
+# Durée minimale d'abonnement (en jours) exigée pour l'accès Master Class
+MASTERCLASS_MIN_DURATION_DAYS = 70
+
 # Liste des admins. ADMIN_ID (singulier) reste défini comme le principal pour
-# les modules externes qui n'acceptent qu'un seul ID.
+# les modules externes qui n'acceptent qu'un seul ID (ex: register_form_handlers).
 ADMIN_IDS = [6992809421, 571718066]
 ADMIN_ID  = ADMIN_IDS[0]
 
 # Ordre du tunnel : LEVEL → PHONE → NAME.
 LEVEL, PHONE, NAME = range(3)
 
+CATEGORIE = "FDK CONCEPT CAPITAL LISTE ACTIFS"
+
+
+
 # Date de lancement du projet : toutes les statistiques "cumul" sont calculées
 # à partir de cette date (rien avant n'est compté).
 STATS_START_DATE = "2026-07-27"
 
-token = os.getenv("tokens")
+token     = os.getenv("tokens")
 
 if not token:
     raise RuntimeError(
@@ -83,9 +87,235 @@ import asyncio as _asyncio_for_uvloop
 import uvloop
 _asyncio_for_uvloop.set_event_loop_policy(uvloop.EventLoopPolicy())
 
+# ══════════════════════════════════════════════════════════════════════════════
+# HELPERS — CANAL SECONDAIRE
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _is_secondary_channel(chat_id: int, chat_title: str) -> bool:
+    """
+    True si la demande concerne le canal secondaire (Master Class).
+    Match par ID en priorité, fallback sur le title exact.
+    """
+    if SECOND_CANAL_ID and chat_id == SECOND_CANAL_ID:
+        return True
+    if SECOND_CANAL_TITLE and chat_title and chat_title.strip() == SECOND_CANAL_TITLE:
+        return True
+    return False
+
+
+async def _get_user_full_row(telegram_id: int):
+    """Renvoie name, email, phone du user, ou None si inexistant."""
+    async with sync_get_db() as cur:
+        await cur.execute(
+            "SELECT name, email, phone FROM users WHERE telegram_id = %s",
+            (telegram_id,),
+        )
+        return await cur.fetchone()
+
+
+async def _find_valid_masterclass_subscription(email: str):
+    """
+    Cherche un abonnement encore actif et d'au moins 70 jours de durée.
+    Retourne la ligne (dict) ou None.
+    """
+    if not email:
+        return None
+    async with sync_get_db() as cur:
+        await cur.execute(
+            """
+            SELECT id, plan, duration_days, expires_at
+            FROM subscription_info
+            WHERE LOWER(TRIM(email)) = LOWER(TRIM(%s))
+              AND duration_days >= %s
+              AND expires_at > NOW()
+            ORDER BY expires_at DESC
+            LIMIT 1
+            """,
+            (email, MASTERCLASS_MIN_DURATION_DAYS),
+        )
+        return await cur.fetchone()
+
+
+def _first_name(full_name: str, fallback: str = "") -> str:
+    """Extrait le prénom (premier mot, max 30 chars)."""
+    if not full_name or not full_name.strip():
+        return fallback
+    first = full_name.strip().split()[0]
+    return first if 1 <= len(first) <= 30 else fallback
+
+
+async def _handle_secondary_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Flow spécifique canal secondaire (Master Class).
+
+    Règles :
+      1. User absent de `users`         → refus + invitation à s'inscrire au principal
+      2. User sans email en base        → refus + invitation à /valider
+      3. Pas d'abonnement >= 70j actif  → refus + message @fiacrekpanou
+      4. Tout OK                         → approve + confirmation + catégorie
+    """
+    user = update.chat_join_request.from_user
+    user_id = user.id
+
+    # 1. Le user est-il déjà connu ?
+    try:
+        user_row = await _get_user_full_row(user_id)
+    except Exception as e:
+        logger.exception(f"[join/master] échec lookup user {user_id}")
+        log_error("Échec lookup user master class", f"user_id={user_id} — {e}")
+        user_row = None
+
+    # ── CAS 1 : user inconnu → refus (n'a jamais fait le tunnel principal)
+    if not user_row:
+        try:
+            await update.chat_join_request.decline()
+        except Exception as e:
+            logger.warning(f"[join/master] échec decline() user inconnu {user_id}: {e}")
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "❌ <b>Demande refusée</b>\n\n"
+                    "Vous devez d'abord vous inscrire sur notre canal principal "
+                    "avant de pouvoir rejoindre la Master Class.\n\n"
+                    "Une fois inscrit et votre abonnement validé, "
+                    "vous pourrez refaire votre demande ici.\n\n"
+                    "L'équipe El Lobo"
+                ),
+                parse_mode="HTML",
+            )
+        except Forbidden:
+            log_error("Refus master class + user non joignable",
+                      f"user_id={user_id} (jamais démarré /start)")
+        except Exception as e:
+            logger.warning(f"[join/master] échec envoi msg refus à {user_id}: {e}")
+        return ConversationHandler.END
+
+    email = (user_row.get("email") or "").strip()
+    name = user_row.get("name") or ""
+
+    # ── CAS 2 : user connu mais sans email → redirection vers /valider
+    if not email:
+        try:
+            await update.chat_join_request.decline()
+        except Exception as e:
+            logger.warning(f"[join/master] échec decline() sans email {user_id}: {e}")
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "📧 <b>Vérification requise</b>\n\n"
+                    "Pour rejoindre la <b>Master Class</b>, nous devons d'abord "
+                    "valider votre paiement via votre adresse email.\n\n"
+                    "👉 Tapez la commande /valider et suivez les instructions.\n\n"
+                    "Une fois votre email confirmé, refaites votre demande d'adhésion "
+                    "à la Master Class — elle sera automatiquement validée si un "
+                    "paiement éligible est trouvé.\n\n"
+                    "L'équipe El Lobo"
+                ),
+                parse_mode="HTML",
+            )
+        except Forbidden:
+            log_error("Master class : user sans email et non joignable",
+                      f"user_id={user_id}")
+        except Exception as e:
+            logger.warning(f"[join/master] échec envoi msg validation à {user_id}: {e}")
+        return ConversationHandler.END
+
+    # ── CAS 3 : email présent → recherche abonnement >= 70j actif
+    try:
+        valid_sub = await _find_valid_masterclass_subscription(email)
+    except Exception as e:
+        logger.exception(f"[join/master] échec lookup subscription {email}")
+        log_error("Échec lookup abonnement master class",
+                  f"user_id={user_id} email={email} — {e}")
+        valid_sub = None
+
+    if not valid_sub:
+        try:
+            await update.chat_join_request.decline()
+        except Exception as e:
+            logger.warning(f"[join/master] échec decline() no sub {user_id}: {e}")
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "❌ <b>Votre demande d'adhésion n'a pas pu être validée</b>\n\n"
+                    "Aucun paiement actif ne semble associé à votre compte "
+                    "pour le canal Master Class.\n\n"
+                    "Si vous pensez qu'il s'agit d'une erreur ou si vous souhaitez "
+                    "une vérification manuelle, contactez directement Fiacre : "
+                    "@fiacrekpanou\n\n"
+                    "L'équipe El Lobo"
+                ),
+                parse_mode="HTML",
+            )
+        except Forbidden:
+            log_error("Refus master class + user non joignable",
+                      f"user_id={user_id} email={email}")
+        except Exception as e:
+            logger.warning(f"[join/master] échec envoi msg refus à {user_id}: {e}")
+        return ConversationHandler.END
+
+    # ── CAS 4 : tout est OK → approbation + message + ajout catégorie
+    try:
+        await update.chat_join_request.approve()
+    except BadRequest as e:
+        msg = str(e).lower()
+        if "already" in msg or "participant" in msg:
+            logger.info(f"[join/master] {user_id} déjà membre")
+        else:
+            logger.exception(f"[join/master] échec approve() {user_id}")
+            log_error("Échec approbation master class", f"user_id={user_id} — {e}")
+            return ConversationHandler.END
+    except Exception as e:
+        logger.exception(f"[join/master] erreur inattendue approve() {user_id}")
+        log_error("Erreur inattendue approve master class", f"user_id={user_id} — {e}")
+        return ConversationHandler.END
+
+    prenom = _first_name(name)
+    signature = f"L'équipe El Lobo à votre service{', ' + prenom if prenom else ''}"
+
+    try:
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=(
+                "✅ <b>Bienvenue dans la Master Class !</b>\n\n"
+                "Votre accès au canal a bien été validé.\n\n"
+                "📌 <b>Épinglez ce canal ainsi que le bot</b> en haut de votre liste : "
+                "à tout moment une actualité importante peut être publiée et vous devez "
+                "pouvoir réagir vite.\n\n"
+                "Restez actif — les meilleures opportunités se prennent en quelques minutes.\n\n"
+                f"{signature}"
+            ),
+            parse_mode="HTML",
+        )
+    except Forbidden:
+        log_error("Master class approuvé + user non joignable en privé",
+                  f"user_id={user_id}")
+    except Exception as e:
+        logger.warning(f"[join/master] échec envoi msg confirmation à {user_id}: {e}")
+
+    # Ajout à la catégorie master class
+    try:
+        from telegram_page.categorie import add_members_to_category
+        await add_members_to_category(SECOND_CANAL_CATEGORIE, [user_id])
+    except Exception as e:
+        logger.exception(f"[join/master] categorie error pour {user_id}")
+        log_error("Erreur ajout catégorie master class",
+                  f"user_id={user_id} — {e}")
+
+    return ConversationHandler.END
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LOG D'ERREURS SUR FICHIER + NOTIFS ADMIN
+# ══════════════════════════════════════════════════════════════════════════════
+# Toutes les erreurs "normales" (échec envoi d'un message user, échec sauvegarde
+# d'un champ, etc.) sont écrites dans errors.log. Ce fichier est envoyé aux
+# admins chaque soir à 20h en pièce jointe, puis rotaté.
+#
+# Les erreurs CRITIQUES (démarrage, Gold, campagne, HTTP interne) déclenchent
+# EN PLUS une notif Telegram immédiate via notify_admin_critical().
 # ══════════════════════════════════════════════════════════════════════════════
 
 ERRORS_LOG_PATH = Path(
@@ -95,9 +325,11 @@ ERRORS_LOG_PATH = Path(
 
 
 def _ensure_errors_log_writable():
-    """Fallback vers /tmp si errors.log est indisponible en écriture."""
+    """Vérifie qu'on peut bien écrire dans errors.log. Si non (permissions
+    ou disque plein), on retombe sur /tmp — mieux vaut un fichier qu'aucun log."""
     global ERRORS_LOG_PATH
     try:
+        # Test d'écriture : crée le fichier s'il n'existe pas, ne le modifie pas sinon
         ERRORS_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with ERRORS_LOG_PATH.open("a", encoding="utf-8") as f:
             pass
@@ -119,21 +351,26 @@ _ensure_errors_log_writable()
 
 
 def log_error(title: str, detail: str = ""):
-    """Enregistre une erreur dans errors.log (silencieux, pas de notif Telegram)."""
+    """Enregistre une erreur dans errors.log (silencieux, pas de notif Telegram).
+    Ne doit JAMAIS lever d'exception, même si le disque est plein."""
     try:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         line = f"[{ts}] {title}"
         if detail:
+            # On limite la taille d'un enregistrement pour éviter un fichier monstre
             snippet = str(detail)[:4000].replace("\n", " | ")
             line += f" — {snippet}"
         with ERRORS_LOG_PATH.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
     except Exception:
+        # Impossible d'écrire ? On log dans la sortie standard, on continue.
         logger.exception("[log_error] impossible d'écrire dans errors.log")
 
 
 async def notify_admin_critical(bot, title: str, detail: str = ""):
-    """Erreur critique : envoi immédiat à tous les admins + fichier."""
+    """Erreur critique : envoie IMMÉDIATEMENT à tous les admins ET journalise
+    dans le fichier. À utiliser uniquement pour ce qui bloque le business
+    (démarrage, Gold, campagne, HTTP interne)."""
     log_error("[CRITIQUE] " + title, detail)
     text = f"🚨 <b>[CRITIQUE] {title}</b>"
     if detail:
@@ -146,7 +383,8 @@ async def notify_admin_critical(bot, title: str, detail: str = ""):
 
 
 async def broadcast_admins(bot, text: str, parse_mode: str = "HTML"):
-    """Envoie un message informatif (non-erreur) à tous les admins."""
+    """Envoie un message informatif (non-erreur) à tous les admins.
+    Ex: bilan quotidien, palier de 100 membres, etc."""
     for admin_id in ADMIN_IDS:
         try:
             await bot.send_message(chat_id=admin_id, text=text, parse_mode=parse_mode)
@@ -155,7 +393,8 @@ async def broadcast_admins(bot, text: str, parse_mode: str = "HTML"):
 
 
 async def send_and_rotate_errors_log(bot):
-    """Envoie errors.log aux admins puis rotation. Appelé chaque soir à 20h."""
+    """Envoie errors.log aux admins en pièce jointe, puis le renomme pour
+    repartir sur un fichier vide. Appelé chaque soir dans le bilan 20h."""
     try:
         if not ERRORS_LOG_PATH.exists() or ERRORS_LOG_PATH.stat().st_size == 0:
             logger.info("[errors_log] aucun log à envoyer aujourd'hui")
@@ -174,6 +413,7 @@ async def send_and_rotate_errors_log(bot):
             except Exception:
                 logger.exception(f"[errors_log] échec envoi à {admin_id}")
 
+        # Rotation : renomme le fichier courant, on repart sur un vide
         try:
             archive = ERRORS_LOG_PATH.with_suffix(
                 f".{datetime.now().strftime('%Y%m%d')}.log"
@@ -190,7 +430,17 @@ async def send_and_rotate_errors_log(bot):
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def ensure_users_schema():
-    """Colonnes ajoutées de manière idempotente (1060 = déjà présente)."""
+    """
+    - Utilise la colonne `level` existante (VARCHAR 100) pour stocker
+      Débutant / Intermédiaire / Avancé (en texte lisible).
+    - Ajoute `level_at` pour tracker quand l'utilisateur a choisi son niveau
+      (utilisé par les stats de temps de réponse).
+    - Ajoute `last_reminder_at`, `reminder_count`, `name_at`, `phone_at`,
+      `completed_at` pour le suivi de l'inscription.
+    - Rend `name` et `phone` NULL-able (sauvegarde progressive : on peut avoir
+      le niveau et le numéro avant le nom, dans le nouvel ordre).
+    Idempotent grâce au filtre "duplicate column" ci-dessous.
+    """
     ddl_statements = [
         "ALTER TABLE users ADD COLUMN level_at DATETIME NULL",
         "ALTER TABLE users ADD COLUMN last_reminder_at DATETIME NULL",
@@ -206,6 +456,7 @@ async def ensure_users_schema():
             try:
                 await cur.execute(stmt)
             except Exception as e:
+                # 1060 = Duplicate column name (MySQL) -> déjà appliqué, on ignore
                 if "1060" in str(e) or "duplicate column" in str(e).lower():
                     continue
                 logger.exception(f"[schema] échec: {stmt}")
@@ -213,11 +464,14 @@ async def ensure_users_schema():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PERSISTENCE — enregistrement progressif dans `users`
+# PERSISTENCE — enregistrement progressif directement dans `users`
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def ensure_user_row(telegram_id):
-    """Crée une ligne vide dès l'approbation (idempotent, gère les demandes ||)."""
+    """
+    Crée une ligne vide dès l'approbation, même si l'utilisateur ne répond jamais.
+    Atomique (ON DUPLICATE KEY) pour gérer les demandes parallèles.
+    """
     async with sync_get_db() as cur:
         await cur.execute(
             "INSERT INTO users (telegram_id, created_at) VALUES (%s, NOW()) "
@@ -240,10 +494,10 @@ async def get_user_row(telegram_id):
 
 async def save_registration_field(telegram_id, field: str, value: str) -> bool:
     """
-    Sauvegarde immédiate d'un champ dès la saisie.
-    Écrit {field}_at avec NOW() UNIQUEMENT si NULL (premier remplissage).
-    Retourne True si la ligne vient de devenir complète, ET dans ce cas
-    programme la promotion PROSPECT → FDK CONCEPT CAPITAL LISTE ACTIFS.
+    Sauvegarde immédiate d'un champ dès sa saisie.
+    Écrit aussi {field}_at avec NOW() UNIQUEMENT si NULL (premier remplissage).
+    Retourne True si la ligne vient de devenir complète (les 3 champs
+    remplis et completed_at NULL jusque-là).
     """
     if field not in ("name", "phone", "level"):
         raise ValueError(f"Champ non autorisé: {field}")
@@ -270,16 +524,12 @@ async def save_registration_field(telegram_id, field: str, value: str) -> bool:
         )
         just_completed = cur.rowcount == 1
 
-    # Promotion catégorie : PROSPECT → FDK CONCEPT CAPITAL LISTE ACTIFS
-    # (idempotent, safe même si le user n'était pas dans PROSPECT)
-    if just_completed:
-        asyncio.create_task(promote_prospect_to_main_active(telegram_id))
-
     return just_completed
 
 
 async def read_back_field(telegram_id, field: str):
-    """Relit un champ pour vérifier qu'il a bien été sauvegardé."""
+    """Relit un champ pour vérifier qu'il a bien été sauvegardé.
+    Utilisé après un save_registration_field critique (téléphone)."""
     if field not in ("name", "phone", "level"):
         raise ValueError(f"Champ non autorisé: {field}")
     async with sync_get_db() as cur:
@@ -310,11 +560,43 @@ async def get_incomplete_telegram_ids():
     return [r["telegram_id"] for r in rows]
 
 
+async def get_incomplete_users_full():
+    """Utilisateurs incomplets créés depuis le lancement, avec toutes les
+    infos nécessaires au calcul de la relance (cas A vs cas B)."""
+    async with sync_get_db() as cur:
+        await cur.execute(
+            "SELECT telegram_id, created_at, last_reminder_at, reminder_count, "
+            "  name, phone, level "
+            "FROM users WHERE created_at >= %s AND ("
+            "  (name IS NULL OR name = '') "
+            "  OR (phone IS NULL OR phone = '') "
+            "  OR (level IS NULL OR level = '')"
+            ")",
+            (STATS_START_DATE,)
+        )
+        return await cur.fetchall()
+
+
+async def mark_reminder_sent(telegram_id):
+    async with sync_get_db() as cur:
+        await cur.execute(
+            "UPDATE users SET last_reminder_at=NOW(), reminder_count=reminder_count+1 "
+            "WHERE telegram_id=%s",
+            (telegram_id,)
+        )
+
+
 # ══════════════════════════════════════════════════════════════════════════════
-# COMPTEUR MILESTONE (100, 200, 300... inscriptions complètes)
+# COMPTEURS EN MÉMOIRE — remis à zéro par le bilan quotidien 20h
 # ══════════════════════════════════════════════════════════════════════════════
 
-_last_100_notified = 0
+_daily_reminders_sent = 0     # nombre de relances envoyées depuis dernier reset
+_last_100_notified    = 0     # dernier palier "N complets" déjà notifié
+
+
+async def bump_reminder_counter():
+    global _daily_reminders_sent
+    _daily_reminders_sent += 1
 
 
 async def check_and_notify_milestone(bot):
@@ -358,11 +640,13 @@ keyboard = InlineKeyboardMarkup([
 ])
 
 # ── Étape 1 : Niveau ────────────────────────────────────────────────────────
+# On stocke le libellé texte en base (pas un slug).
 LEVEL_CHOICES = [
     ("Débutant",      "🌱 Débutant"),
     ("Intermédiaire", "📈 Intermédiaire"),
     ("Avancé",        "🏆 Avancé"),
 ]
+# callback_data limité à 64 octets → on transmet l'index, pas le libellé accentué
 level_keyboard = InlineKeyboardMarkup([
     [InlineKeyboardButton(display, callback_data=f"level:{i}")]
     for i, (_, display) in enumerate(LEVEL_CHOICES)
@@ -375,10 +659,7 @@ phone_share_keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True,
     one_time_keyboard=True,
 )
-PHONE_Q = (
-    "📱 Partagez votre numéro WhatsApp en un clic 👇\n\n"
-    "<i>Ou tapez-le directement au format</i> <code>+229 00 00 00 00 00</code>."
-)
+PHONE_Q = "📱 Partagez votre numéro WhatsApp en un clic 👇"
 
 # ── Étape 3 : Nom ───────────────────────────────────────────────────────────
 NAME_Q = (
@@ -396,10 +677,16 @@ NAME_Q = (
     "✅ Dès que vous les envoyez, votre inscription sera finalisée."
 )
 
+# ── Messages de redirection si l'utilisateur envoie du texte au mauvais moment
 LEVEL_REDIRECT_TEXT = (
     "⚠️ <b>Attention !</b>\n"
     "\n"
     "Il faut cliquer sur <b>votre niveau</b> juste en dessous 👇"
+)
+PHONE_REDIRECT_TEXT = (
+    "⚠️ <b>Attention !</b>\n"
+    "\n"
+    "Il faut cliquer sur <b>« 📱 Partager mon numéro »</b> juste au niveau de votre clavier 👇"
 )
 
 WELCOME_TEXT = (
@@ -423,6 +710,13 @@ RESUME_INTRO_TEXT = (
     "inscription à <b>FDK CAPITAL CONCEPT</b>."
 )
 
+REMINDER_TEXT = (
+    "⏳ <b>Votre inscription n'est pas terminée</b>\n\n"
+    "Il vous manque encore quelques informations pour valider votre participation à "
+    "<b>FDK CAPITAL CONCEPT</b>.\n\n"
+    "👇 Cliquez sur le bouton pour reprendre là où vous vous êtes arrêté."
+)
+
 resume_keyboard = InlineKeyboardMarkup([
     [InlineKeyboardButton("▶️ Terminer mon enregistrement",
                           callback_data="resume_registration")]
@@ -430,7 +724,8 @@ resume_keyboard = InlineKeyboardMarkup([
 
 
 def _missing_field_state(name, phone, level):
-    """Renvoie l'étape manquante (LEVEL/PHONE/NAME) ou None si tout OK."""
+    """Renvoie l'étape (LEVEL/PHONE/NAME) manquante dans l'ordre du nouveau tunnel,
+    ou None si tout est rempli."""
     if not (level and str(level).strip()):
         return LEVEL
     if not (phone and str(phone).strip()):
@@ -441,7 +736,8 @@ def _missing_field_state(name, phone, level):
 
 
 async def _prompt_state(bot, chat_id, state, resume=False):
-    """Envoie la question de l'étape manquante. Peut lever Forbidden."""
+    """Envoie la question correspondant à l'étape manquante, avec le bon clavier.
+    Peut lever telegram.error.Forbidden si l'utilisateur n'a pas démarré /start."""
     prefix = "▶️ <b>Reprenons votre enregistrement.</b>\n\n" if resume else ""
 
     if state == LEVEL:
@@ -451,8 +747,7 @@ async def _prompt_state(bot, chat_id, state, resume=False):
         await bot.send_message(chat_id=chat_id, text=prefix + PHONE_Q,
                                parse_mode="HTML", reply_markup=phone_share_keyboard)
     elif state == NAME:
-        await bot.send_message(chat_id=chat_id, text=prefix + NAME_Q,
-                               parse_mode="HTML")
+        await bot.send_message(chat_id=chat_id, text=prefix + NAME_Q, parse_mode="HTML")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -465,12 +760,13 @@ async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = query.from_user.id
 
+    # callback_data = "level:<index>"
     try:
         idx = int(query.data.split(":", 1)[-1])
         value, display = LEVEL_CHOICES[idx]
     except (ValueError, IndexError):
         log_error("callback_data level invalide", f"user_id={user_id} data={query.data}")
-        return LEVEL
+        return LEVEL  # on reste sur l'étape, l'utilisateur peut recliquer
 
     context.user_data["level"] = value
 
@@ -503,17 +799,47 @@ async def get_level(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return PHONE
 
 
-async def _save_phone_and_advance(update, context, phone: str, source: str):
-    """Logique commune aux deux entrées (contact + texte)."""
+async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Étape 2 : réception UNIQUEMENT du contact (bouton natif).
+    Le texte libre est traité par phone_redirect() qui redirige vers le bouton."""
     user_id = update.effective_user.id
+
+    # À ce stade on est certain d'avoir un contact (filters.CONTACT sur le handler)
+    if update.message.contact is None:
+        # Filet de sécurité : ne devrait jamais arriver
+        log_error("get_phone appelé sans contact", f"user_id={user_id}")
+        try:
+            await update.message.reply_text(
+                PHONE_REDIRECT_TEXT, parse_mode="HTML",
+                reply_markup=phone_share_keyboard,
+            )
+        except Exception:
+            pass
+        return PHONE
+
+    phone = update.message.contact.phone_number
+    source = "contact"
+
+    if not phone:
+        log_error("Numéro vide reçu", f"user_id={user_id} source={source}")
+        try:
+            await update.message.reply_text(
+                PHONE_REDIRECT_TEXT, parse_mode="HTML",
+                reply_markup=phone_share_keyboard,
+            )
+        except Exception:
+            pass
+        return PHONE
 
     context.user_data["phone"] = phone
 
-    # Sauvegarde + vérification par relecture immédiate
+    # Sauvegarde + vérification par relecture immédiate — on veut être SÛR
+    # que le numéro est bien en base avant de continuer.
     just_completed = False
     saved_ok = False
     try:
         just_completed = await save_registration_field(user_id, "phone", phone)
+        # Relecture de contrôle
         readback = await read_back_field(user_id, "phone")
         saved_ok = bool(readback and str(readback).strip())
         if not saved_ok:
@@ -523,7 +849,7 @@ async def _save_phone_and_advance(update, context, phone: str, source: str):
                 f"user_id={user_id} phone_reçu={phone!r} phone_relu={readback!r}"
             )
     except Exception as e:
-        logger.exception(f"[_save_phone] échec sauvegarde pour {user_id}")
+        logger.exception(f"[get_phone] échec sauvegarde pour {user_id}")
         await notify_admin_critical(
             context.bot, "Échec sauvegarde du téléphone",
             f"user_id={user_id} phone={phone!r} — {e}"
@@ -540,59 +866,10 @@ async def _save_phone_and_advance(update, context, phone: str, source: str):
         )
         await update.message.reply_text(NAME_Q, parse_mode="HTML")
     except Exception as e:
-        logger.exception(f"[_save_phone] échec envoi message pour {user_id}")
-        log_error("Échec envoi message (_save_phone)", f"user_id={user_id} — {e}")
+        logger.exception(f"[get_phone] échec envoi message pour {user_id}")
+        log_error("Échec envoi message (get_phone)", f"user_id={user_id} — {e}")
 
     return NAME
-
-
-async def get_phone_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Étape 2a : contact partagé via le bouton natif Telegram."""
-    user_id = update.effective_user.id
-
-    if update.message.contact is None:
-        log_error("get_phone_contact sans contact", f"user_id={user_id}")
-        try:
-            await update.message.reply_text(
-                PHONE_Q, parse_mode="HTML", reply_markup=phone_share_keyboard,
-            )
-        except Exception:
-            pass
-        return PHONE
-
-    phone = update.message.contact.phone_number
-    if not phone:
-        log_error("Numéro vide reçu (contact)", f"user_id={user_id}")
-        try:
-            await update.message.reply_text(
-                PHONE_Q, parse_mode="HTML", reply_markup=phone_share_keyboard,
-            )
-        except Exception:
-            pass
-        return PHONE
-
-    return await _save_phone_and_advance(update, context, phone, source="contact")
-
-
-async def get_phone_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Étape 2b : texte libre. Accepté si ça ressemble à un numéro,
-    sinon on renvoie le format attendu."""
-    user_id = update.effective_user.id
-    raw = update.message.text or ""
-
-    normalized = normalize_phone_text(raw)
-    if not normalized:
-        try:
-            await update.message.reply_text(
-                PHONE_FORMAT_HINT, parse_mode="HTML",
-                reply_markup=phone_share_keyboard,
-            )
-        except Exception as e:
-            logger.exception("[get_phone_text] échec envoi hint")
-            log_error("Échec envoi format hint", f"user_id={user_id} — {e}")
-        return PHONE
-
-    return await _save_phone_and_advance(update, context, normalized, source="text")
 
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -636,7 +913,8 @@ async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def level_redirect(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Texte reçu à l'étape LEVEL au lieu d'un clic → on redemande le clic."""
+    """L'utilisateur envoie du texte à l'étape LEVEL au lieu de cliquer un bouton :
+    on lui redemande gentiment de cliquer, avec les boutons réattachés."""
     try:
         await update.message.reply_text(
             LEVEL_REDIRECT_TEXT, parse_mode="HTML", reply_markup=level_keyboard,
@@ -646,6 +924,20 @@ async def level_redirect(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_error("Échec envoi level_redirect",
                   f"user_id={update.effective_user.id} — {e}")
     return LEVEL
+
+
+async def phone_redirect(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """L'utilisateur envoie du texte à l'étape PHONE au lieu de partager son contact :
+    on lui redemande gentiment d'appuyer sur le bouton du clavier."""
+    try:
+        await update.message.reply_text(
+            PHONE_REDIRECT_TEXT, parse_mode="HTML", reply_markup=phone_share_keyboard,
+        )
+    except Exception as e:
+        logger.exception("[phone_redirect] échec envoi")
+        log_error("Échec envoi phone_redirect",
+                  f"user_id={update.effective_user.id} — {e}")
+    return PHONE
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -658,7 +950,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# REPRISE VIA BOUTON DE RELANCE
+# REPRISE VIA BOUTON — relit la base et repositionne l'étape manquante
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def resume_registration(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -697,25 +989,21 @@ async def resume_registration(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# APPROBATION DES DEMANDES D'ADHÉSION (canal principal uniquement)
+# APPROBATION DES DEMANDES D'ADHÉSION
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def approve_join_requests(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Flow :
+    Nouveau flow :
       1. Créer la ligne DB
       2. Approuver la demande
-      3. Essayer d'envoyer le message d'accueil au user
-      4. SEULEMENT si l'envoi réussit → ajouter à la catégorie PROSPECT
-         (si l'envoi échoue, le user ne sera jamais relancé — cohérent
+      3. ESSAYER d'envoyer le message d'accueil au user
+      4. SEULEMENT SI l'envoi réussit → ajouter à la catégorie
+         (si l'envoi échoue, l'utilisateur ne sera jamais relancé — cohérent
           avec le fait qu'on ne peut pas lui parler)
     """
-    user = update.chat_join_request.from_user
+    user    = update.chat_join_request.from_user
     user_id = user.id
-    chat = update.chat_join_request.chat
-    logger.info(
-        f"[join] request user={user_id} chat_id={chat.id} title={chat.title!r}"
-    )
 
     # 1. Ligne DB
     try:
@@ -740,7 +1028,7 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         log_error("Erreur inattendue lors de l'approbation", f"user_id={user_id} — {e}")
         return ConversationHandler.END
 
-    # 3. Lire l'état actuel pour choisir le bon message
+    # 3. Lire l'état actuel de l'utilisateur pour choisir le bon message
     name = phone = level = None
     try:
         row = await get_user_row(user_id)
@@ -764,12 +1052,14 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
             return_state = ConversationHandler.END
 
         elif not name and not phone and not level:
+            # Tout nouveau → message de bienvenue qui contient déjà les boutons de niveau
             await context.bot.send_message(chat_id=user_id, text=WELCOME_TEXT,
                                            parse_mode="HTML", reply_markup=level_keyboard)
             sent_ok = True
             return_state = LEVEL
 
         else:
+            # Incomplet → on reprend exactement là où il en était
             context.user_data["name"]  = name
             context.user_data["phone"] = phone
             context.user_data["level"] = level
@@ -780,7 +1070,9 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
             return_state = state
 
     except Forbidden as e:
-        # User jamais démarré /start ou bot bloqué → PAS d'ajout catégorie
+        # L'utilisateur n'a jamais démarré /start avec le bot, ou l'a bloqué.
+        # Conformément à la règle : on NE l'ajoute PAS à la catégorie
+        # (sinon il figurerait dans les relances alors qu'on ne peut pas lui parler).
         logger.warning(f"[join] impossible d'écrire en privé à {user_id}: {e}")
         log_error("Utilisateur non joignable en privé après approbation",
                   f"user_id={user_id} — {e}")
@@ -791,19 +1083,289 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
         log_error("Erreur envoi message d'accueil", f"user_id={user_id} — {e}")
         return ConversationHandler.END
 
-    # 5. Envoi OK → ajout à la catégorie PROSPECT (donc relançable)
-    #    NB : si le user complète immédiatement son formulaire, la promotion
-    #    PROSPECT → FDK CONCEPT CAPITAL LISTE ACTIFS sera faite automatiquement
-    #    par save_registration_field().
+    # 5. Envoi OK → on l'ajoute à la catégorie (donc relançable)
     if sent_ok:
         try:
-            await add_to_prospect(user_id)
+            from telegram_page.categorie import add_members_to_category
+            await add_members_to_category(CATEGORIE, [user_id])
         except Exception as e:
-            logger.exception(f"[join] add_to_prospect error pour {user_id}")
-            log_error("Erreur lors de l'ajout à PROSPECT",
+            logger.exception(f"[join] categorie error pour {user_id}")
+            log_error("Erreur lors de l'ajout à la catégorie",
                       f"user_id={user_id} — {e}")
 
     return return_state
+
+async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Point d'entrée pour toutes les demandes d'adhésion.
+    Dispatch selon le canal :
+      - Canal secondaire (Master Class) → flow de vérification paiement
+      - Canal principal                 → flow d'inscription existant
+    """
+    user = update.chat_join_request.from_user
+    user_id = user.id
+    chat = update.chat_join_request.chat
+    chat_id = chat.id
+    chat_title = chat.title or ""
+
+    # Log systématique : permet de découvrir l'ID d'un nouveau canal
+    logger.info(
+        f"[join] request user={user_id} chat_id={chat_id} title={chat_title!r}"
+    )
+
+    # ── Dispatch canal secondaire (Master Class) ─────────────────────────
+    if _is_secondary_channel(chat_id, chat_title):
+        return await _handle_secondary_join(update, context)
+
+    # ── Canal principal : flow historique (INCHANGÉ) ─────────────────────
+
+    # 1. Ligne DB
+    try:
+        await ensure_user_row(user_id)
+    except Exception as e:
+        logger.exception(f"[join] échec ensure_user_row pour {user_id}")
+        log_error("Échec création ligne users", f"user_id={user_id} — {e}")
+
+    # 2. Approbation
+    try:
+        await update.chat_join_request.approve()
+    except BadRequest as e:
+        msg = str(e).lower()
+        if "already" in msg or "participant" in msg:
+            logger.info(f"[join] {user_id} déjà membre.")
+        else:
+            logger.exception(f"[join] échec approve() pour {user_id}")
+            log_error("Échec approbation demande d'adhésion", f"user_id={user_id} — {e}")
+        return ConversationHandler.END
+    except Exception as e:
+        logger.exception(f"[join] erreur inattendue approve() pour {user_id}")
+        log_error("Erreur inattendue lors de l'approbation", f"user_id={user_id} — {e}")
+        return ConversationHandler.END
+
+    # 3. Lire l'état actuel de l'utilisateur pour choisir le bon message
+    name = phone = level = None
+    try:
+        row = await get_user_row(user_id)
+        if row:
+            name, phone, level = row
+    except Exception as e:
+        logger.exception(f"[join] échec get_user_row pour {user_id}")
+        log_error("Échec get_user_row (join)", f"user_id={user_id} — {e}")
+
+    state = _missing_field_state(name, phone, level)
+
+    # 4. Essayer d'envoyer le message d'accueil
+    sent_ok = False
+    return_state = ConversationHandler.END
+
+    try:
+        if state is None:
+            await context.bot.send_message(chat_id=user_id,
+                                           text=ALREADY_REGISTERED_TEXT, parse_mode="HTML")
+            sent_ok = True
+            return_state = ConversationHandler.END
+
+        elif not name and not phone and not level:
+            # Tout nouveau → message de bienvenue qui contient déjà les boutons de niveau
+            await context.bot.send_message(chat_id=user_id, text=WELCOME_TEXT,
+                                           parse_mode="HTML", reply_markup=level_keyboard)
+            sent_ok = True
+            return_state = LEVEL
+
+        else:
+            # Incomplet → on reprend exactement là où il en était
+            context.user_data["name"]  = name
+            context.user_data["phone"] = phone
+            context.user_data["level"] = level
+            await context.bot.send_message(chat_id=user_id, text=RESUME_INTRO_TEXT,
+                                           parse_mode="HTML")
+            await _prompt_state(context.bot, user_id, state)
+            sent_ok = True
+            return_state = state
+
+    except Forbidden as e:
+        # L'utilisateur n'a jamais démarré /start avec le bot, ou l'a bloqué.
+        # Conformément à la règle : on NE l'ajoute PAS à la catégorie
+        # (sinon il figurerait dans les relances alors qu'on ne peut pas lui parler).
+        logger.warning(f"[join] impossible d'écrire en privé à {user_id}: {e}")
+        log_error("Utilisateur non joignable en privé après approbation",
+                  f"user_id={user_id} — {e}")
+        return ConversationHandler.END
+
+    except Exception as e:
+        logger.exception(f"[join] erreur inattendue envoi message d'accueil à {user_id}")
+        log_error("Erreur envoi message d'accueil", f"user_id={user_id} — {e}")
+        return ConversationHandler.END
+
+    # 5. Envoi OK → on l'ajoute à la catégorie (donc relançable)
+    if sent_ok:
+        try:
+            from telegram_page.categorie import add_members_to_category
+            await add_members_to_category(CATEGORIE, [user_id])
+        except Exception as e:
+            logger.exception(f"[join] categorie error pour {user_id}")
+            log_error("Erreur lors de l'ajout à la catégorie",
+                      f"user_id={user_id} — {e}")
+
+    return return_state
+# ══════════════════════════════════════════════════════════════════════════════
+# RELANCE AUTOMATIQUE
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Deux cas :
+#
+# Cas A — l'utilisateur n'a RIEN commencé (name, phone, level tous vides) :
+#   - relance 1 à T+10min  (reminder_count = 0)
+#   - relance 2 à T+30min  (reminder_count = 1)
+#   - au-delà : STOP
+#
+# Cas B — l'utilisateur a commencé mais pas fini (au moins 1 champ rempli) :
+#   - relance toutes les 24h depuis le dernier événement
+#   - 3 relances maximum, puis STOP
+#
+# Filtre : on ne relance QUE les utilisateurs présents dans CATEGORIE.
+# ══════════════════════════════════════════════════════════════════════════════
+
+CAS_A_OFFSETS_MINUTES = [10, 30]   # relances 1 et 2 depuis created_at
+CAS_A_MAX_REMINDERS   = 2
+
+CAS_B_INTERVAL_HOURS  = 24
+CAS_B_MAX_REMINDERS   = 3
+
+
+def _is_case_a(row) -> bool:
+    """Rien de rempli du tout."""
+    name  = (row.get("name")  or "").strip()
+    phone = (row.get("phone") or "").strip()
+    level = (row.get("level") or "").strip()
+    return not name and not phone and not level
+
+
+async def _fetch_category_member_ids(name_categorie: str) -> set:
+    """Récupère tous les telegram_id de la catégorie via l'API existante.
+    Un seul appel par cycle de relance (limit très haut)."""
+    try:
+        from telegram_page.categorie import get_category_members
+        # Limite très haute pour tout récupérer en une fois. Si un jour la
+        # catégorie dépasse ce seuil, il faudra paginer.
+        result = await get_category_members(name_categorie, {"limit": 1000000, "offset": 0})
+        members = result.get("members", []) if isinstance(result, dict) else []
+        return {int(m["telegram_id"]) for m in members if m.get("telegram_id") is not None}
+    except Exception as e:
+        logger.exception("[reminder] échec récupération des membres de la catégorie")
+        log_error("Échec get_category_members", f"cat={name_categorie} — {e}")
+        return set()
+
+
+async def registration_reminder_loop(bot):
+    CHECK_INTERVAL = 60  # une passe par minute
+
+    while True:
+        try:
+            await asyncio.sleep(CHECK_INTERVAL)
+
+            try:
+                rows = await get_incomplete_users_full()
+            except Exception as e:
+                logger.exception("[reminder] échec récupération des utilisateurs incomplets")
+                log_error("Échec requête utilisateurs incomplets", str(e))
+                continue
+
+            if not rows:
+                continue
+
+            # Filtre catégorie : on ne relance que ceux qui y sont
+            eligible_ids = await _fetch_category_member_ids(CATEGORIE)
+            if not eligible_ids:
+                # Soit personne dans la catégorie, soit erreur déjà loguée : on saute
+                continue
+
+            now = datetime.now()
+            sent = 0
+            forbidden_dropped = 0     # bot bloqué / user inaccessible -> consomme 1 tentative
+            other_errors = 0          # autres erreurs (rate-limit, réseau...) -> NE consomme PAS
+
+            for r in rows:
+                user_id = r.get("telegram_id")
+                if not user_id or int(user_id) not in eligible_ids:
+                    continue
+
+                count = int(r.get("reminder_count") or 0)
+                created_at = r.get("created_at")
+                last_event = r.get("last_reminder_at") or created_at
+                if last_event is None:
+                    continue
+
+                # Détermine si on doit relancer maintenant, selon le cas
+                if _is_case_a(r):
+                    # Cas A : 2 relances max, à 10min et 30min DEPUIS created_at
+                    if count >= CAS_A_MAX_REMINDERS:
+                        continue
+                    if created_at is None:
+                        continue
+                    target_offset = timedelta(minutes=CAS_A_OFFSETS_MINUTES[count])
+                    if now - created_at < target_offset:
+                        continue
+                else:
+                    # Cas B : 3 relances max, 24h entre chaque
+                    if count >= CAS_B_MAX_REMINDERS:
+                        continue
+                    if now - last_event < timedelta(hours=CAS_B_INTERVAL_HOURS):
+                        continue
+                # Envoi
+                try:
+                    await bot.send_message(
+                        chat_id=int(user_id),
+                        text=REMINDER_TEXT,
+                        parse_mode="HTML",
+                        reply_markup=resume_keyboard,
+                    )
+                    sent += 1
+                    await mark_reminder_sent(user_id)
+                    await bump_reminder_counter()
+                    await asyncio.sleep(0.05)  # anti-flood
+                except (Forbidden, BadRequest) as e:
+                    # Forbidden : le user a bloqué le bot / n'a jamais démarré /start.
+                    # BadRequest "Chat not found" : chat_id invalide / jamais de
+                    # conversation privée établie — erreur définitive, pas
+                    # transitoire (on filtre sur le message pour ne pas traiter
+                    # d'autres BadRequest, potentiellement transitoires, de la
+                    # même façon).
+                    #
+                    # IMPORTANT : dans les deux cas on incrémente reminder_count
+                    # pour que l'utilisateur consomme ses tentatives et sorte du
+                    # barème. Sinon il serait retenté à chaque cycle indéfiniment
+                    # (c'était le bug : "Chat not found" tombait dans le except
+                    # Exception générique ci-dessous et n'était jamais consommé).
+                    is_permanent = isinstance(e, Forbidden) or "chat not found" in str(e).lower()
+                    if is_permanent:
+                        forbidden_dropped += 1
+                        try:
+                            await mark_reminder_sent(user_id)
+                        except Exception:
+                            pass
+                    else:
+                        other_errors += 1
+                        logger.warning(f"[reminder] BadRequest non-définitive à {user_id}: {e}")
+                        log_error("BadRequest inattendue (relance)", f"user_id={user_id} — {e}")
+                except Exception as e:
+                    # Erreurs réellement transitoires (rate-limit, timeout réseau) :
+                    # on NE consomme PAS de tentative, on réessaiera au prochain
+                    # cycle.
+                    other_errors += 1
+                    logger.warning(f"[reminder] échec envoi à {user_id}: {e}")
+                    log_error("Échec envoi relance", f"user_id={user_id} — {e}")
+        
+
+            if sent or forbidden_dropped or other_errors:
+                logger.info(
+                    f"[reminder] cycle — envoyées={sent} "
+                    f"forbidden={forbidden_dropped} autres={other_errors}"
+                )
+
+        except Exception as e:
+            logger.exception("[reminder] erreur inattendue dans la boucle")
+            log_error("Erreur inattendue — boucle de relance", str(e))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -907,13 +1469,13 @@ async def cmd_incomplete_status(update, context):
 
 
 async def cmd_stats_now(update, context):
-    """Bilan complet des inscriptions à la demande (ne reset PAS le compteur)."""
+    """Envoie le bilan complet des inscriptions à la demande (ne reset PAS le compteur)."""
     if update.effective_user.id not in ADMIN_IDS:
         return
     try:
         await update.message.reply_text("⏳ Calcul en cours...")
         s = await compute_daily_stats()
-        reminders_today = peek_daily_counter()
+        reminders_today = _daily_reminders_sent
         completion_rate_global = _pct(s["total_completed"], s["total_users"])
         completion_rate_today  = _pct(s["completed_today"], s["new_today"])
         completion_rate_week   = _pct(s["completed_this_week"], s["new_this_week"])
@@ -973,18 +1535,20 @@ async def cmd_errors_now(update, context):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# STATS QUOTIDIENNES
+# STATS QUOTIDIENNES — funnel adapté au nouvel ordre (level → phone → name)
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def compute_daily_stats() -> dict:
     stats = {}
     async with sync_get_db() as cur:
+        # Volumes du jour
         await cur.execute("SELECT COUNT(*) AS n FROM users WHERE DATE(created_at) = CURDATE()")
         stats["new_today"] = int((await cur.fetchone())["n"])
 
         await cur.execute("SELECT COUNT(*) AS n FROM users WHERE DATE(completed_at) = CURDATE()")
         stats["completed_today"] = int((await cur.fetchone())["n"])
 
+        # Semaine ISO
         await cur.execute(
             "SELECT COUNT(*) AS n FROM users WHERE YEARWEEK(created_at, 3) = YEARWEEK(CURDATE(), 3)"
         )
@@ -995,6 +1559,7 @@ async def compute_daily_stats() -> dict:
         )
         stats["completed_this_week"] = int((await cur.fetchone())["n"])
 
+        # Cumuls depuis lancement
         await cur.execute("SELECT COUNT(*) AS n FROM users WHERE created_at >= %s",
                           (STATS_START_DATE,))
         stats["total_users"] = int((await cur.fetchone())["n"])
@@ -1006,6 +1571,7 @@ async def compute_daily_stats() -> dict:
         )
         stats["total_completed"] = int((await cur.fetchone())["n"])
 
+        # Funnel — nouvel ordre level → phone → name
         await cur.execute(
             "SELECT "
             "  SUM(CASE WHEN level IS NULL OR level = '' THEN 1 ELSE 0 END) AS stuck_before_level, "
@@ -1021,6 +1587,7 @@ async def compute_daily_stats() -> dict:
         stats["stuck_at_phone"]     = int(row.get("stuck_at_phone") or 0)
         stats["stuck_at_name"]      = int(row.get("stuck_at_name") or 0)
 
+        # Temps de réponse moyens (nouvel ordre)
         await cur.execute(
             "SELECT AVG(TIMESTAMPDIFF(SECOND, created_at, level_at)) AS avg_s "
             "FROM users WHERE level_at IS NOT NULL AND created_at IS NOT NULL "
@@ -1048,6 +1615,7 @@ async def compute_daily_stats() -> dict:
         )
         stats["avg_total_completion_s"] = float((await cur.fetchone())["avg_s"] or 0)
 
+        # Réactivité
         await cur.execute(
             "SELECT AVG(TIMESTAMPDIFF(SECOND, created_at, level_at)) AS avg_s "
             "FROM users WHERE DATE(level_at) = CURDATE() AND level_at >= created_at"
@@ -1061,6 +1629,7 @@ async def compute_daily_stats() -> dict:
         )
         stats["avg_created_to_level_week_s"] = float((await cur.fetchone())["avg_s"] or 0)
 
+        # Répartition par niveau (bonus utile pour un bilan)
         await cur.execute(
             "SELECT level, COUNT(*) AS n FROM users "
             "WHERE completed_at IS NOT NULL AND created_at >= %s "
@@ -1095,7 +1664,9 @@ def _pct(part: int, whole: int) -> str:
 
 
 async def send_daily_stats_report(bot):
-    """Bilan complet aux admins + reset du compteur de relances."""
+    """Envoie le bilan complet aux admins et remet les compteurs à zéro."""
+    global _daily_reminders_sent
+
     try:
         s = await compute_daily_stats()
     except Exception as e:
@@ -1103,7 +1674,7 @@ async def send_daily_stats_report(bot):
         await notify_admin_critical(bot, "Échec calcul stats quotidiennes", str(e))
         return
 
-    reminders_today = get_and_reset_daily_counter()
+    reminders_today = _daily_reminders_sent
     completion_rate_global = _pct(s["total_completed"], s["total_users"])
     completion_rate_today  = _pct(s["completed_today"], s["new_today"])
     completion_rate_week   = _pct(s["completed_this_week"], s["new_this_week"])
@@ -1163,6 +1734,7 @@ async def send_daily_stats_report(bot):
     )
 
     await broadcast_admins(bot, report)
+    _daily_reminders_sent = 0
 
 
 async def schedule_daily_check(bot):
@@ -1197,7 +1769,7 @@ async def schedule_daily_check(bot):
                 logger.exception("[daily_check] erreur bilan inscriptions")
                 log_error("Erreur bilan inscriptions quotidien", str(e))
 
-            # 3. Envoi + rotation errors.log
+            # 3. Envoi + rotation du fichier d'erreurs
             try:
                 await send_and_rotate_errors_log(bot)
             except Exception as e:
@@ -1209,7 +1781,7 @@ async def schedule_daily_check(bot):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SERVEUR HTTP INTERNE — ordres Gold depuis l'API (autre process)
+# SERVEUR HTTP INTERNE — reçoit les ordres Gold depuis l'API (autre process)
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def _internal_open_gold(request: web.Request) -> web.Response:
@@ -1286,6 +1858,13 @@ async def _start_internal_http_server():
 # ══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
+    # NOTE : on ne crée PLUS de boucle asyncio manuellement ici.
+    # app.run_polling() en crée une propre. Avec uvloop, mélanger les deux
+    # provoque "RuntimeError: There is no current event loop in thread"
+    # au moment du démarrage.
+    # Toutes les initialisations async (pool, schémas) sont désormais faites
+    # dans _post_init, qui tourne dans la même boucle que le polling.
+
     app = (Application.builder()
            .token(token)
            .concurrent_updates(512)
@@ -1294,6 +1873,7 @@ if __name__ == "__main__":
 
     async def _post_init(application):
         try:
+            # ── Init base de données (avant tout le reste) ─────────────
             await init_pool()
             print("[main] Pool OK ✓")
 
@@ -1304,16 +1884,22 @@ if __name__ == "__main__":
             await ensure_campaign_schema()
             print("[main] Schémas v7 OK ✓")
 
+            # ── Schéma du module engagement (module optionnel) ─────────
+            # On l'appelle explicitement pour ne PAS dépendre du chaînage
+            # de post_init interne à engagement.py (qui peut être écrasé
+            # selon l'ordre d'enregistrement des handlers).
             try:
                 from engagement import ensure_engagement_schema
                 await ensure_engagement_schema()
                 print("[main] Schéma engagement (vote, motivation_at, vote_at) OK ✓")
             except ImportError:
+                # Le module engagement n'est pas déployé : on continue.
                 pass
             except Exception as e:
                 logger.exception("[post_init] échec ensure_engagement_schema")
                 log_error("Échec ensure_engagement_schema", str(e))
 
+            # ── Reste des inits ────────────────────────────────────────
             await setup_background_worker(application)
             asyncio.create_task(schedule_daily_check(application.bot))
 
@@ -1324,13 +1910,8 @@ if __name__ == "__main__":
 
             asyncio.create_task(weekly_scheduler_loop(application.bot))
 
-            # Boucle de relance — nouvelle logique (reminder_engine.py)
-            asyncio.create_task(
-                registration_reminder_loop(
-                    application.bot,
-                    notify_admin_critical=notify_admin_critical,
-                )
-            )
+            # Boucle de relance ACTIVÉE (nouvelle logique cas A / cas B)
+            asyncio.create_task(registration_reminder_loop(application.bot))
 
             await init_milestone_counter()
             await _start_internal_http_server()
@@ -1345,7 +1926,8 @@ if __name__ == "__main__":
     app.post_init = _post_init
 
     # ── Tunnel d'enregistrement ────────────────────────────────────────────
-    # Ordre : LEVEL (boutons inline) → PHONE (contact OU texte) → NAME (texte).
+    # Ordre : LEVEL (boutons inline) → PHONE (contact) → NAME (texte).
+    # Entrées : demande d'adhésion approuvée, OU bouton "Terminer" d'une relance.
     resume_entry = CallbackQueryHandler(resume_registration, pattern="^resume_registration$")
     from engagement import register_engagement_handlers
 
@@ -1357,14 +1939,15 @@ if __name__ == "__main__":
         states={
             LEVEL: [
                 CallbackQueryHandler(get_level, pattern=r"^level:\d+$"),
+                # Texte reçu à cette étape → on redirige vers les boutons
                 MessageHandler(filters.TEXT & ~filters.COMMAND, level_redirect),
                 resume_entry,
             ],
             PHONE: [
-                # Contact partagé via bouton natif
-                MessageHandler(filters.CONTACT, get_phone_contact),
-                # Texte : accepté si ça ressemble à un numéro, sinon hint
-                MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone_text),
+                # Seul le contact partagé fait avancer
+                MessageHandler(filters.CONTACT, get_phone),
+                # Tout texte → redirection vers le bouton "Partager mon numéro"
+                MessageHandler(filters.TEXT & ~filters.COMMAND, phone_redirect),
                 resume_entry,
             ],
             NAME:  [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name), resume_entry],
@@ -1410,6 +1993,10 @@ if __name__ == "__main__":
 
     print("running...")
 
+    # uvloop sur Python 3.12+ n'auto-crée plus de boucle depuis
+    # asyncio.get_event_loop() — ce que fait run_polling en interne.
+    # On en crée une explicitement et on l'attache au thread principal
+    # avant l'appel. run_polling la récupérera via get_event_loop().
     _loop = _asyncio_for_uvloop.new_event_loop()
     _asyncio_for_uvloop.set_event_loop(_loop)
 

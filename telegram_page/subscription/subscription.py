@@ -273,6 +273,7 @@ async def create_subscription(payload: SubscriptionPayload):
         # ══ CAS A : PREMIER ABONNEMENT ═══════════════════════════════════════
         # Aucun historique pour cet email → INSERT, notif admin, PAS de
         # message user (règle : message user réservé aux réabonnements).
+        # Activation faite manuellement plus tard via Telegram (_activate).
         if not existing:
             async with get_db() as cur:
                 await cur.execute(
@@ -300,7 +301,201 @@ async def create_subscription(payload: SubscriptionPayload):
                 f"💳 Nouveau paiement\n"
                 f"Plan : {payload.plan}\n"
                 f"Email : {payload.email}\n"
-                f"Montant : {payload.amount_usd} {payload.currency or 'USD'}\n"
+                f"Montant : {payload.amount_usd} 'USD'\n"
+                f"Durée : {payload.duration_days} jours\n"
+                f"Expire le : {_format_datetime_fr(payload.expires_at)}\n"
+                f"ID : {new_id}"
+            )
+            return {"id": new_id, "message": "subscription enregistrée"}
+
+        # ══ CAS B : RÉABONNEMENT ═════════════════════════════════════════════
+        # Cumul par extension : on UPDATE la ligne existante avec la nouvelle
+        # expires_at calculée. Le plan du dernier paiement gagne.
+        # ➜ Activation AUTOMATIQUE : client déjà connu, pas besoin de valider
+        #   manuellement via Telegram.
+        old_expires = existing["expires_at"]
+        new_expires = _compute_new_expires_at(old_expires, payload.duration_days)
+
+        # Récupération du user Telegram AVANT l'update, pour pouvoir activer
+        # dans `subscriptions` dans la même transaction.
+        user_row = await _find_user_by_email(payload.email)
+        telegram_id = int(user_row["telegram_id"]) if user_row and user_row.get("telegram_id") else None
+
+        async with get_db() as cur:
+            # ── B.1 Mise à jour de subscription_info (status = 'active' direct)
+            await cur.execute(
+                """
+                UPDATE subscription_info SET
+                    plan          = %s,
+                    duration_days = %s,
+                    started_at    = %s,
+                    expires_at    = %s,
+                    status        = 'active',
+                    note          = 'reabonnement auto-valide',
+                    order_id      = %s,
+                    name          = COALESCE(%s, name),
+                    phone         = COALESCE(%s, phone),
+                    country_code  = COALESCE(%s, country_code),
+                    billing_cycle = %s,
+                    amount_usd    = %s,
+                    currency      = %s,
+                    amount_local  = %s,
+                    aggregator    = %s,
+                    paid_at       = %s,
+                    updated_at    = NOW()
+                WHERE id = %s
+                """,
+                (
+                    payload.plan, payload.duration_days,
+                    payload.started_at, new_expires,
+                    payload.order_id, payload.name, payload.phone, payload.country_code,
+                    payload.billing_cycle, payload.amount_usd, payload.currency,
+                    payload.amount_local, payload.aggregator, payload.paid_at,
+                    existing["id"],
+                ),
+            )
+
+            # ── B.2 Activation dans `subscriptions` (comme _activate)
+            if telegram_id:
+                # upsert user si tu as la fonction (optionnel — dépend de ton flow)
+                # await _upsert_user(cur, telegram_id, {**payload.__dict__, "id": existing["id"]})
+
+                # Cherche un abonnement actif existant pour ce user
+                await cur.execute(
+                    "SELECT id FROM subscriptions WHERE user_id=%s AND status='active'",
+                    (telegram_id,)
+                )
+                sub_active = await cur.fetchone()
+
+                if sub_active:
+                    # Un abonnement actif existe déjà → on prolonge sa date
+                    await cur.execute(
+                        """
+                        UPDATE subscriptions SET
+                            plan          = %s,
+                            duration_days = %s,
+                            started_at    = %s,
+                            expires_at    = %s,
+                            note          = 'reabonnement auto-valide',
+                            updated_at    = NOW()
+                        WHERE id = %s
+                        """,
+                        (payload.plan, payload.duration_days,
+                         payload.started_at, new_expires, sub_active["id"])
+                    )
+                    print(f"[subscription] subscriptions.id={sub_active['id']} prolongé jusqu'à {new_expires}")
+                else:
+                    # Pas d'actif → nouvelle ligne active
+                    await cur.execute(
+                        """
+                        INSERT IGNORE INTO subscriptions
+                            (user_id, plan, duration_days, started_at, expires_at,
+                             status, note, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, 'active', 'reabonnement auto-valide', NOW(), NOW())
+                        """,
+                        (telegram_id, payload.plan, payload.duration_days,
+                         payload.started_at, new_expires)
+                    )
+                    print(f"[subscription] subscriptions : nouvelle ligne active pour user_id={telegram_id}")
+
+        sub_id = existing["id"]
+        print(
+            f"[subscription] Réabonnement AUTO-VALIDÉ — email={payload.email} | id={sub_id} "
+            f"| {_format_datetime_fr(old_expires)} → {_format_datetime_fr(new_expires)}"
+        )
+
+        # ── 3. Notification admins — RÉABONNEMENT
+        await _notify_all_admins(
+            bot,
+            f"🔄 Réabonnement AUTO-VALIDÉ — {payload.plan}\n"
+            f"Email : {payload.email}\n"
+            f"Ancien expires_at : {_format_datetime_fr(old_expires)}\n"
+            f"Nouveau expires_at : {_format_datetime_fr(new_expires)}\n"
+            f"Jours ajoutés : +{payload.duration_days}\n"
+            f"Montant : {payload.amount_usd} {payload.currency or 'USD'}\n"
+            f"ID : {sub_id}"
+        )
+
+        # ── 4. Message de confirmation au user (UNIQUEMENT réabonnement)
+        if telegram_id:
+            prenom = _extract_prenom(payload.name, user_row.get("name"))
+            sent_ok = await _send_reabo_message(
+                telegram_id=telegram_id,
+                prenom=prenom,
+                plan=payload.plan,
+                new_expires=new_expires,
+            )
+            if not sent_ok:
+                await _notify_all_admins(
+                    bot,
+                    f"⚠️ Message de réabonnement NON reçu par le user\n"
+                    f"Email : {payload.email}\n"
+                    f"telegram_id : {telegram_id}\n"
+                    f"(user a probablement bloqué le bot)"
+                )
+        else:
+            await _notify_all_admins(
+                bot,
+                f"⚠️ Réabonnement enregistré (subscription_info) mais activation `subscriptions` impossible\n"
+                f"Email : {payload.email}\n"
+                f"(pas de telegram_id associé dans users pour cet email)"
+            )
+
+        return {
+            "id":             sub_id,
+            "message":        "réabonnement enregistré et auto-validé",
+            "old_expires_at": str(old_expires),
+            "new_expires_at": str(new_expires),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("[subscription] erreur inattendue")
+        raise HTTPException(status_code=500, detail=str(e))
+    
+async def create_subscriptions(payload: SubscriptionPayload):
+    try:
+        # ── 1. Idempotence : webhook rejoué avec exactement le même paid_at ?
+        dup = await _check_duplicate_payment(payload.email, payload.paid_at)
+        if dup:
+            print(f"[subscription] Déjà sauvegardé — email={payload.email} | id={dup['id']}")
+            return {"id": dup["id"], "message": "déjà sauvegardé"}
+
+        # ── 2. Recherche d'un abonnement existant pour cet email
+        existing = await _find_latest_subscription(payload.email)
+
+        # ══ CAS A : PREMIER ABONNEMENT ═══════════════════════════════════════
+        # Aucun historique pour cet email → INSERT, notif admin, PAS de
+        # message user (règle : message user réservé aux réabonnements).
+        if not existing:
+            async with get_db() as cur:
+                await cur.execute(
+                    """
+                    INSERT INTO subscription_info
+                        (plan, duration_days, started_at, expires_at, status, note,
+                         order_id, name, email, phone, country_code, billing_cycle,
+                         amount_usd, currency, amount_local, aggregator, paid_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    """,
+                    (
+                        payload.plan, payload.duration_days,
+                        payload.started_at, payload.expires_at, payload.status, payload.note,
+                        payload.order_id, payload.name, payload.email, payload.phone,
+                        payload.country_code, payload.billing_cycle, payload.amount_usd,
+                        payload.currency, payload.amount_local, payload.aggregator, payload.paid_at,
+                    ),
+                )
+                await cur.execute("SELECT LAST_INSERT_ID() AS id")
+                new_id = (await cur.fetchone())["id"]
+
+            print(f"[subscription] Nouveau paiement — email={payload.email} | id={new_id}")
+            await _notify_all_admins(
+                bot,
+                f"💳 Nouveau paiement\n"
+                f"Plan : {payload.plan}\n"
+                f"Email : {payload.email}\n"
+                f"Montant : {payload.amount_usd} 'USD'\n"
                 f"Durée : {payload.duration_days} jours\n"
                 f"Expire le : {_format_datetime_fr(payload.expires_at)}\n"
                 f"ID : {new_id}"
@@ -459,11 +654,11 @@ async def create_formation_validation(payload: FormationValidationRequest):
             new_id = (await cur.fetchone())["id"]
 
         print(f"[formation-validation] Nouveau enregistrement — email={email} | id={new_id}")
-        await _notify_all_admins(
-            bot,
-            f"📚 Nouvelle formation validation\nEmail : {email}\nID : {new_id}"
-        )
-        return {"id": new_id, "message": "formation validation enregistrée"}
+        # await _notify_all_admins(
+        #     bot,
+        #     f"📚 Nouvelle formation validation\nEmail : {email}\nID : {new_id}"
+        # )
+        # return {"id": new_id, "message": "formation validation enregistrée"}
 
     except HTTPException:
         raise

@@ -42,13 +42,13 @@ from telegram.ext import (
 # - ADMIN_IDS : liste des admins (autorisation /engagement)
 # - sync_get_db : pool aiomysql du reste du bot
 # - log_error : journalisation d'erreurs dans errors.log (envoyé à 20h)
-from script import ADMIN_IDS
+from scripts import ADMIN_IDS
 from db import get_db as sync_get_db
 
 try:
     # log_error existe dans main.py (log fichier). En cas d'import circulaire
     # improbable, on tombe sur un fallback silencieux.
-    from script import log_error
+    from scripts import log_error
 except Exception:  # pragma: no cover
     def log_error(title, detail=""):
         logging.getLogger("engagement").warning(f"{title} — {detail}")
