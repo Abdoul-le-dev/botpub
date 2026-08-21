@@ -283,6 +283,17 @@ async def main(apply_changes: bool = False):
         print(f"╚══════════════════════════════════════════════════════════════════╝\n")
 
 
+async def _run(apply_flag: bool):
+    """Initialise le pool DB, exécute main(), ferme proprement."""
+    from db import init_pool, close_pool
+
+    await init_pool()
+    try:
+        await main(apply_changes=apply_flag)
+    finally:
+        await close_pool()
+
+
 if __name__ == "__main__":
     apply_flag = "--apply" in sys.argv
-    asyncio.run(main(apply_changes=apply_flag))
+    asyncio.run(_run(apply_flag))
