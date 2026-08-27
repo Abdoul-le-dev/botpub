@@ -64,6 +64,21 @@ DISCLAIMER_TEXT = (
 
 RAM_CACHE_TTL = 300  # secondes — évite un SELECT à chaque broadcast
 
+SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS weekly_disclaimer_consents (
+    user_id      BIGINT NOT NULL,
+    week_start   DATE   NOT NULL,
+    consented_at DATETIME NOT NULL,
+    PRIMARY KEY (user_id, week_start)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+"""
+
+
+async def ensure_schema():
+    async with get_db() as cur:
+        await cur.execute(SCHEMA_SQL)
+    logger.info("[disclaimer_gate] schéma weekly_disclaimer_consents OK")
+
 
 def _week_start(d: date | None = None) -> date:
     d = d or date.today()
