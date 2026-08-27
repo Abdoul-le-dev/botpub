@@ -39,7 +39,7 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.error import Forbidden
 
 from db import get_db
-from disclaimer_gate import split_by_consent, send_consent_request
+from telegram_page.gold.disclaimer_gate import split_by_consent, send_consent_request
 
 logger = logging.getLogger(__name__)
 ADMIN_ID = 571718066
