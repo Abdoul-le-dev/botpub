@@ -11,7 +11,6 @@ from telegram_page.gold.lifecycle import (
     current_snapshot, current_version, is_open, is_ready_for_confirmations,
     register_buffer,
 )
-from telegram_page.gold.callback_guard import guard, make_callback_data, check_callback, GuardResult
 
 from telegram_page.gold.tp_notifier import (
     notify_tp_reached, notify_sl_touched,
