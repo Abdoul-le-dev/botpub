@@ -34,22 +34,131 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.error import Forbidden
+from telegram.error import Forbidden, RetryAfter
 
 from db import get_db
-from telegram_page.gold.disclaimer_gate import split_by_consent, send_consent_request
+from disclaimer_gate import split_by_consent, send_consent_request
 
 logger = logging.getLogger(__name__)
 ADMIN_ID = 571718066
 
-BROADCAST_RATE  = 25
-CATEGORY_TARGET = "FDK MASTER CLASS Aout"
-CATEGORY_BLOCKED = "clients_bloquer"
+# NUM_WORKERS : concurrence d'envoi. Largement > au débit cible car c'est
+# l'AdaptiveRateLimiter (pas le nombre de workers) qui cadence réellement
+# les appels bot.send_message — les workers en surplus attendent juste
+# leur tour sur le limiter, sans coût.
+NUM_WORKERS       = 40
+CATEGORY_TARGET   = "clients_actifs"
+CATEGORY_BLOCKED  = "clients_bloquer"
 
 RESUB_WINDOW_DAYS = 10
 RESUB_URL = "https://fdkvip.com/reabonnement"   # TODO: ajuster si besoin
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Rate limiter adaptatif (AIMD) — inspiré de broadcast_engine.rate_limiter,
+# réimplémenté ici en autonome (pas de dépendance au package broadcast/) car
+# le signal a besoin d'un reply_markup PAR DESTINATAIRE, que le moteur de
+# diffusion générique ne gère pas encore.
+#
+# Principe : démarre prudent, accélère progressivement sur une série de
+# succès, et se rétracte immédiatement sur un RetryAfter (flood control
+# Telegram). Instance MODULE-LEVEL : le débit appris est conservé d'un
+# envoi de signal à l'autre pendant la vie du process, comme leur limiter
+# global partagé entre broadcasts.
+# ══════════════════════════════════════════════════════════════════════════════
+
+class AdaptiveRateLimiter:
+    def __init__(self, start_rate: float = 25.0,
+                 min_rate: float = 12.0, max_rate: float = 30.0,
+                 ramp_step: float = 0.5, ramp_after_streak: int = 40):
+        self.current_rate = start_rate
+        self.min_rate = min_rate
+        self.max_rate = max_rate
+        self._ramp_step = ramp_step
+        self._ramp_after_streak = ramp_after_streak
+        self._lock = asyncio.Lock()
+        self._last_send = 0.0
+        self._success_streak = 0
+
+    async def acquire(self):
+        async with self._lock:
+            now = time.monotonic()
+            interval = 1.0 / self.current_rate
+            wait = self._last_send + interval - now
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._last_send = time.monotonic()
+
+    def report_success(self):
+        self._success_streak += 1
+        if self._success_streak >= self._ramp_after_streak and self.current_rate < self.max_rate:
+            self.current_rate = min(self.max_rate, self.current_rate + self._ramp_step)
+            self._success_streak = 0
+
+    def report_flood(self, retry_after: float):
+        self._success_streak = 0
+        # Rétraction immédiate — plus agressive qu'une simple pause,
+        # pour éviter une cascade de RetryAfter sur les workers suivants.
+        self.current_rate = max(self.min_rate, self.current_rate * 0.7)
+
+
+_signal_limiter = AdaptiveRateLimiter()
+
+
+class _SendContext:
+    __slots__ = ("bot", "session_id", "text", "resub_flags", "limiter",
+                 "sent", "errors", "blocked_ids")
+
+    def __init__(self, bot, session_id: int, text: str,
+                 resub_flags: dict[int, bool], limiter: AdaptiveRateLimiter):
+        self.bot = bot
+        self.session_id = session_id
+        self.text = text
+        self.resub_flags = resub_flags
+        self.limiter = limiter
+        self.sent = 0
+        self.errors = 0
+        self.blocked_ids: list[int] = []
+
+
+async def _signal_worker(queue: asyncio.Queue, ctx: _SendContext):
+    while True:
+        uid = await queue.get()
+        try:
+            if uid is None:
+                return
+            kbd = build_signal_keyboard(ctx.session_id,
+                                         show_resub=ctx.resub_flags.get(uid, False))
+            await ctx.limiter.acquire()
+            try:
+                await ctx.bot.send_message(chat_id=uid, text=ctx.text,
+                                            parse_mode="Markdown", reply_markup=kbd)
+                ctx.sent += 1
+                ctx.limiter.report_success()
+            except RetryAfter as e:
+                # Seul retry autorisé : celui déclenché par le flood control
+                # Telegram lui-même, sur CE message précis — une seule fois.
+                ctx.limiter.report_flood(e.retry_after)
+                await asyncio.sleep(e.retry_after)
+                try:
+                    await ctx.bot.send_message(chat_id=uid, text=ctx.text,
+                                                parse_mode="Markdown", reply_markup=kbd)
+                    ctx.sent += 1
+                except Forbidden:
+                    ctx.blocked_ids.append(uid)
+                except Exception as e2:
+                    logger.debug(f"[signal_worker] retry échoué uid={uid}: {e2}")
+                    ctx.errors += 1
+            except Forbidden:
+                ctx.blocked_ids.append(uid)
+            except Exception as e:
+                logger.debug(f"[signal_worker] uid={uid}: {e}")
+                ctx.errors += 1
+        finally:
+            queue.task_done()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -250,35 +359,27 @@ async def send_signal(bot, session_id: int, *, category: str = None) -> dict:
         pass
 
     text = build_signal_message(session)
-    sent = errors = 0
-    blocked_ids: list[int] = []
-    sem = asyncio.Semaphore(BROADCAST_RATE)
+    queue: asyncio.Queue = asyncio.Queue()
+    ctx = _SendContext(bot, session_id, text, resub_flags, _signal_limiter)
 
-    async def _send_one(uid: int):
-        nonlocal sent, errors
-        async with sem:
-            try:
-                kbd = build_signal_keyboard(session_id, show_resub=resub_flags.get(uid, False))
-                await bot.send_message(chat_id=uid, text=text,
-                                        parse_mode="Markdown", reply_markup=kbd)
-                sent += 1
-            except Forbidden:
-                blocked_ids.append(uid)
-            except Exception as e:
-                logger.debug(f"[signal] uid={uid}: {e}")
-                errors += 1
-            await asyncio.sleep(1)
+    workers = [asyncio.create_task(_signal_worker(queue, ctx)) for _ in range(NUM_WORKERS)]
+    t0 = time.monotonic()
+    for uid in consented_ids:
+        queue.put_nowait(uid)
+    for _ in range(NUM_WORKERS):
+        queue.put_nowait(None)
+    await asyncio.gather(*workers, return_exceptions=True)
+    elapsed = time.monotonic() - t0
 
-    tasks = [asyncio.create_task(_send_one(uid)) for uid in consented_ids]
-    await asyncio.gather(*tasks, return_exceptions=True)
-
-    blocked_report = await _handle_blocked_users(blocked_ids, category)
+    sent, errors = ctx.sent, ctx.errors
+    blocked_report = await _handle_blocked_users(ctx.blocked_ids, category)
 
     try:
         await bot.send_message(
             chat_id=ADMIN_ID,
             text=(f"✅ *Signal Gold terminé — session #{session_id}*\n\n"
-                  f"Envoyés : {sent}/{total}\n"
+                  f"Envoyés : {sent}/{total} en {elapsed:.1f}s "
+                  f"({sent / elapsed:.1f} msg/s)\n"
                   f"Erreurs : {errors}\n"
                   f"En attente disclaimer : {len(pending_ids)}\n"
                   f"🚫 Bloqués : {blocked_report['blocked']}"),

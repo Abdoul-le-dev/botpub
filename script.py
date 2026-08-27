@@ -31,7 +31,7 @@ from telegram_page.gold.session_registry import session_registry
 from telegram_page.gold.signal_broadcast import send_signal
 from telegram_page.gold.interactive_tools import register_interactive_handlers
 from telegram_page.gold.disclaimer_gate import (
-    # ensure_schema as ensure_disclaimer_schema,
+    ensure_schema as ensure_disclaimer_schema,
     weekend_scheduler_loop,
 )
 import telegram_page.gold.gold_engine as gold_engine_mod
@@ -1234,7 +1234,7 @@ if __name__ == "__main__":
             await ensure_users_schema()
             print("[main] Schéma users (level_at, name/phone nullable, reminders) OK ✓")
 
-            # await ensure_disclaimer_schema()
+            await ensure_disclaimer_schema()
             print("[main] Schéma disclaimer hebdo OK ✓")
 
             try:
