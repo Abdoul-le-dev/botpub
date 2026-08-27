@@ -23,16 +23,17 @@ from ai_agent import set_bot, log_unhandled_message
 from validation_handler import register_validation_handler
 from validation_formation import register_formation_handler
 from form.form_engine import register_form_handlers, setup_background_worker
-from telegram_page.signal_broadcast import register_signal_handlers
 from telegram_page.gold.gold_engine import set_bot as set_gold_bot, daily_cramed_check
-from telegram_page.gold.gold_write_queue import start_gold_write_worker
 from telegram_page.gold.error_handler import error_handler
-from telegram_page.gold.weekly_capital_cache import weekly_capital
 
 from aiohttp import web
-from telegram_page.gold.lifecycle import open_new_session, mark_broadcast_done
 from telegram_page.gold.session_registry import session_registry
-from telegram_page.gold.broadcast_send import send_teaser_broadcast
+from telegram_page.gold.signal_broadcast import send_signal
+from telegram_page.gold.interactive_tools import register_interactive_handlers
+from telegram_page.gold.disclaimer_gate import (
+    ensure_schema as ensure_disclaimer_schema,
+    weekend_scheduler_loop,
+)
 import telegram_page.gold.gold_engine as gold_engine_mod
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -807,20 +808,21 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# GOLD V7.1
+# GOLD v8 — signal brut + disclaimer hebdo + outils à la demande
+#
+# ATTENTION — DÉPENDANCES NON REVUES :
+# lifecycle.py, session_registry.py et tp_notifier.py n'ont pas été
+# fournis pour ce refactor. gold_engine.watch_gold_price() (conservé
+# tel quel) s'appuie dessus pour détecter TP/SL et fermer la session
+# (session_registry.current() + lifecycle.close_session()). Comme le
+# nouvel endpoint interne n'appelle plus lifecycle.open_new_session(),
+# session_registry restera vide et ces fermetures automatiques ne se
+# déclencheront plus. Il faut revoir ces 3 fichiers pour rebrancher
+# correctement le suivi TP/SL sur le nouveau flux (voir échange avec
+# l'utilisateur — question posée en fin de réponse).
 # ══════════════════════════════════════════════════════════════════════════════
-from telegram_page.gold.gold_broadcast import register_gold_handlers_v7
-from telegram_page.gold.consistency import run_full_check
 from telegram_page.gold.lifecycle import register_buffer
 from telegram_page.gold.gold_buffer import gold_buffer
-
-from telegram_page.gold.weekly_capital_cache import ensure_schema as ensure_capital_schema
-from telegram_page.gold.capital_campaign import (
-    ensure_schema as ensure_campaign_schema,
-    weekly_scheduler_loop,
-    run_campaign,
-    CampaignConfig,
-)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -833,7 +835,7 @@ async def cmd_queue_status(update, context):
     try:
         s = gold_buffer.status()
         await update.message.reply_text(
-            f"📊 Buffer Gold v7\n"
+            f"📊 Buffer Gold\n"
             f"Attaché à : {s['attached']}\n"
             f"En attente : {s['pending']} "
             f"(entries {s['entries']} / steps {s['steps']} / events {s['events']})\n"
@@ -843,54 +845,6 @@ async def cmd_queue_status(update, context):
     except Exception as e:
         logger.exception("[cmd_queue_status] erreur")
         log_error("Erreur /queue_status", str(e))
-
-
-async def cmd_gold_check(update, context):
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-    try:
-        rep = await run_full_check()
-        await update.message.reply_text(rep.summary())
-    except Exception as e:
-        logger.exception("[cmd_gold_check] erreur")
-        log_error("Erreur /gold_check", str(e))
-
-
-async def cmd_capital_status(update, context):
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-    try:
-        s = weekly_capital.status()
-        await update.message.reply_text(
-            f"💼 Weekly Capital Cache\n"
-            f"Total RAM : {s['total_ram']}\n"
-            f"Actifs : {s['active']}\n"
-            f"Expirés (pas encore purgés) : {s['expired_stale']}\n"
-            f"TTL : {s['ttl_days']} jours"
-        )
-    except Exception as e:
-        logger.exception("[cmd_capital_status] erreur")
-        log_error("Erreur /capital_status", str(e))
-
-
-async def cmd_capital_campaign_now(update, context):
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-    try:
-        await update.message.reply_text("🔄 Campagne lancée en tâche de fond...")
-
-        async def _run():
-            try:
-                await run_campaign(context.bot, CampaignConfig())
-            except Exception as e:
-                logger.exception("[cmd_capital_campaign_now] échec run_campaign")
-                await notify_admin_critical(context.bot,
-                    "Échec run_campaign (tâche de fond)", str(e))
-
-        asyncio.create_task(_run())
-    except Exception as e:
-        logger.exception("[cmd_capital_campaign_now] erreur")
-        log_error("Erreur /capital_campaign_now", str(e))
 
 
 async def cmd_incomplete_status(update, context):
@@ -1174,7 +1128,9 @@ async def schedule_daily_check(bot):
                 target += timedelta(days=1)
             await asyncio.sleep((target - now).total_seconds())
 
-            # 1. Bilan Gold
+            # 1. Bilan Gold (comptes simulation en danger — l'alerte par
+            # membre réel a été retirée : gold_member_entries n'est plus
+            # alimentée depuis le passage au signal brut)
             try:
                 results      = await daily_cramed_check()
                 total_danger = sum(r.get("total_danger", 0) for r in results)
@@ -1182,7 +1138,7 @@ async def schedule_daily_check(bot):
                     await broadcast_admins(
                         bot,
                         f"📋 <b>Bilan Gold — {datetime.now().strftime('%d/%m/%Y')}</b>\n\n"
-                        f"Comptes en danger : <b>{total_danger}</b>\n"
+                        f"Comptes simulation en danger : <b>{total_danger}</b>\n"
                         f"Sessions surveillées : {len(results)}\n\n"
                         f"<i>Consultez le dashboard pour le détail.</i>"
                     )
@@ -1209,61 +1165,39 @@ async def schedule_daily_check(bot):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SERVEUR HTTP INTERNE — ordres Gold depuis l'API (autre process)
+# SERVEUR HTTP INTERNE — déclenche l'envoi d'un signal depuis l'API (autre process)
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def _internal_open_gold(request: web.Request) -> web.Response:
+    """
+    Endpoint appelé par le process API après création d'une session
+    (gold_engine.create_gold_session côté API). Il ne fait plus que
+    déclencher l'envoi brut du signal — plus de session_registry, plus
+    de version, plus de teaser/disclaimer par clic.
+    """
     try:
         data = await request.json()
         sid = int(data["session_id"])
         category = data.get("category")
-        send_teaser = bool(data.get("send_teaser", True))
     except Exception as e:
         logger.exception("[internal] payload invalide")
         return web.json_response({"ok": False, "error": f"bad_payload: {e}"}, status=400)
 
-    try:
-        snap = await open_new_session(sid, mode="replace")
-    except Exception as e:
-        logger.exception(f"[internal] open_new_session failed sid={sid}")
-        if gold_engine_mod._bot:
-            await notify_admin_critical(gold_engine_mod._bot,
-                "Échec open_new_session", f"sid={sid}\n{e}")
-        return web.json_response({"ok": False, "error": f"open_failed: {e}"}, status=500)
+    if not gold_engine_mod._bot:
+        return web.json_response({"ok": False, "error": "bot_unavailable"}, status=503)
 
-    if send_teaser and gold_engine_mod._bot:
-        async def _run_broadcast():
-            try:
-                report = await send_teaser_broadcast(
-                    bot=gold_engine_mod._bot,
-                    snap=snap,
-                    category=category,
-                )
-                logger.info(f"[internal] broadcast v7 terminé sid={sid}: {report}")
-                mark_broadcast_done(snap.session_id, snap.version)
-            except Exception as e:
-                logger.exception(f"[internal] broadcast v7 failed sid={sid}")
-                await notify_admin_critical(gold_engine_mod._bot,
-                    "Échec broadcast v7", f"sid={sid}\n{e}")
-
-        asyncio.create_task(_run_broadcast())
-        bstatus = "started"
-    else:
+    async def _run_send():
         try:
-            mark_broadcast_done(snap.session_id, snap.version)
+            report = await send_signal(gold_engine_mod._bot, sid, category=category)
+            logger.info(f"[internal] signal envoyé sid={sid}: {report}")
         except Exception as e:
-            logger.exception(f"[internal] mark_broadcast_done failed sid={sid}")
-            if gold_engine_mod._bot:
-                await notify_admin_critical(gold_engine_mod._bot,
-                    "Échec mark_broadcast_done", f"sid={sid}\n{e}")
-        bstatus = "skipped" if not send_teaser else "bot_unavailable_but_active"
+            logger.exception(f"[internal] envoi signal échoué sid={sid}")
+            await notify_admin_critical(gold_engine_mod._bot,
+                "Échec envoi signal (interne)", f"sid={sid}\n{e}")
 
-    return web.json_response({
-        "ok": True,
-        "session_id": snap.session_id,
-        "version": snap.version,
-        "broadcast_status": bstatus,
-    })
+    asyncio.create_task(_run_send())
+
+    return web.json_response({"ok": True, "session_id": sid, "status": "started"})
 
 
 async def _start_internal_http_server():
@@ -1300,9 +1234,8 @@ if __name__ == "__main__":
             await ensure_users_schema()
             print("[main] Schéma users (level_at, name/phone nullable, reminders) OK ✓")
 
-            await ensure_capital_schema()
-            await ensure_campaign_schema()
-            print("[main] Schémas v7 OK ✓")
+            await ensure_disclaimer_schema()
+            print("[main] Schéma disclaimer hebdo OK ✓")
 
             try:
                 from engagement import ensure_engagement_schema
@@ -1317,12 +1250,10 @@ if __name__ == "__main__":
             await setup_background_worker(application)
             asyncio.create_task(schedule_daily_check(application.bot))
 
-            start_gold_write_worker(application.bot)
-
             gold_buffer.start(application.bot)
             register_buffer(gold_buffer)
 
-            asyncio.create_task(weekly_scheduler_loop(application.bot))
+            asyncio.create_task(weekend_scheduler_loop(application.bot))
 
             # Boucle de relance — nouvelle logique (reminder_engine.py)
             asyncio.create_task(
@@ -1335,7 +1266,7 @@ if __name__ == "__main__":
             await init_milestone_counter()
             await _start_internal_http_server()
 
-            print("[main] Gold v7.1 initialisé ✓")
+            print("[main] Gold v8 initialisé ✓")
         except Exception as e:
             logger.exception("[post_init] échec initialisation")
             await notify_admin_critical(application.bot,
@@ -1380,8 +1311,7 @@ if __name__ == "__main__":
     register_formation_handler(app)
     register_form_handlers(app, app.bot, ADMIN_ID)
 
-    register_gold_handlers_v7(app)
-    register_signal_handlers(app)
+    register_interactive_handlers(app)
 
     app.add_handler(
         MessageHandler(
@@ -1394,9 +1324,6 @@ if __name__ == "__main__":
     )
 
     app.add_handler(CommandHandler("queue_status", cmd_queue_status))
-    app.add_handler(CommandHandler("gold_check", cmd_gold_check))
-    app.add_handler(CommandHandler("capital_status", cmd_capital_status))
-    app.add_handler(CommandHandler("capital_campaign_now", cmd_capital_campaign_now))
     app.add_handler(CommandHandler("incomplete_status", cmd_incomplete_status))
     app.add_handler(CommandHandler("stats_now", cmd_stats_now))
     app.add_handler(CommandHandler("errors_now", cmd_errors_now))
@@ -1413,4 +1340,4 @@ if __name__ == "__main__":
     _loop = _asyncio_for_uvloop.new_event_loop()
     _asyncio_for_uvloop.set_event_loop(_loop)
 
-    app.run_polling(poll_interval=2)
+    app.run_polling(poll_interval=1)
