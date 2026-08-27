@@ -50,7 +50,7 @@ import json
 import traceback
 
 from db import get_db
-# from telegram_page.gold.gold_state import user_state_v7
+from telegram_page.gold.gold_state import user_state_v7
 
 logger   = logging.getLogger(__name__)
 ADMIN_ID = 571718066
@@ -149,8 +149,7 @@ class GoldWriteBuffer:
             return
         logger.info(f"[buffer_v7] drain: {pending} entrées en attente")
         try:
-            print('yes')
-            # await self.flush()
+            await self.flush()
         except Exception as e:
             logger.error(f"[buffer_v7] drain flush ÉCHOUÉ: {e}")
 
@@ -220,172 +219,171 @@ class GoldWriteBuffer:
             self._wake.clear()
             if self.pending() or self._phase_updates or self._dirty_agg:
                 try:
-                    print('yes')
-                    # await self.flush()
+                    await self.flush()
                 except Exception as e:
                     await self._alert_admin(e)
 
-    # async def flush(self):
-    #     """
-    #     Swap atomique des buffers → écriture SQL en lots.
-    #     En cas d'échec, re-fusion des données pour retry au prochain cycle.
-    #     """
-    #     # Swap atomique (asyncio mono-thread : pas de lock nécessaire tant
-    #     # qu'on ne await pas avant d'avoir tout copié)
-    #     entries = list(self._entries.values());  self._entries.clear()
-    #     steps   = list(self._steps.values());    self._steps.clear()
-    #     events  = self._events;                  self._events = []
-    #     phases  = dict(self._phase_updates);     self._phase_updates.clear()
-    #     dirty   = set(self._dirty_agg);          self._dirty_agg.clear()
+    async def flush(self):
+        """
+        Swap atomique des buffers → écriture SQL en lots.
+        En cas d'échec, re-fusion des données pour retry au prochain cycle.
+        """
+        # Swap atomique (asyncio mono-thread : pas de lock nécessaire tant
+        # qu'on ne await pas avant d'avoir tout copié)
+        entries = list(self._entries.values());  self._entries.clear()
+        steps   = list(self._steps.values());    self._steps.clear()
+        events  = self._events;                  self._events = []
+        phases  = dict(self._phase_updates);     self._phase_updates.clear()
+        dirty   = set(self._dirty_agg);          self._dirty_agg.clear()
 
-    #     # Sauvegarde des clés d'origine pour la re-fusion en cas d'échec
-    #     entries_keys = list(self._get_entries_snapshot_keys(entries))
-    #     steps_keys   = list(self._get_steps_snapshot_keys(steps))
+        # Sauvegarde des clés d'origine pour la re-fusion en cas d'échec
+        entries_keys = list(self._get_entries_snapshot_keys(entries))
+        steps_keys   = list(self._get_steps_snapshot_keys(steps))
 
-    #     t0 = time.perf_counter()
-    #     try:
-    #         async with get_db() as cur:
+        t0 = time.perf_counter()
+        try:
+            async with get_db() as cur:
 
-    #             # 1. Phases de session (teaser → open, etc.)
-    #             for sid, phase in phases.items():
-    #                 if phase == "open":
-    #                     await cur.execute("""
-    #                         UPDATE gold_trade_sessions
-    #                         SET current_phase = 'open',
-    #                             opened_at = COALESCE(opened_at, NOW())
-    #                         WHERE id = %s AND current_phase = 'teaser'
-    #                     """, (sid,))
-    #                 else:
-    #                     await cur.execute(
-    #                         "UPDATE gold_trade_sessions SET current_phase = %s WHERE id = %s",
-    #                         (phase, sid),
-    #                     )
+                # 1. Phases de session (teaser → open, etc.)
+                for sid, phase in phases.items():
+                    if phase == "open":
+                        await cur.execute("""
+                            UPDATE gold_trade_sessions
+                            SET current_phase = 'open',
+                                opened_at = COALESCE(opened_at, NOW())
+                            WHERE id = %s AND current_phase = 'teaser'
+                        """, (sid,))
+                    else:
+                        await cur.execute(
+                            "UPDATE gold_trade_sessions SET current_phase = %s WHERE id = %s",
+                            (phase, sid),
+                        )
 
-    #             # 2. Confirmations membres — 1 requête pour N confirmations
-    #             ODKU_ENTRIES = """
-    #                 capital_declared  = new_vals.capital_declared,
-    #                 risk_pct          = new_vals.risk_pct,
-    #                 risk_usd          = new_vals.risk_usd,
-    #                 lot_calculated    = new_vals.lot_calculated,
-    #                 tp_level_assigned = new_vals.tp_level_assigned,
-    #                 perte_sl          = new_vals.perte_sl,
-    #                 gain_tp1          = new_vals.gain_tp1,
-    #                 gain_tp2          = new_vals.gain_tp2,
-    #                 gain_tp3          = new_vals.gain_tp3,
-    #                 capital_before    = new_vals.capital_before,
-    #                 confirmed_at      = NOW()
-    #             """
-    #             PREFIX_ENTRIES = """
-    #                 INSERT INTO gold_member_entries
-    #                     (session_id, user_id, season_id, capital_declared, risk_pct,
-    #                      risk_usd, lot_calculated, tp_level_assigned,
-    #                      perte_sl, gain_tp1, gain_tp2, gain_tp3,
-    #                      capital_before, step_reached, confirmed_at)
-    #             """
-    #             for i in range(0, len(entries), CHUNK_ROWS):
-    #                 chunk = entries[i:i + CHUNK_ROWS]
-    #                 row = "(" + ",".join(["%s"] * 13) + ",'confirmed',NOW())"
-    #                 sql = (PREFIX_ENTRIES + " VALUES "
-    #                        + ",".join([row] * len(chunk))
-    #                        + f" AS new_vals ON DUPLICATE KEY UPDATE {ODKU_ENTRIES}")
-    #                 params = [v for r in chunk for v in r]
-    #                 await cur.execute(sql, params)
+                # 2. Confirmations membres — 1 requête pour N confirmations
+                ODKU_ENTRIES = """
+                    capital_declared  = new_vals.capital_declared,
+                    risk_pct          = new_vals.risk_pct,
+                    risk_usd          = new_vals.risk_usd,
+                    lot_calculated    = new_vals.lot_calculated,
+                    tp_level_assigned = new_vals.tp_level_assigned,
+                    perte_sl          = new_vals.perte_sl,
+                    gain_tp1          = new_vals.gain_tp1,
+                    gain_tp2          = new_vals.gain_tp2,
+                    gain_tp3          = new_vals.gain_tp3,
+                    capital_before    = new_vals.capital_before,
+                    confirmed_at      = NOW()
+                """
+                PREFIX_ENTRIES = """
+                    INSERT INTO gold_member_entries
+                        (session_id, user_id, season_id, capital_declared, risk_pct,
+                         risk_usd, lot_calculated, tp_level_assigned,
+                         perte_sl, gain_tp1, gain_tp2, gain_tp3,
+                         capital_before, step_reached, confirmed_at)
+                """
+                for i in range(0, len(entries), CHUNK_ROWS):
+                    chunk = entries[i:i + CHUNK_ROWS]
+                    row = "(" + ",".join(["%s"] * 13) + ",'confirmed',NOW())"
+                    sql = (PREFIX_ENTRIES + " VALUES "
+                           + ",".join([row] * len(chunk))
+                           + f" AS new_vals ON DUPLICATE KEY UPDATE {ODKU_ENTRIES}")
+                    params = [v for r in chunk for v in r]
+                    await cur.execute(sql, params)
 
-    #             # 3. Étapes utilisateur — 1 requête pour N étapes
-    #             # Fallback en INSERT par ligne si le batch échoue, pour
-    #             # isoler et jeter les lignes corrompues (évite la boucle infinie).
-    #             for i in range(0, len(steps), CHUNK_ROWS):
-    #                 chunk = steps[i:i + CHUNK_ROWS]
-    #                 sql = _multi_insert_sql(
-    #                     """INSERT INTO gold_user_sessions
-    #                            (session_id, user_id, step, capital_input)""",
-    #                     4, len(chunk),
-    #                     """step = new_vals.step,
-    #                        capital_input = new_vals.capital_input,
-    #                        updated_at = NOW()""",
-    #                 )
-    #                 params = [v for r in chunk for v in r]
-    #                 try:
-    #                     await cur.execute(sql, params)
-    #                 except Exception as batch_err:
-    #                     logger.warning(
-    #                         f"[buffer_v7] batch steps échoué ({batch_err}); "
-    #                         f"fallback ligne-par-ligne sur {len(chunk)} lignes"
-    #                     )
-    #                     sql_one = _multi_insert_sql(
-    #                         """INSERT INTO gold_user_sessions
-    #                                (session_id, user_id, step, capital_input)""",
-    #                         4, 1,
-    #                         """step = new_vals.step,
-    #                            capital_input = new_vals.capital_input,
-    #                            updated_at = NOW()""",
-    #                     )
-    #                     for r in chunk:
-    #                         try:
-    #                             await cur.execute(sql_one, list(r))
-    #                         except Exception as row_err:
-    #                             logger.error(
-    #                                 f"[buffer_v7] LIGNE JETÉE (step): {r} — {row_err}"
-    #                             )
+                # 3. Étapes utilisateur — 1 requête pour N étapes
+                # Fallback en INSERT par ligne si le batch échoue, pour
+                # isoler et jeter les lignes corrompues (évite la boucle infinie).
+                for i in range(0, len(steps), CHUNK_ROWS):
+                    chunk = steps[i:i + CHUNK_ROWS]
+                    sql = _multi_insert_sql(
+                        """INSERT INTO gold_user_sessions
+                               (session_id, user_id, step, capital_input)""",
+                        4, len(chunk),
+                        """step = new_vals.step,
+                           capital_input = new_vals.capital_input,
+                           updated_at = NOW()""",
+                    )
+                    params = [v for r in chunk for v in r]
+                    try:
+                        await cur.execute(sql, params)
+                    except Exception as batch_err:
+                        logger.warning(
+                            f"[buffer_v7] batch steps échoué ({batch_err}); "
+                            f"fallback ligne-par-ligne sur {len(chunk)} lignes"
+                        )
+                        sql_one = _multi_insert_sql(
+                            """INSERT INTO gold_user_sessions
+                                   (session_id, user_id, step, capital_input)""",
+                            4, 1,
+                            """step = new_vals.step,
+                               capital_input = new_vals.capital_input,
+                               updated_at = NOW()""",
+                        )
+                        for r in chunk:
+                            try:
+                                await cur.execute(sql_one, list(r))
+                            except Exception as row_err:
+                                logger.error(
+                                    f"[buffer_v7] LIGNE JETÉE (step): {r} — {row_err}"
+                                )
 
-    #             # 4. Événements de flux — 1 requête pour N événements
-    #             # Note : le tuple contient (sid, ver, user_id, type, payload)
-    #             # → on drop la version pour l'écriture SQL (pas de colonne version)
-    #             for i in range(0, len(events), CHUNK_ROWS):
-    #                 chunk = events[i:i + CHUNK_ROWS]
-    #                 row = "(" + ",".join(["%s"] * 4) + ",NOW())"
-    #                 sql = ("INSERT INTO gold_flow_events "
-    #                        "(session_id, user_id, event_type, payload, created_at) VALUES "
-    #                        + ",".join([row] * len(chunk)))
-    #                 params = []
-    #                 for r in chunk:
-    #                     # r = (sid, ver, user_id, event_type, payload_json)
-    #                     params.extend([r[0], r[2], r[3], r[4]])
-    #                 await cur.execute(sql, params)
+                # 4. Événements de flux — 1 requête pour N événements
+                # Note : le tuple contient (sid, ver, user_id, type, payload)
+                # → on drop la version pour l'écriture SQL (pas de colonne version)
+                for i in range(0, len(events), CHUNK_ROWS):
+                    chunk = events[i:i + CHUNK_ROWS]
+                    row = "(" + ",".join(["%s"] * 4) + ",NOW())"
+                    sql = ("INSERT INTO gold_flow_events "
+                           "(session_id, user_id, event_type, payload, created_at) VALUES "
+                           + ",".join([row] * len(chunk)))
+                    params = []
+                    for r in chunk:
+                        # r = (sid, ver, user_id, event_type, payload_json)
+                        params.extend([r[0], r[2], r[3], r[4]])
+                    await cur.execute(sql, params)
 
-    #             # 5. Agrégats — 1 UPDATE par session dirty ET encore active
-    #             #    dans user_state_v7 (évite d'écraser avec des zéros
-    #             #    après un close_session qui a purgé la RAM).
-    #             for sid, ver in dirty:
-    #                 if sid != user_state_v7.session_id:
-    #                     continue
-    #                 if hasattr(user_state_v7, "version") and user_state_v7.version != ver:
-    #                     continue
-    #                 agg = user_state_v7.aggregates()
-    #                 await cur.execute("""
-    #                     UPDATE gold_trade_sessions SET
-    #                         total_members_in      = %s,
-    #                         total_lots_engaged    = %s,
-    #                         estimated_loss_sl     = %s,
-    #                         estimated_gain_tp1    = %s,
-    #                         estimated_gain_tp2    = %s,
-    #                         estimated_gain_tp3    = %s,
-    #                         aggregates_updated_at = NOW()
-    #                     WHERE id = %s
-    #                 """, (agg["total_members"], agg["total_lots"],
-    #                       agg["total_loss_sl"], agg["total_gain_tp1"],
-    #                       agg["total_gain_tp2"], agg["total_gain_tp3"], sid))
+                # 5. Agrégats — 1 UPDATE par session dirty ET encore active
+                #    dans user_state_v7 (évite d'écraser avec des zéros
+                #    après un close_session qui a purgé la RAM).
+                for sid, ver in dirty:
+                    if sid != user_state_v7.session_id:
+                        continue
+                    if hasattr(user_state_v7, "version") and user_state_v7.version != ver:
+                        continue
+                    agg = user_state_v7.aggregates()
+                    await cur.execute("""
+                        UPDATE gold_trade_sessions SET
+                            total_members_in      = %s,
+                            total_lots_engaged    = %s,
+                            estimated_loss_sl     = %s,
+                            estimated_gain_tp1    = %s,
+                            estimated_gain_tp2    = %s,
+                            estimated_gain_tp3    = %s,
+                            aggregates_updated_at = NOW()
+                        WHERE id = %s
+                    """, (agg["total_members"], agg["total_lots"],
+                          agg["total_loss_sl"], agg["total_gain_tp1"],
+                          agg["total_gain_tp2"], agg["total_gain_tp3"], sid))
 
-    #         dt = (time.perf_counter() - t0) * 1000
-    #         n  = len(entries) + len(steps) + len(events)
-    #         if n:
-    #             logger.info(
-    #                 f"[buffer_v7] flush {n} lignes en {dt:.0f} ms "
-    #                 f"({len(entries)} entries / {len(steps)} steps / {len(events)} events)"
-    #             )
+            dt = (time.perf_counter() - t0) * 1000
+            n  = len(entries) + len(steps) + len(events)
+            if n:
+                logger.info(
+                    f"[buffer_v7] flush {n} lignes en {dt:.0f} ms "
+                    f"({len(entries)} entries / {len(steps)} steps / {len(events)} events)"
+                )
 
-    #     except Exception:
-    #         # Re-fusion : les nouveaux writes prioritaires (last write wins),
-    #         # les anciens repris uniquement s'il n'y a pas déjà une version
-    #         # plus récente en RAM.
-    #         for key, r in zip(entries_keys, entries):
-    #             self._entries.setdefault(key, r)
-    #         for key, r in zip(steps_keys, steps):
-    #             self._steps.setdefault(key, r)
-    #         self._events = events + self._events
-    #         self._phase_updates = {**phases, **self._phase_updates}
-    #         self._dirty_agg |= dirty
-    #         raise
+        except Exception:
+            # Re-fusion : les nouveaux writes prioritaires (last write wins),
+            # les anciens repris uniquement s'il n'y a pas déjà une version
+            # plus récente en RAM.
+            for key, r in zip(entries_keys, entries):
+                self._entries.setdefault(key, r)
+            for key, r in zip(steps_keys, steps):
+                self._steps.setdefault(key, r)
+            self._events = events + self._events
+            self._phase_updates = {**phases, **self._phase_updates}
+            self._dirty_agg |= dirty
+            raise
 
     def _get_entries_snapshot_keys(self, entries):
         """Reconstruit les clés (sid, ver, user_id) pour la re-fusion post-échec."""
