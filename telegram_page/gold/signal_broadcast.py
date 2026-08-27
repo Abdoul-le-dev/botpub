@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 ADMIN_ID = 571718066
 
 BROADCAST_RATE  = 25
-CATEGORY_TARGET = "clients_actifs"
+CATEGORY_TARGET = "FDK MASTER CLASS Aout"
 CATEGORY_BLOCKED = "clients_bloquer"
 
 RESUB_WINDOW_DAYS = 10
