@@ -31,7 +31,7 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import CallbackQueryHandler, MessageHandler, filters
 
 from db import get_db
-from disclaimer_gate import handle_disclaimer_weekly_ok
+from telegram_page.gold.disclaimer_gate import handle_disclaimer_weekly_ok
 
 logger = logging.getLogger(__name__)
 ADMIN_ID = 571718066
