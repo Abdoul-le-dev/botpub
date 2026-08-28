@@ -35,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import datetime
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.error import Forbidden, RetryAfter
@@ -222,30 +223,33 @@ async def _get_category_user_ids(category: str) -> list[int]:
 async def _preload_resub_flags(user_ids: list[int]) -> dict[int, bool]:
     """
     Précharge, pour tous les destinataires, si leur abonnement se
-    termine dans <= RESUB_WINDOW_DAYS jours.
-
-    NOTE : ajuster le nom de colonne `subscription_end_at` selon le
-    schéma réel de la table `users`.
+    termine dans <= RESUB_WINDOW_DAYS jours (table `subscriptions`,
+    colonnes user_id/expires_at — un membre peut avoir plusieurs lignes
+    d'historique, on prend la date d'expiration la plus tardive).
     """
     if not user_ids:
         return {}
     flags: dict[int, bool] = {}
     chunk_size = 1000
-    async with get_db() as cur:
-        for i in range(0, len(user_ids), chunk_size):
-            chunk = user_ids[i:i + chunk_size]
-            ph = ",".join(["%s"] * len(chunk))
-            await cur.execute(f"""
-                SELECT telegram_id,
-                       DATEDIFF(subscription_end_at, NOW()) AS days_left
-                FROM users
-                WHERE telegram_id IN ({ph})
-            """, chunk)
-            for r in await cur.fetchall():
-                days_left = r["days_left"]
-                flags[int(r["telegram_id"])] = (
-                    days_left is not None and 0 <= days_left <= RESUB_WINDOW_DAYS
-                )
+    try:
+        async with get_db() as cur:
+            for i in range(0, len(user_ids), chunk_size):
+                chunk = user_ids[i:i + chunk_size]
+                ph = ",".join(["%s"] * len(chunk))
+                await cur.execute(f"""
+                    SELECT user_id, MAX(expires_at) AS expires_at
+                    FROM subscriptions
+                    WHERE user_id IN ({ph})
+                    GROUP BY user_id
+                """, chunk)
+                for r in await cur.fetchall():
+                    days_left = (r["expires_at"] - datetime.now()).days if r["expires_at"] else None
+                    flags[int(r["user_id"])] = (
+                        days_left is not None and 0 <= days_left <= RESUB_WINDOW_DAYS
+                    )
+    except Exception as e:
+        logger.error(f"[signal_broadcast] _preload_resub_flags échoué : {e}")
+        return {}
     return flags
 
 
