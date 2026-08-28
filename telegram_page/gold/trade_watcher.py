@@ -31,7 +31,7 @@ from datetime import datetime
 
 from db import get_db
 from telegram_page.gold.gold_engine import get_live_gold_price, close_simulation_trades
-from trade_management_notifs import notify_opted_in_members
+from telegram_page.gold.trade_management_notifs import notify_opted_in_members
 
 logger = logging.getLogger(__name__)
 ADMIN_ID = 571718066
