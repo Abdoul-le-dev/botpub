@@ -35,14 +35,29 @@ SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS member_capital (
     user_id    BIGINT PRIMARY KEY,
     capital    DECIMAL(12,2) NOT NULL,
-    updated_at DATETIME NOT NULL
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 """
+
+# Défensif : si la table existe déjà avec un schéma plus ancien (créée
+# avant l'ajout d'une colonne), CREATE TABLE IF NOT EXISTS ne la
+# modifie PAS — il faut l'ALTER explicitement. Erreur 1060 = colonne
+# déjà présente, ignorée (même pattern que main.py:ensure_users_schema).
+ALTER_STATEMENTS = [
+    "ALTER TABLE member_capital ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+]
 
 
 async def ensure_schema():
     async with get_db() as cur:
         await cur.execute(SCHEMA_SQL)
+        for stmt in ALTER_STATEMENTS:
+            try:
+                await cur.execute(stmt)
+            except Exception as e:
+                if "1060" in str(e) or "duplicate column" in str(e).lower():
+                    continue
+                logger.warning(f"[member_capital] ALTER échoué: {stmt} — {e}")
     logger.info("[member_capital] schéma member_capital OK")
 
 
