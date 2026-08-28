@@ -97,6 +97,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import gc
 import os
 import sys
 
@@ -393,6 +394,13 @@ async def main():
         pass
     except Exception as e:
         print(f"[test] avertissement : échec fermeture propre du pool ({e})")
+
+    # Force le nettoyage des connexions aiomysql MAINTENANT, pendant que
+    # la boucle asyncio est encore active — évite le "RuntimeError: Event
+    # loop is closed" cosmétique que leur __del__ déclenche sinon plus
+    # tard, pendant l'arrêt de l'interpréteur (boucle déjà fermée).
+    gc.collect()
+    await asyncio.sleep(0)
 
 
 if __name__ == "__main__":
