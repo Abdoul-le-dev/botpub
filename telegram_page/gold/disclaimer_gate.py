@@ -228,7 +228,7 @@ async def handle_disclaimer_weekly_ok(update, context):
     pending_session_id = int(parts[-1]) if parts[-1].isdigit() else None
 
     try:
-        await query.answer("✅ Validé pour cette semaine.")
+        await query.answer("✅ Engagement validé pour cette semaine.")
     except Exception:
         pass
     await disclaimer_gate.record_consent(uid)
@@ -236,34 +236,101 @@ async def handle_disclaimer_weekly_ok(update, context):
         await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup([]))
     except Exception:
         pass
-    await context.bot.send_message(
-        chat_id=uid,
-        text="✅ *C'est validé.*",
-        parse_mode="Markdown",
-    )
 
-    # Si la validation faisait suite à un signal manqué (weekend non fait
-    # ou premier signal), on lui envoie ce signal maintenant.
-    if pending_session_id is not None:
+    await _deliver_after_consent(context.bot, uid, pending_session_id)
+
+
+async def _deliver_after_consent(bot, uid: int, pending_session_id: int | None):
+    """
+    Après validation, décide quoi envoyer au membre :
+      - un session_id précis était en attente (signal manqué avant
+        validation) → on lui envoie CE signal.
+      - sinon (validation via /je_valide_mon_engagement, sans signal
+        particulier en attente) → on regarde s'il y a un trade EN COURS
+        (phase 'teaser' ou 'open') et on le lui envoie s'il y en a un ;
+        sinon on confirme juste la prise en compte.
+    """
+    target_session_id = pending_session_id
+    if target_session_id is None:
+        try:
+            from telegram_page.gold.gold_engine import get_active_gold_session
+            active = await get_active_gold_session()
+            target_session_id = active["id"] if active else None
+        except Exception as e:
+            logger.error(f"[disclaimer_gate] lookup trade en cours uid={uid}: {e}", exc_info=True)
+            target_session_id = None
+
+    if target_session_id is not None:
         try:
             from signal_broadcast import send_signal_to_user
-            await send_signal_to_user(context.bot, uid, pending_session_id)
+            await send_signal_to_user(bot, uid, target_session_id)
+            return
         except Exception as e:
-            logger.error(f"[disclaimer_gate] envoi signal différé uid={uid}: {e}", exc_info=True)
+            logger.error(f"[disclaimer_gate] envoi signal uid={uid} sid={target_session_id}: {e}",
+                         exc_info=True)
+            # on tombe sur le message de confirmation simple ci-dessous
+
+    try:
+        await bot.send_message(
+            chat_id=uid,
+            text=("✅ *Engagement validé pour cette semaine.*\n\n"
+                  "Dès qu'une nouvelle opportunité sera disponible, "
+                  "elle te sera envoyée automatiquement."),
+            parse_mode="Markdown",
+        )
+    except Forbidden:
+        pass
 
 
-async def send_consent_request(bot, user_id: int, *, pending_session_id: int | None = None):
+async def send_consent_request(bot, user_id: int, *,
+                                pending_session_id: int | None = None,
+                                intro: str | None = None):
     """
     Demande de validation hebdomadaire.
 
-    - Sans pending_session_id : campagne weekend classique.
+    - Sans pending_session_id : campagne weekend classique, ou commande
+      /je_valide_mon_engagement.
     - Avec pending_session_id : le membre a raté un signal (pas encore
       validé cette semaine, ou tout premier signal reçu) — dès qu'il
       valide, ce signal précis lui est envoyé.
+    - `intro` : texte optionnel préfixé au disclaimer (ex : expliquer
+      pourquoi il ne reçoit pas les signaux).
     """
+    text = f"{intro}\n\n{DISCLAIMER_TEXT}" if intro else DISCLAIMER_TEXT
     try:
-        await bot.send_message(chat_id=user_id, text=DISCLAIMER_TEXT,
+        await bot.send_message(chat_id=user_id, text=text,
                                 parse_mode="Markdown",
                                 reply_markup=_consent_keyboard(pending_session_id))
     except Forbidden:
         pass
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Commande /je_valide_mon_engagement — validation à la demande, en semaine
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def cmd_je_valide_mon_engagement(update, context):
+    """
+    Le membre déclenche lui-même la validation hebdomadaire (au lieu
+    d'attendre la campagne weekend ou un signal manqué).
+
+    - Déjà validé cette semaine → on le lui confirme, rien d'autre.
+    - Pas encore validé → on lui explique pourquoi il ne reçoit pas les
+      signaux, puis on lui montre le contrat avec le bouton de
+      validation (le clic déclenche _deliver_after_consent, qui
+      cherchera un trade en cours à lui envoyer).
+    """
+    uid = update.effective_user.id
+
+    if await disclaimer_gate.is_valid(uid):
+        await update.message.reply_text(
+            "✅ *Tu as déjà validé ton engagement pour cette semaine.*",
+            parse_mode="Markdown",
+        )
+        return
+
+    intro = (
+        "⚠️ *Tu n'as pas encore validé ton engagement hebdomadaire.*\n\n"
+        "Tant que ce n'est pas fait, tu ne peux pas recevoir les signaux."
+    )
+    await send_consent_request(context.bot, uid, intro=intro)

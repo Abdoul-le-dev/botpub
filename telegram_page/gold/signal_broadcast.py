@@ -41,6 +41,7 @@ from telegram.error import Forbidden, RetryAfter
 
 from db import get_db
 from telegram_page.gold.disclaimer_gate import split_by_consent, send_consent_request
+from telegram_page.gold.gold_buffer import gold_buffer
 
 logger = logging.getLogger(__name__)
 ADMIN_ID = 571718066
@@ -388,12 +389,19 @@ async def send_signal(bot, session_id: int, *, category: str = None) -> dict:
     except Exception:
         pass
 
-    # Surveillance prix live — inchangé, ne dépend pas du parcours membre
+    # La session est désormais "live" : le signal a été diffusé. Passe
+    # teaser → open (write-behind via gold_buffer, ~500ms) — nécessaire
+    # pour que daily_cramed_check (qui filtre sur phase='open') continue
+    # de trouver les sessions actives.
+    gold_buffer.set_phase(session_id, "open")
+
+    # Surveillance prix live + fermeture auto SL/TP3 (backend uniquement,
+    # aucune notification membre — voir trade_watcher.py)
     try:
-        from telegram_page.gold.gold_engine import watch_gold_price
-        asyncio.create_task(watch_gold_price(session_id))
+        from telegram_page.gold.trade_watcher import watch_and_close
+        asyncio.create_task(watch_and_close(session_id))
     except Exception as e:
-        logger.error(f"[signal_broadcast] watch_gold_price: {e}")
+        logger.error(f"[signal_broadcast] trade_watcher: {e}")
 
     return {"total": total, "sent": sent, "errors": errors,
             "pending_consent": len(pending_ids),

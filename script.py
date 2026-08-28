@@ -24,6 +24,7 @@ from validation_handler import register_validation_handler
 from validation_formation import register_formation_handler
 from form.form_engine import register_form_handlers, setup_background_worker
 from telegram_page.gold.gold_engine import set_bot as set_gold_bot, daily_cramed_check
+from telegram_page.gold.trade_watcher import set_bot as set_watcher_bot
 from telegram_page.gold.error_handler import error_handler
 
 from aiohttp import web
@@ -34,6 +35,7 @@ from telegram_page.gold.disclaimer_gate import (
     ensure_schema as ensure_disclaimer_schema,
     weekend_scheduler_loop,
 )
+from member_capital import ensure_schema as ensure_member_capital_schema
 import telegram_page.gold.gold_engine as gold_engine_mod
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1237,6 +1239,9 @@ if __name__ == "__main__":
             await ensure_disclaimer_schema()
             print("[main] Schéma disclaimer hebdo OK ✓")
 
+            await ensure_member_capital_schema()
+            print("[main] Schéma member_capital (notifs de trade opt-in) OK ✓")
+
             try:
                 from engagement import ensure_engagement_schema
                 await ensure_engagement_schema()
@@ -1334,6 +1339,7 @@ if __name__ == "__main__":
 
     set_bot(app.bot)
     set_gold_bot(app.bot)
+    set_watcher_bot(app.bot)
 
     print("running...")
 

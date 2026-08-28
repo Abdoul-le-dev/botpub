@@ -10,9 +10,14 @@ CalcContext, StateManagerV7, gold_buffer par confirmation).
      - le membre tape un nombre
      - le bot renvoie IMMÉDIATEMENT le lot recommandé + les scénarios
        de gain/perte pour CE signal, avec ce capital
-     - RIEN n'est stocké nulle part (ni le capital, ni le calcul)
+     - RIEN n'est stocké — SAUF si le membre clique explicitement sur
+       "💾 Sauvegarder ce capital" (bouton proposé après le calcul).
+       Dans ce cas, son capital est stocké de façon PERMANENTE
+       (member_capital.py) et il reçoit désormais une notification à
+       chaque TP1/TP2/TP3 atteint, selon son palier d'objectif —
+       voir trade_management_notifs.py. Le SL reste toujours silencieux.
    Le membre peut relancer l'outil autant de fois qu'il veut avec un
-   capital différent — chaque appel est indépendant.
+   capital différent, avec ou sans sauvegarder.
 
 2. BESOIN D'AIDE (bouton "🆘 Besoin d'aide")
    Message statique de contact/support + notification à l'admin.
@@ -28,10 +33,11 @@ import logging
 import math
 
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import CallbackQueryHandler, MessageHandler, filters
+from telegram.ext import CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from db import get_db
-from telegram_page.gold.disclaimer_gate import handle_disclaimer_weekly_ok
+from telegram_page.gold.disclaimer_gate import handle_disclaimer_weekly_ok, cmd_je_valide_mon_engagement
+from member_capital import save_capital
 
 logger = logging.getLogger(__name__)
 ADMIN_ID = 571718066
@@ -146,8 +152,59 @@ async def handle_mm_capital_input(update, context) -> bool:
         return True
 
     lot = calc_lot(capital, float(session["entry_price"]), float(session["sl"]))
-    await msg.reply_text(_build_result_message(session, capital, lot), parse_mode="Markdown")
+    kbd = InlineKeyboardMarkup([[InlineKeyboardButton(
+        "💾 Sauvegarder ce capital pour mes notifs de trade",
+        callback_data=f"mm_save_{session_id}_{capital:g}",
+    )]])
+    await msg.reply_text(_build_result_message(session, capital, lot),
+                          parse_mode="Markdown", reply_markup=kbd)
     return True
+
+
+async def handle_mm_save(update, context):
+    """
+    Sauvegarde EXPLICITE (opt-in) du capital calculé dans Money
+    management. Envoie immédiatement une notification de gestion du
+    trade pour la session en cours, et active les futures notifs
+    TP1/TP2/TP3 (selon palier — voir trade_management_notifs.py).
+    Le SL reste toujours silencieux.
+    """
+    query = update.callback_query
+    if query is None:
+        return
+    try:
+        _, _, session_id_str, capital_str = query.data.split("_", 3)
+        session_id = int(session_id_str)
+        capital = float(capital_str)
+    except (ValueError, IndexError):
+        await query.answer("Erreur — réessaie depuis Money management.", show_alert=True)
+        return
+
+    uid = query.from_user.id
+    await save_capital(uid, capital)
+    await query.answer("✅ Capital sauvegardé.")
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    session = await _get_session(session_id)
+    header = "🔔 *Notifications de gestion du trade activées.*\n\n"
+    if session is None:
+        await context.bot.send_message(
+            chat_id=uid,
+            text=(header + "Tu recevras un message à chaque niveau important "
+                  "(TP1, TP2, TP3) sur tes prochains trades."),
+            parse_mode="Markdown",
+        )
+        return
+
+    lot = calc_lot(capital, float(session["entry_price"]), float(session["sl"]))
+    await context.bot.send_message(
+        chat_id=uid,
+        text=header + _build_result_message(session, capital, lot),
+        parse_mode="Markdown",
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -194,12 +251,15 @@ async def _text_router(update, context):
 
 def register_interactive_handlers(app):
     app.add_handler(CallbackQueryHandler(handle_mm_open, pattern=r"^mm_open_\d+$"), group=3)
+    app.add_handler(CallbackQueryHandler(handle_mm_save, pattern=r"^mm_save_\d+_[\d.]+$"), group=3)
     app.add_handler(CallbackQueryHandler(handle_help_request, pattern=r"^help_request_\d+$"), group=3)
     app.add_handler(CallbackQueryHandler(handle_disclaimer_weekly_ok,
                                           pattern=r"^disclaimer_weekly_ok(_\d+)?$"), group=3)
+    app.add_handler(CommandHandler("je_valide_mon_engagement", cmd_je_valide_mon_engagement))
     app.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE,
         _text_router,
     ), group=3)
 
-    logger.info("[interactive_tools] Handlers enregistrés (money management + aide) ✓")
+    logger.info("[interactive_tools] Handlers enregistrés "
+                "(money management + aide + /je_valide_mon_engagement) ✓")
