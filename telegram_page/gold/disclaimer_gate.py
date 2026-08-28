@@ -262,7 +262,7 @@ async def _deliver_after_consent(bot, uid: int, pending_session_id: int | None):
 
     if target_session_id is not None:
         try:
-            from signal_broadcast import send_signal_to_user
+            from telegram_page.gold.signal_broadcast import send_signal_to_user
             await send_signal_to_user(bot, uid, target_session_id)
             return
         except Exception as e:
