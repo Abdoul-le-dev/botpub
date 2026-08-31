@@ -41,7 +41,7 @@ from member_capital import save_capital
 
 logger = logging.getLogger(__name__)
 ADMIN_ID = 571718066
-SUPPORT_CONTACT = "@fdksupport"   # TODO: ajuster au contact réel
+SUPPORT_CONTACT = "@Fiacrekpanou"   # TODO: ajuster au contact réel
 
 
 # ══════════════════════════════════════════════════════════════════════════════
