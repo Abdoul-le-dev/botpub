@@ -192,16 +192,16 @@ def build_signal_message(session: dict) -> str:
 
 
 def build_signal_keyboard(session_id: int, *, show_resub: bool) -> InlineKeyboardMarkup:
-    rows = [[
-        InlineKeyboardButton("💰 Money management",
-                              callback_data=f"mm_open_{session_id}"),
-        InlineKeyboardButton("🆘 Besoin d'aide",
-                              callback_data=f"help_request_{session_id}"),
-    ]]
+    # Un bouton par ligne : deux boutons côte à côte se font tronquer
+    # sur mobile (libellés coupés) — une ligne pleine largeur par
+    # bouton garantit un affichage lisible quelle que soit la largeur
+    # d'écran.
+    rows = [
+        [InlineKeyboardButton("💰 Money management", callback_data=f"mm_open_{session_id}")],
+        [InlineKeyboardButton("🆘 Besoin d'aide", callback_data=f"help_request_{session_id}")],
+    ]
     if show_resub:
-        rows.append([InlineKeyboardButton(
-            "🎁 Me réabonner -30%", url=RESUB_URL,
-        )])
+        rows.append([InlineKeyboardButton("🎁 Me réabonner -30%", url=RESUB_URL)])
     return InlineKeyboardMarkup(rows)
 
 

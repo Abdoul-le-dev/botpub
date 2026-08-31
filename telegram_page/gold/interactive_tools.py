@@ -153,7 +153,7 @@ async def handle_mm_capital_input(update, context) -> bool:
 
     lot = calc_lot(capital, float(session["entry_price"]), float(session["sl"]))
     kbd = InlineKeyboardMarkup([[InlineKeyboardButton(
-        "💾 Sauvegarder ce capital pour mes notifs de trade",
+        "💾 Sauvegarder mon capital",
         callback_data=f"mm_save_{session_id}_{capital:g}",
     )]])
     await msg.reply_text(_build_result_message(session, capital, lot),

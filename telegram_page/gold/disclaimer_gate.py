@@ -147,7 +147,7 @@ def _consent_keyboard(pending_session_id: int | None = None) -> InlineKeyboardMa
     # handler sache quel signal renvoyer juste après validation.
     suffix = f"_{pending_session_id}" if pending_session_id is not None else ""
     return InlineKeyboardMarkup([[InlineKeyboardButton(
-        "✅ Je valide pour cette semaine",
+        "✅ Je valide mon engagement",
         callback_data=f"disclaimer_weekly_ok{suffix}",
     )]])
 

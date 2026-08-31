@@ -1228,6 +1228,8 @@ if __name__ == "__main__":
            .read_timeout(30).write_timeout(30)
            .build())
 
+    _background_tasks: list[asyncio.Task] = []
+
     async def _post_init(application):
         try:
             await init_pool()
@@ -1253,20 +1255,20 @@ if __name__ == "__main__":
                 log_error("Échec ensure_engagement_schema", str(e))
 
             await setup_background_worker(application)
-            asyncio.create_task(schedule_daily_check(application.bot))
+            _background_tasks.append(asyncio.create_task(schedule_daily_check(application.bot)))
 
             gold_buffer.start(application.bot)
             register_buffer(gold_buffer)
 
-            asyncio.create_task(weekend_scheduler_loop(application.bot))
+            _background_tasks.append(asyncio.create_task(weekend_scheduler_loop(application.bot)))
 
             # Boucle de relance — nouvelle logique (reminder_engine.py)
-            asyncio.create_task(
+            _background_tasks.append(asyncio.create_task(
                 registration_reminder_loop(
                     application.bot,
                     notify_admin_critical=notify_admin_critical,
                 )
-            )
+            ))
 
             await init_milestone_counter()
             await _start_internal_http_server()
@@ -1278,7 +1280,27 @@ if __name__ == "__main__":
                 "Échec initialisation du bot (post_init)", str(e))
             raise
 
+    async def _post_shutdown(application):
+        """
+        Arrêt propre des tâches de fond — évite le warning asyncio
+        "Task was destroyed but it is pending!" quand systemctl tue le
+        process (les tâches en asyncio.sleep() jusqu'au lendemain 20h,
+        par exemple, sont sinon détruites en plein vol sans avoir été
+        annulées).
+        """
+        logger.info("[shutdown] annulation des tâches de fond...")
+        for t in _background_tasks:
+            t.cancel()
+        if _background_tasks:
+            await asyncio.gather(*_background_tasks, return_exceptions=True)
+        try:
+            await gold_buffer.stop()
+        except Exception:
+            logger.exception("[shutdown] échec arrêt gold_buffer")
+        logger.info("[shutdown] tâches de fond arrêtées proprement")
+
     app.post_init = _post_init
+    app.post_shutdown = _post_shutdown
 
     # ── Tunnel d'enregistrement ────────────────────────────────────────────
     # Ordre : LEVEL (boutons inline) → PHONE (contact OU texte) → NAME (texte).
