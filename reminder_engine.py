@@ -197,10 +197,32 @@ PHASE3_DELAY    = timedelta(days=7)           # ultime relance
 TOTAL_REMINDERS = PHASE1_COUNT + PHASE2_COUNT + 1   # 35
 
 
+
 def compute_next_due(created_at, reminder_count: int):
-    """Datetime auquel la prochaine relance doit partir, ou None si terminé."""
+    """Datetime auquel la prochaine relance doit partir, ou None si terminé
+    (ou si created_at est invalide/non exploitable)."""
     if reminder_count >= TOTAL_REMINDERS or created_at is None:
         return None
+ 
+    if not isinstance(created_at, datetime):
+        # Cas typique : date invalide en base ('0000-00-00 00:00:00' ou
+        # similaire) que PyMySQL n'a pas pu convertir et a renvoyée en str.
+        if isinstance(created_at, str):
+            try:
+                created_at = datetime.strptime(created_at.strip(), "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                logger.warning(
+                    f"[reminder] created_at non parsable, prospect ignoré : "
+                    f"{created_at!r}"
+                )
+                return None
+        else:
+            logger.warning(
+                f"[reminder] created_at de type inattendu ({type(created_at)!r}), "
+                f"prospect ignoré : {created_at!r}"
+            )
+            return None
+ 
     if reminder_count < PHASE1_COUNT:
         # T+10min, T+20min, ... T+120min
         return created_at + PHASE1_INTERVAL * (reminder_count + 1)
@@ -210,7 +232,7 @@ def compute_next_due(created_at, reminder_count: int):
         return created_at + offset
     # Ultime : J+7
     return created_at + PHASE3_DELAY
-
+ 
 
 def is_final_reminder(reminder_count: int) -> bool:
     return reminder_count == TOTAL_REMINDERS - 1
