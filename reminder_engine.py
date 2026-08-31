@@ -47,12 +47,35 @@ ACTIVE_ALL_CATEGORY  = "Actif (ALL)"
 # ══════════════════════════════════════════════════════════════════════════════
 # LOG D'ERREURS (mutualisé avec main.py via le même fichier errors.log)
 # ══════════════════════════════════════════════════════════════════════════════
+#
+# CORRECTIF : repli vers /tmp si errors.log n'est pas inscriptible
+# (même filet que main.py:_ensure_errors_log_writable). Sans ça, une
+# simple erreur de permission sur le fichier de log finissait par
+# faire remonter une DEUXIÈME exception (PermissionError) par-dessus
+# l'erreur d'origine qu'on essayait justement de logger.
 
-_ERRORS_LOG_PATH = Path(__file__).resolve().parent / "errors.log"
+def _resolve_errors_log_path() -> Path:
+    candidate = Path(__file__).resolve().parent / "errors.log"
+    try:
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        with candidate.open("a", encoding="utf-8"):
+            pass
+        return candidate
+    except (PermissionError, OSError):
+        fallback = Path("/tmp") / "fdk_bot_errors.log"
+        try:
+            with fallback.open("a", encoding="utf-8"):
+                pass
+        except Exception:
+            pass
+        return fallback
+
+
+_ERRORS_LOG_PATH = _resolve_errors_log_path()
 
 
 def _log_error(title: str, detail: str = ""):
-    """Écrit dans errors.log. Ne lève jamais d'exception."""
+    """Écrit dans errors.log (ou son repli /tmp). Ne lève jamais d'exception."""
     try:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         line = f"[{ts}] [reminder] {title}"
@@ -106,9 +129,13 @@ async def _add_to_category(category: str, user_id: int):
 
 
 async def _remove_from_category(category: str, user_id: int):
+    # CORRECTIF : la vraie fonction s'appelle remove_member_from_category
+    # (SINGULIER) et prend un user_id nu — pas remove_members_from_category
+    # (qui n'existe pas) avec une liste. C'est déjà l'API utilisée ailleurs
+    # dans le projet (broadcast_send.py : appelée un par un dans une boucle).
     try:
-        from telegram_page.categorie import remove_members_from_category
-        await remove_members_from_category(category, [user_id])
+        from telegram_page.categorie import remove_member_from_category
+        await remove_member_from_category(category, user_id)
     except Exception as e:
         logger.exception(
             f"[reminder] échec remove_from_category({category}, {user_id})"
@@ -197,16 +224,20 @@ PHASE3_DELAY    = timedelta(days=7)           # ultime relance
 TOTAL_REMINDERS = PHASE1_COUNT + PHASE2_COUNT + 1   # 35
 
 
-
 def compute_next_due(created_at, reminder_count: int):
     """Datetime auquel la prochaine relance doit partir, ou None si terminé
     (ou si created_at est invalide/non exploitable)."""
     if reminder_count >= TOTAL_REMINDERS or created_at is None:
         return None
- 
+
+    # CORRECTIF : created_at doit être un vrai datetime.datetime. Si une
+    # ligne `users` a une date invalide en base (ex: '0000-00-00 00:00:00'
+    # — souvent une ligne ancienne créée avant migration), PyMySQL ne
+    # parvient pas à la convertir et la renvoie telle quelle en str. Sans
+    # ce garde-fou, `created_at + timedelta` explosait avec
+    # "can only concatenate str (not 'datetime.timedelta') to str" — et
+    # comme la ligne restait incomplète, ça replantait à CHAQUE cycle.
     if not isinstance(created_at, datetime):
-        # Cas typique : date invalide en base ('0000-00-00 00:00:00' ou
-        # similaire) que PyMySQL n'a pas pu convertir et a renvoyée en str.
         if isinstance(created_at, str):
             try:
                 created_at = datetime.strptime(created_at.strip(), "%Y-%m-%d %H:%M:%S")
@@ -222,7 +253,7 @@ def compute_next_due(created_at, reminder_count: int):
                 f"prospect ignoré : {created_at!r}"
             )
             return None
- 
+
     if reminder_count < PHASE1_COUNT:
         # T+10min, T+20min, ... T+120min
         return created_at + PHASE1_INTERVAL * (reminder_count + 1)
@@ -232,7 +263,7 @@ def compute_next_due(created_at, reminder_count: int):
         return created_at + offset
     # Ultime : J+7
     return created_at + PHASE3_DELAY
- 
+
 
 def is_final_reminder(reminder_count: int) -> bool:
     return reminder_count == TOTAL_REMINDERS - 1
@@ -538,8 +569,8 @@ async def registration_reminder_loop(bot, notify_admin_critical=None):
                 created_at = r.get("created_at")
                 due = compute_next_due(created_at, count)
 
-                # Plus rien à envoyer : soit déjà purgé, soit déjà promu.
-                # Cas résiduel qu'on ignore silencieusement.
+                # Plus rien à envoyer : soit déjà purgé, soit déjà promu,
+                # soit created_at invalide (voir compute_next_due).
                 if due is None:
                     continue
                 if now < due:
