@@ -5,7 +5,7 @@ gold_v7 — Architecture Gold refondue pour cohérence absolue.
 from telegram_page.gold.session_registry import session_registry, SessionStatus
 from telegram_page.gold.session_snapshot import snapshot_store, build_snapshot, SessionSnapshot
 
-from telegram_page.gold.gold_buffer import gold_buffer, GoldWriteBuffer
+
 from telegram_page.gold.lifecycle import (
     open_new_session, close_session, mark_broadcast_done,
     current_snapshot, current_version, is_open, is_ready_for_confirmations,
