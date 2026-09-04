@@ -139,6 +139,26 @@ async def _activate(pay: dict, telegram_id: int, email: str):
         )
         existing = await cur.fetchone()
 
+        if existing:
+            # Un abonnement actif existe déjà → on prolonge sa date
+            new_expires = pay.get("expires_at")
+            await cur.execute(
+                """
+                UPDATE subscriptions SET
+                    plan          = %s,
+                    duration_days = %s,
+                    started_at    = %s,
+                    expires_at    = %s,
+                    note          = 'reabonnement auto-valide',
+                    updated_at    = NOW()
+                WHERE id = %s
+                """,
+                (pay["plan"], pay["duration_days"],
+                 pay["started_at"], new_expires, existing["id"])
+            )
+            print(f"[subscription] subscriptions.id={existing['id']} prolongé jusqu'à {new_expires}")
+        
+
         if not existing:
             await cur.execute(
                 """
@@ -286,33 +306,7 @@ async def _confirm_subscription(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
 
-    # await query.message.reply_text(
-    #     "*Votre accès au canal Master Class est prêt\\.*\n"
-    #     "\n"
-    #     "Cliquez sur le bouton ci\\-dessous pour rejoindre le canal\\.\n"
-    #     "\n"
-    #     "\n"
-    #     "*Instructions importantes*\n"
-    #     "\n"
-    #     "Épinglez le canal en haut de votre liste dès votre arrivée\\.\n"
-    #     "\n"
-    #     "Activez les notifications pour être informé de chaque publication\\.\n"
-    #     "\n"
-    #     "Consultez régulièrement le canal afin de rester à jour\\.\n"
-    #     "\n"
-    #     "\n"
-    #     "*Petit conseil*\n"
-    #     "\n"
-    #     "Prenez le temps de lire les premières publications épinglées\\. "
-    #     "Elles contiennent les informations essentielles pour bien démarrer\\.",
-    #     parse_mode="MarkdownV2",
-    #     reply_markup=InlineKeyboardMarkup([
-    #         [InlineKeyboardButton("Accéder au canal Master Class",
-    #                               url="https://t.me/+-1hIhAeAvc1hMWM0")]
-    #     ])
-    # )
-
-    # await asyncio.sleep(15 * 60)
+    
     return ConversationHandler.END
 
 
