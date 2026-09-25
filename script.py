@@ -56,6 +56,11 @@ from manual_revalidation import (
     register_manual_revalidation_handlers,
 )
 
+from event_payments import (
+    ensure_event_payments_schema,
+    register_event_payment_handlers,
+)
+
 load_dotenv()
 
 logging.basicConfig(
@@ -717,9 +722,17 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
          (si l'envoi échoue, le user ne sera jamais relancé — cohérent
           avec le fait qu'on ne peut pas lui parler)
     """
+    chat = update.chat_join_request.chat
+
+    # Garde ajoutée pour le module event_payments : ce handler ne traite
+    # QUE les demandes d'adhésion au canal principal. Les demandes sur un
+    # canal d'événement sont laissées au handler event_join_request
+    # (groupe 1, event_payments.py), qui vérifie un paiement validé.
+    if chat.id != CANAL_B_ID:
+        return ConversationHandler.END
+
     user = update.chat_join_request.from_user
     user_id = user.id
-    chat = update.chat_join_request.chat
     logger.info(
         f"[join] request user={user_id} chat_id={chat.id} title={chat.title!r}"
     )
@@ -1260,6 +1273,9 @@ if __name__ == "__main__":
 
             await ensure_manual_revalidation_schema()
 
+            await ensure_event_payments_schema()
+            print("[main] Schéma paiement_unique / evenement_canaux OK ✓")
+
             print("[main] Gold v8 initialisé ✓")
         except Exception as e:
             logger.exception("[post_init] échec initialisation")
@@ -1334,6 +1350,8 @@ if __name__ == "__main__":
     )
 
     register_manual_revalidation_handlers(app)
+
+    register_event_payment_handlers(app)
 
     app.add_handler(CommandHandler("gold_status", cmd_gold_status))
     app.add_handler(CommandHandler("incomplete_status", cmd_incomplete_status))
