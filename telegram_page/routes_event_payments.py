@@ -22,10 +22,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/events", tags=["event-payments"])
 
 
-@router.post("/payments/webhook")
+@router.post("/payments/unique")
 async def api_event_payment_webhook(payload: SubscriptionPayload_):
     try:
         result = await record_event_payment(payload)
+        print(payload)
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:

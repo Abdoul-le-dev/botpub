@@ -1366,6 +1366,26 @@ if __name__ == "__main__":
     set_gold_bot(app.bot)
     set_followup_bot(app.bot)
 
+    # ─────────────────────────────────────────────
+    # DEBUG : récupérer l'ID du canal Telegram
+    # ─────────────────────────────────────────────
+    async def debug_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.channel_post:
+            chat = update.channel_post.chat
+
+            print("================================")
+            print(f"CHANNEL NAME : {chat.title}")
+            print(f"CHANNEL ID   : {chat.id}")
+            print(f"CHANNEL TYPE : {chat.type}")
+            print("================================")
+
+    app.add_handler(
+        MessageHandler(
+            filters.UpdateType.CHANNEL_POST,
+            debug_channel_id
+        )
+    )
+
     print("running...")
 
     _loop = _asyncio_for_uvloop.new_event_loop()
