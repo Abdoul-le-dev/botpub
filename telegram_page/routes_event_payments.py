@@ -19,13 +19,13 @@ from fastapi import APIRouter, HTTPException
 from event_payments import SubscriptionPayload_, record_event_payment
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/events", tags=["event-payments"])
+router = APIRouter()
 
-@router.get("/payments/unique")
+@router.get("/events/payments/unique")
 async def api_event_payment_webhook_test():
     return {"message": "Webhook de paiement événementiel OK."}
 
-@router.post("/payments/unique")
+@router.post("/events/payments/unique")
 async def api_event_payment_webhook(payload: SubscriptionPayload_):
     try:
         result = await record_event_payment(payload)
