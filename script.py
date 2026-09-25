@@ -1229,22 +1229,24 @@ if __name__ == "__main__":
            .read_timeout(30).write_timeout(30)
            .build())
 
-    async def debug_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-            if update.channel_post:
-                chat = update.channel_post.chat
-    
-                print("================================")
-                print(f"CHANNEL NAME : {chat.title}")
-                print(f"CHANNEL ID   : {chat.id}")
-                print(f"CHANNEL TYPE : {chat.type}")
-                print("================================")
-    
-    app.add_handler(
-            MessageHandler(
-                filters.UpdateType.CHANNEL_POST,
-                debug_channel_id
-            )
-        )
+    me =  app.bot.get_me()
+    print(f"[DEBUG] Bot : @{me.username} / ID={me.id}")
+
+    updates = app.bot.get_updates(
+        limit=100,
+        timeout=1,
+        allowed_updates=["channel_post"]
+    )
+
+    print(f"[DEBUG] Updates reçues : {len(updates)}")
+
+    for u in updates:
+        if u.channel_post:
+            print("================================")
+            print("CANAL :", u.channel_post.chat.title)
+            print("ID    :", u.channel_post.chat.id)
+            print("TYPE  :", u.channel_post.chat.type)
+            print("================================")
 
     _background_tasks: list[asyncio.Task] = []
 
