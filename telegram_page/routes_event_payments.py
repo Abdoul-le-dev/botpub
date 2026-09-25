@@ -21,6 +21,9 @@ from event_payments import SubscriptionPayload_, record_event_payment
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/events", tags=["event-payments"])
 
+@router.get("/payments/unique")
+async def api_event_payment_webhook_test():
+    return {"message": "Webhook de paiement événementiel OK."}
 
 @router.post("/payments/unique")
 async def api_event_payment_webhook(payload: SubscriptionPayload_):
