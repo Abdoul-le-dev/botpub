@@ -30,7 +30,7 @@ from telegram_page.ia_config_table            import router as ai_router
 from telegram_page.routes_trading             import router as trading_router
 
 # ── Gold engine ───────────────────────────────────────────────────────────
-from telegram_page.gold.gold_engine import set_bot as set_gold_bot
+from telegram_page.gold.gold_core import set_bot as set_gold_bot
 
 # ── IA agent ──────────────────────────────────────────────────────────────
 from ai_agent import agent_response_router
