@@ -1,50 +1,55 @@
 """
-gold_engine.py — Version v7 (nettoyée).
+gold_core.py — Gold v8, couche données + calcul.
 
-Ce fichier a été refactoré pour éliminer tout ce qui touchait à la RAM
-v5/v6 (StateManager, cache, buffer, write queue). Ce qui reste est
-purement métier / SQL, sans dépendance à un composant obsolète.
+RÔLE
+  Tout ce qui touche à MySQL et au calcul pur pour le module Gold :
+  saisons, sessions de trade, comptes simulation, règles TP, prix live,
+  capital opt-in des membres. AUCUN état RAM partagé entre process
+  (registre, snapshot, machine à états) — ce fichier n'a plus besoin
+  de ça depuis le passage au signal brut (v8) : chaque fonction lit/
+  écrit MySQL directement, ce qui le rend utilisable indifféremment
+  depuis le process API (FastAPI) ou le process bot (Telegram).
 
-RESTE dans ce fichier :
-  - Saisons (CRUD, stats)
-  - Création de session Gold + lecture (get_active, get_detail, list)
-  - Comptes simulation (CRUD + application aux trades)
-  - Prix live (get_live_gold_price, watch_gold_price)
-  - Alertes comptes cramés
-  - Règles TP (CRUD)
-  - Seed default TP rules
+  Seul état en mémoire : `_price_cache`, un cache TTL pur (mêmes
+  entrées → même sortie tant que le TTL n'est pas expiré) — ce n'est
+  pas un mécanisme de synchronisation, juste un évite-spam d'API prix.
 
-SUPPRIMÉ (remplacé par v7) :
-  - confirm_gold_entry / _persist_gold_entry     → broadcast_v7._process_trade_full
-  - save_user_step / get_user_step / restore_..  → state_v7 + buffer_v7
-  - trigger_tp_reached / trigger_sl_touched      → tp_notifier
-  - close_gold_session                           → lifecycle.close_session
-  - get_tp_level_for_capital / get_rule_messages → snapshot.tp_level_for_capital / rule_for
-  - _log_flow_event                              → gold_buffer_v7.add_event
-  - _bot / set_bot                               → notifs par bot passé en paramètre
+SUPPRIMÉ PAR RAPPORT À v6/v7 (plus aucun appelant utile en v8) :
+  - confirm_gold_entry / trigger_tp_reached / trigger_sl_touched /
+    close_session (shims v6→v7)      → remplacés par
+    gold_followup.admin_force_close, qui écrit directement en SQL.
+  - watch_gold_price()               → remplacé par
+    gold_followup.watch_and_close (démarré automatiquement à la fin
+    de gold_broadcast.send_signal, plus besoin de route /watch).
+  - Le check "membre réel en danger" dans check_cramed_accounts a été
+    retiré : gold_member_entries n'est plus alimentée depuis le
+    passage au signal brut (aucune confirmation individuelle). Seul
+    le danger sur les comptes simulation reste pertinent.
 
-Le paramètre `bot` reste passé aux fonctions qui envoient des messages
-(alertes cramés notamment) via l'appelant.
+Ce fichier n'importe RIEN d'autre du package gold — c'est la base sur
+laquelle gold_broadcast.py et gold_followup.py s'appuient.
 """
+
+from __future__ import annotations
 
 import logging
 import asyncio
-import httpx
 import math
+import os
 import time as _time
-
 from datetime import datetime
-from typing import Optional
+
+import httpx
 
 from db import get_db
 
-logger   = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 ADMIN_ID = 571718066
 
 _db_write_lock = asyncio.Lock()
 
-# _bot est conservé pour rétro-compat avec check_cramed_accounts qui
-# envoie une alerte admin. Set via set_bot() depuis main.py.
+# Bot Telegram — utilisé uniquement pour les alertes admin (comptes
+# cramés). Réglé une fois au boot via set_bot().
 _bot = None
 
 
@@ -58,7 +63,7 @@ def _now() -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CALCUL LOT — helpers gardés (utilisés par les comptes simulation)
+# CALCUL LOT / GAINS
 # ══════════════════════════════════════════════════════════════════════════════
 
 def get_diviseur(capital: float) -> int:
@@ -95,24 +100,8 @@ def calculate_gains_losses(lot: float, entry: float, sl: float,
     }
 
 
-def adjust_entry_sl_to_live_price(direction: str, entry: float, sl: float,
-                                    live_price: float | None) -> dict:
-    if live_price is None:
-        return {"entry": entry, "sl": sl, "adjusted": False}
-    sl_pips = round(abs(entry - sl), 2)
-    if direction == "sell" and live_price > entry:
-        return {"entry": live_price, "sl": round(live_price + sl_pips, 2), "adjusted": True}
-    if direction == "buy" and live_price < entry:
-        return {"entry": live_price, "sl": round(live_price - sl_pips, 2), "adjusted": True}
-    return {"entry": entry, "sl": sl, "adjusted": False}
-
-
 async def get_tp_level_for_capital(capital: float) -> tuple:
-    """
-    Gardé pour usage par _apply_to_simulation_accounts et par la route
-    /calculate-lot (debug admin). PAS utilisé dans le chemin chaud —
-    le chemin chaud lit désormais depuis le SessionSnapshot immutable.
-    """
+    """Palier d'objectif (TP1/2/3) + risque% pour un capital donné."""
     async with get_db() as cur:
         await cur.execute("""
             SELECT tp_level, risk_pct FROM gold_tp_rules
@@ -130,19 +119,18 @@ async def get_tp_level_for_capital(capital: float) -> tuple:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# INIT TABLES
+# INIT TABLES / SEED
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def init_gold_tables():
     async with get_db() as cur:
         await _seed_default_tp_rules(cur)
-    print("[gold_engine] Tables Gold initialisées.")
+    logger.info("[gold_core] Tables Gold initialisées.")
 
 
 async def _seed_default_tp_rules(cur):
     await cur.execute("SELECT COUNT(*) as n FROM gold_tp_rules")
-    existing = (await cur.fetchone())["n"]
-    if existing > 0:
+    if (await cur.fetchone())["n"] > 0:
         return
 
     rules = [
@@ -153,32 +141,32 @@ async def _seed_default_tp_rules(cur):
             "message_tp2_reached":  None, "message_tp3_reached": None,
             "message_sl_touched":   "❌ *SL touché sur XAU/USD*\n\nVotre SL a bien protégé votre compte.\nC'est la discipline qui fait les vrais traders 💪",
             "message_breakeven": None, "message_partial_close": None,
-            "message_teaser":       "🔔 *Le trade du jour est disponible !*\n\n📊 Paire : *XAU/USD* (Gold)\n\n_Cliquez ci-dessous pour accéder au trade._",
-            "message_confirmation": "✅ *Trade enregistré !*\nTu recevras les instructions en temps réel.",
+            "message_teaser":       "🔔 *Le trade du jour est disponible !*",
+            "message_confirmation": "✅ *Trade enregistré !*",
         },
         {
             "rule_name": "Compte moyen — TP1 + TP2",
             "tp_level": 2, "min_capital": 500, "max_capital": 1999.99, "risk_pct": 1.5,
-            "message_tp1_reached":  "✅ *TP1 atteint sur XAU/USD !*\n\n🔒 Passez en *break even* maintenant.\nDéplacez votre SL au prix d'entrée et laissez courir jusqu'au TP2.",
+            "message_tp1_reached":  "✅ *TP1 atteint sur XAU/USD !*\n\n🔒 Passez en *break even* maintenant.",
             "message_tp2_reached":  "🎯 *TP2 atteint sur XAU/USD !*\n\nExcellent ! Fermez maintenant et encaissez vos gains 🎉",
             "message_tp3_reached":  None,
-            "message_sl_touched":   "❌ *SL touché sur XAU/USD*\n\nBien géré — votre risque était contrôlé.\nRestez discipliné pour le prochain trade 💪",
+            "message_sl_touched":   "❌ *SL touché sur XAU/USD*\n\nBien géré — votre risque était contrôlé.",
             "message_breakeven":    "🔒 Passez en break even — déplacez votre SL au prix d'entrée.",
             "message_partial_close": None,
-            "message_teaser":       "🔔 *Le trade du jour est disponible !*\n\n📊 Paire : *XAU/USD* (Gold)\n\n_Cliquez ci-dessous pour accéder au trade._",
-            "message_confirmation": "✅ *Trade enregistré !*\nObjectif : TP1 + TP2.",
+            "message_teaser":       "🔔 *Le trade du jour est disponible !*",
+            "message_confirmation": "✅ *Trade enregistré !* Objectif : TP1 + TP2.",
         },
         {
             "rule_name": "Grand compte — TP1 + TP2 + TP3",
             "tp_level": 3, "min_capital": 2000, "max_capital": None, "risk_pct": 2.0,
-            "message_tp1_reached":  "✅ *TP1 atteint sur XAU/USD !*\n\n🔒 Passez en *break even* immédiatement.\nFermez 30% de votre position et laissez courir.",
-            "message_tp2_reached":  "🎯 *TP2 atteint sur XAU/USD !*\n\nFermez encore 40% de votre position.\nLaissez les 30% restants courir vers TP3 🚀",
+            "message_tp1_reached":  "✅ *TP1 atteint sur XAU/USD !*\n\n🔒 Passez en *break even* immédiatement.",
+            "message_tp2_reached":  "🎯 *TP2 atteint sur XAU/USD !*\n\nFermez encore 40% de votre position.",
             "message_tp3_reached":  "🏆 *TP3 atteint sur XAU/USD !*\n\nTrade parfait ! Fermez tout et savourez 🎉",
             "message_sl_touched":   "❌ *SL touché sur XAU/USD*\n\nBien géré — votre risque était contrôlé.",
             "message_breakeven":    "🔒 Break even — déplacez votre SL au prix d'entrée et fermez 30%.",
             "message_partial_close": "⚡ Clôture partielle — fermez 40% de votre position maintenant.",
-            "message_teaser":       "🔔 *Le trade du jour est disponible !*\n\n📊 Paire : *XAU/USD* (Gold)\n\n_Cliquez ci-dessous pour accéder au trade._",
-            "message_confirmation": "✅ *Trade enregistré !*\nObjectif : TP1 + TP2 + TP3.",
+            "message_teaser":       "🔔 *Le trade du jour est disponible !*",
+            "message_confirmation": "✅ *Trade enregistré !* Objectif : TP1 + TP2 + TP3.",
         },
     ]
 
@@ -238,11 +226,9 @@ async def get_seasons(include_closed: bool = True) -> list:
                    COUNT(DISTINCT gts.id) AS trades_count,
                    SUM(CASE WHEN gts.current_phase IN
                        ('tp1_reached','tp2_reached','tp3_reached') THEN 1 ELSE 0 END) AS wins_count,
-                   SUM(CASE WHEN gts.current_phase = 'sl_touched' THEN 1 ELSE 0 END) AS losses_count,
-                   COUNT(DISTINCT gme.user_id) AS members_participated
+                   SUM(CASE WHEN gts.current_phase = 'sl_touched' THEN 1 ELSE 0 END) AS losses_count
             FROM gold_seasons s
             LEFT JOIN gold_trade_sessions gts ON gts.season_id = s.id
-            LEFT JOIN gold_member_entries gme ON gme.season_id = s.id
             {where}
             GROUP BY s.id
             ORDER BY s.created_at DESC
@@ -303,23 +289,10 @@ async def get_season_stats(season_id: int) -> dict:
             SELECT
                 COUNT(*) AS total_trades,
                 COUNT(CASE WHEN current_phase IN ('tp1_reached','tp2_reached','tp3_reached') THEN 1 END) AS wins,
-                COUNT(CASE WHEN current_phase = 'sl_touched' THEN 1 END) AS losses,
-                AVG(total_members_in)  AS avg_members_per_trade,
-                SUM(total_members_in)  AS total_confirmations
+                COUNT(CASE WHEN current_phase = 'sl_touched' THEN 1 END) AS losses
             FROM gold_trade_sessions WHERE season_id = %s
         """, (season_id,))
         session_stats = await cur.fetchone()
-
-        await cur.execute("""
-            SELECT
-                COUNT(DISTINCT user_id)                    AS unique_members,
-                ROUND(SUM(result_usd), 2)                  AS total_gains_members,
-                ROUND(AVG(result_usd), 2)                  AS avg_gain_per_trade,
-                COUNT(CASE WHEN result_usd > 0 THEN 1 END) AS member_wins,
-                COUNT(CASE WHEN result_usd < 0 THEN 1 END) AS member_losses
-            FROM gold_member_entries WHERE season_id = %s
-        """, (season_id,))
-        member_stats = await cur.fetchone()
 
         await cur.execute("""
             SELECT sa.*,
@@ -330,28 +303,15 @@ async def get_season_stats(season_id: int) -> dict:
         """, (season_id,))
         sim_accounts = await cur.fetchall()
 
-        await cur.execute("""
-            SELECT u.name, gme.user_id,
-                   COUNT(*) AS trades,
-                   ROUND(SUM(gme.result_usd), 2) AS total_usd
-            FROM gold_member_entries gme
-            LEFT JOIN users u ON u.telegram_id = gme.user_id
-            WHERE gme.season_id = %s
-            GROUP BY gme.user_id ORDER BY total_usd DESC LIMIT 10
-        """, (season_id,))
-        top_members = await cur.fetchall()
-
     return {
         "season":              season,
         "session_stats":       dict(session_stats) if session_stats else {},
-        "member_stats":        dict(member_stats)  if member_stats  else {},
         "simulation_accounts": [dict(a) for a in sim_accounts],
-        "top_members":         [dict(m) for m in top_members],
     }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SESSIONS DE TRADE GOLD — création + lecture uniquement
+# SESSIONS DE TRADE GOLD
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def create_gold_session(payload: dict) -> dict:
@@ -393,6 +353,15 @@ async def create_gold_session(payload: dict) -> dict:
         return dict(await cur.fetchone())
 
 
+async def get_session_row(session_id: int) -> dict | None:
+    """Lecture brute d'une session, sans jointure — le point d'accès
+    commun utilisé par gold_broadcast et gold_followup."""
+    async with get_db() as cur:
+        await cur.execute("SELECT * FROM gold_trade_sessions WHERE id = %s", (session_id,))
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
 async def get_active_gold_session() -> dict | None:
     async with get_db() as cur:
         await cur.execute("""
@@ -413,26 +382,6 @@ async def get_gold_session_detail(session_id: int) -> dict | None:
         if not session:
             return None
         session = dict(session)
-
-        await cur.execute("""
-            SELECT gme.*, u.name FROM gold_member_entries gme
-            LEFT JOIN users u ON u.telegram_id = gme.user_id
-            WHERE gme.session_id = %s ORDER BY gme.confirmed_at ASC
-        """, (session_id,))
-        session["entries"] = [dict(e) for e in await cur.fetchall()]
-
-        await cur.execute("""
-            SELECT tp_level_assigned,
-                   COUNT(*) AS members,
-                   ROUND(SUM(lot_calculated), 4) AS total_lots,
-                   ROUND(SUM(ABS(perte_sl)), 2)   AS total_risk,
-                   ROUND(SUM(gain_tp1), 2)         AS total_gain_tp1,
-                   ROUND(SUM(COALESCE(gain_tp2,0)), 2) AS total_gain_tp2,
-                   ROUND(SUM(COALESCE(gain_tp3,0)), 2) AS total_gain_tp3
-            FROM gold_member_entries WHERE session_id = %s
-            GROUP BY tp_level_assigned ORDER BY tp_level_assigned
-        """, (session_id,))
-        session["tp_distribution"] = [dict(d) for d in await cur.fetchall()]
 
         await cur.execute("""
             SELECT st.*, sa.name AS account_name, sa.initial_capital
@@ -460,13 +409,10 @@ async def get_gold_sessions(filters: dict = None) -> dict:
     where_sql = " AND ".join(where)
     async with get_db() as cur:
         await cur.execute(f"""
-            SELECT gts.*, gs.name AS season_name,
-                   COUNT(DISTINCT gme.user_id) AS confirmed_members
+            SELECT gts.*, gs.name AS season_name
             FROM gold_trade_sessions gts
             LEFT JOIN gold_seasons gs ON gs.id = gts.season_id
-            LEFT JOIN gold_member_entries gme ON gme.session_id = gts.id
             WHERE {where_sql}
-            GROUP BY gts.id
             ORDER BY gts.created_at DESC
             LIMIT %s OFFSET %s
         """, params + [limit, offset])
@@ -482,14 +428,17 @@ async def get_gold_sessions(filters: dict = None) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PRIX LIVE + SURVEILLANCE
+# PRIX LIVE
 # ══════════════════════════════════════════════════════════════════════════════
 
-TWELVE_DATA_KEY = "db6836eaf4ae4cb68faea2443554929f"
+TWELVE_DATA_KEY = os.getenv("TWELVE_DATA_KEY", "db6836eaf4ae4cb68faea2443554929f")
 _price_cache: dict = {"price": None, "ts": 0.0}
 
 
-def _watch_interval() -> int:
+def watch_interval() -> int:
+    """Cadence de sondage du prix selon l'heure — utilisée à la fois
+    pour le TTL du cache prix et pour l'intervalle de sondage de
+    gold_followup.watch_and_close."""
     h = datetime.now().hour
     if 8 <= h < 20:  return 120
     elif h < 8:      return 1800
@@ -497,7 +446,7 @@ def _watch_interval() -> int:
 
 
 async def get_live_gold_price() -> float | None:
-    ttl = _watch_interval()
+    ttl = watch_interval()
     if _price_cache["price"] and _time.time() - _price_cache["ts"] < ttl:
         return _price_cache["price"]
     try:
@@ -514,99 +463,6 @@ async def get_live_gold_price() -> float | None:
     except Exception as e:
         logger.warning(f"[gold_price] {e}")
         return _price_cache["price"]
-
-
-async def watch_gold_price(session_id: int):
-    """
-    Surveille le prix et déclenche TP/SL v7 quand touchés.
-    Import local pour éviter les cycles avec gold_v7.
-    """
-    logger.info(f"[gold_watch] Démarrage session {session_id}")
-
-    # Import local pour éviter les cycles
-    from telegram_page.gold.tp_notifier import (
-        notify_tp_reached, notify_sl_touched,
-        apply_tp_closure_in_db, notify_admin_session_closed,
-    )
-    from telegram_page.gold.session_registry import session_registry
-    from telegram_page.gold.lifecycle import close_session
-     
-
-    while True:
-        try:
-            async with get_db() as cur:
-                await cur.execute("SELECT * FROM gold_trade_sessions WHERE id = %s", (session_id,))
-                session = await cur.fetchone()
-
-            if not session:
-                break
-            session = dict(session)
-            phase   = session["current_phase"]
-
-            if phase in ("closed", "cancelled", "sl_touched"):
-                break
-
-            price    = await get_live_gold_price()
-            interval = _watch_interval()
-
-            if price is None:
-                await asyncio.sleep(interval)
-                continue
-
-            async with get_db() as cur:
-                await cur.execute("""
-                    UPDATE gold_trade_sessions
-                    SET live_price_last = %s, live_price_updated_at = NOW()
-                    WHERE id = %s
-                """, (price, session_id))
-
-            direction     = session["direction"]
-            tp1, tp2, tp3 = session.get("tp1"), session.get("tp2"), session.get("tp3")
-            sl            = session["sl"]
-
-            # SL touché
-            if (direction == "buy" and price <= sl) or (direction == "sell" and price >= sl):
-                if _bot:
-                    await notify_sl_touched(_bot, session_id)
-                # Cleanup v7 si session courante
-                reg = session_registry.current()
-                if reg is not None and reg.session_id == session_id:
-                    await close_session(session_id, reg.version, close_type="sl")
-                if _bot:
-                    await notify_admin_session_closed(_bot, session_id, "sl", 0)
-                break
-
-            # TP3 : fermeture définitive
-            if tp3 and phase not in ("tp3_reached", "closed"):
-                if (direction == "buy" and price >= tp3) or (direction == "sell" and price <= tp3):
-                    if _bot:
-                        r = await notify_tp_reached(_bot, session_id, 3)
-                        await apply_tp_closure_in_db(session_id, 3)
-                        reg = session_registry.current()
-                        if reg is not None and reg.session_id == session_id:
-                            await close_session(session_id, reg.version, close_type="tp3")
-                        await notify_admin_session_closed(_bot, session_id, "tp3",
-                                                            r.get("sent_exit", 0))
-                    break
-
-            # TP2 : notif + attente TP3
-            if tp2 and phase not in ("tp2_reached", "tp3_reached", "closed"):
-                if (direction == "buy" and price >= tp2) or (direction == "sell" and price <= tp2):
-                    if _bot:
-                        await notify_tp_reached(_bot, session_id, 2)
-                    await asyncio.sleep(interval)
-                    continue
-
-            # TP1
-            if tp1 and phase not in ("tp1_reached", "tp2_reached", "tp3_reached", "closed"):
-                if (direction == "buy" and price >= tp1) or (direction == "sell" and price <= tp1):
-                    if _bot:
-                        await notify_tp_reached(_bot, session_id, 1)
-
-        except Exception as e:
-            logger.error(f"[gold_watch] Session {session_id}: {e}", exc_info=True)
-
-        await asyncio.sleep(_watch_interval())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -664,13 +520,11 @@ async def get_simulation_account_detail(account_id: int) -> dict | None:
             JOIN gold_trade_sessions gts ON gts.id = st.session_id
             WHERE st.account_id = %s ORDER BY st.opened_at ASC
         """, (account_id,))
-        trades = await cur.fetchall()
-        account["trades"] = [dict(t) for t in trades]
+        account["trades"] = [dict(t) for t in await cur.fetchall()]
 
         capital_curve = []
         cap = account["initial_capital"]
         for t in account["trades"]:
-            t = dict(t)
             if t["result_usd"] is not None:
                 cap += t["result_usd"]
             capital_curve.append({"capital": round(cap, 2),
@@ -684,14 +538,18 @@ async def get_simulation_account_detail(account_id: int) -> dict | None:
     return account
 
 
-async def _apply_to_simulation_accounts(session_id: int, session: dict):
-    """Appelé UNE fois au broadcast v7. Inchangé vs v5."""
+async def open_simulation_trades(session_id: int, session: dict):
+    """
+    Ouvre une simulation_trade par compte simulation actif pour cette
+    session. À appeler UNE fois, juste après l'envoi du signal — voir
+    gold_broadcast.send_signal(). Idempotent (vérifie qu'aucune ligne
+    n'existe déjà pour cette session avant d'insérer).
+    """
     async with get_db() as cur:
         await cur.execute(
             "SELECT COUNT(*) as n FROM simulation_trades WHERE session_id = %s", (session_id,)
         )
-        existing = (await cur.fetchone())["n"]
-        if existing > 0:
+        if (await cur.fetchone())["n"] > 0:
             return
         await cur.execute("SELECT * FROM simulation_accounts WHERE is_active = 1")
         accounts = await cur.fetchall()
@@ -730,11 +588,7 @@ async def _apply_to_simulation_accounts(session_id: int, session: dict):
 
 
 async def close_simulation_trades(session_id: int, close_type: str):
-    """
-    Clôture les simulation_trades ouverts pour cette session.
-    Renommé de _close_simulation_trades → close_simulation_trades pour
-    être appelable depuis les routes/tp_notifier v7.
-    """
+    """Clôture les simulation_trades ouverts pour cette session."""
     async with get_db() as cur:
         await cur.execute("""
             SELECT st.*, sa.current_capital, sa.id AS acc_id, sa.peak_capital
@@ -792,35 +646,19 @@ async def close_simulation_trades(session_id: int, close_type: str):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ALERTES COMPTES CRAMÉS
+# ALERTES COMPTES SIMULATION EN DANGER
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def check_cramed_accounts(session_id: int = None) -> dict:
-    cramed_risk = []; already_cramed = []; simulation_danger = []
-    async with get_db() as cur:
-        if session_id:
-            await cur.execute("""
-                SELECT gme.user_id, gme.capital_declared, gme.perte_sl, u.name
-                FROM gold_member_entries gme
-                LEFT JOIN users u ON u.telegram_id = gme.user_id
-                WHERE gme.session_id = %s AND gme.step_reached IN ('processed', 'confirmed')
-            """, (session_id,))
-            entries = await cur.fetchall()
-            for e in entries:
-                e = dict(e)
-                capital = e["capital_declared"]
-                perte   = abs(e["perte_sl"] or 0)
-                apres   = capital - perte
-                if apres <= 0:
-                    already_cramed.append({"user_id": e["user_id"], "name": e["name"],
-                                            "capital": capital, "perte_sl": -perte,
-                                            "capital_restant": apres})
-                elif apres < capital * 0.3:
-                    cramed_risk.append({"user_id": e["user_id"], "name": e["name"],
-                                         "capital": capital, "perte_sl": -perte,
-                                         "capital_restant": round(apres, 2),
-                                         "pct_restant": round(apres / capital * 100, 1)})
-
+    """
+    Ne vérifie plus que les comptes SIMULATION. Le check "membre réel"
+    a été retiré : gold_member_entries n'est plus alimentée depuis le
+    passage au signal brut (plus de confirmation individuelle) — le
+    vérifier ne ferait que renvoyer du vide en permanence.
+    """
+    simulation_danger = []
+    if session_id:
+        async with get_db() as cur:
             await cur.execute("""
                 SELECT st.perte_sl, st.capital_before, sa.name AS account_name
                 FROM simulation_trades st
@@ -828,38 +666,25 @@ async def check_cramed_accounts(session_id: int = None) -> dict:
                 WHERE st.session_id = %s AND st.status = 'open'
             """, (session_id,))
             sims = await cur.fetchall()
-            for s in sims:
-                s = dict(s)
-                apres = s["capital_before"] + (s["perte_sl"] or 0)
-                if apres < s["capital_before"] * 0.3:
-                    simulation_danger.append({"account_name": s["account_name"],
-                                                "capital": s["capital_before"],
-                                                "perte_sl": s["perte_sl"],
-                                                "capital_restant": round(apres, 2)})
+        for s in sims:
+            s = dict(s)
+            apres = s["capital_before"] + (s["perte_sl"] or 0)
+            if apres < s["capital_before"] * 0.3:
+                simulation_danger.append({"account_name": s["account_name"],
+                                            "capital": s["capital_before"],
+                                            "perte_sl": s["perte_sl"],
+                                            "capital_restant": round(apres, 2)})
 
-    total_danger = len(cramed_risk) + len(already_cramed)
-    if _bot and (cramed_risk or already_cramed or simulation_danger):
-        lines = ["⚠️ *Alerte comptes en danger*\n"]
-        if already_cramed:
-            lines.append(f"🔴 *{len(already_cramed)} compte(s) qui se crament si SL :*")
-            for c in already_cramed:
-                lines.append(f"  • {c['name']} — {c['capital']}$ → *{c['capital_restant']}$*")
-        if cramed_risk:
-            lines.append(f"\n🟡 *{len(cramed_risk)} compte(s) à risque (<30% restant) :*")
-            for c in cramed_risk:
-                lines.append(f"  • {c['name']} — {c['capital']}$ → {c['capital_restant']}$ ({c['pct_restant']}%)")
-        if simulation_danger:
-            lines.append(f"\n📊 *{len(simulation_danger)} compte(s) simulation en danger :*")
-            for s in simulation_danger:
-                lines.append(f"  • {s['account_name']} — {s['capital']}$ → {s['capital_restant']}$")
+    if _bot and simulation_danger:
+        lines = ["⚠️ *Comptes simulation en danger*\n"]
+        for s in simulation_danger:
+            lines.append(f"  • {s['account_name']} — {s['capital']}$ → {s['capital_restant']}$")
         try:
-            await _bot.send_message(chat_id=ADMIN_ID, text="\n".join(lines),
-                                     parse_mode="Markdown")
+            await _bot.send_message(chat_id=ADMIN_ID, text="\n".join(lines), parse_mode="Markdown")
         except Exception as e:
             logger.warning(f"[cramed] {e}")
 
-    return {"total_danger": total_danger, "cramed_risk": cramed_risk,
-            "already_cramed": already_cramed, "simulation_danger": simulation_danger}
+    return {"total_danger": len(simulation_danger), "simulation_danger": simulation_danger}
 
 
 async def daily_cramed_check():
@@ -930,174 +755,48 @@ async def update_tp_rule(rule_id: int, payload: dict) -> dict:
             await cur.execute("SELECT * FROM gold_tp_rules WHERE id = %s", (rule_id,))
             return dict(await cur.fetchone())
 
+
 # ══════════════════════════════════════════════════════════════════════════════
-# SHIMS V6 → V7 — compat routes API (routes_gold.py)
+# CAPITAL OPT-IN (v8) — sauvegarde volontaire depuis Money management
 # ══════════════════════════════════════════════════════════════════════════════
 #
-# NOTE ARCHITECTURE
-# Ces shims sont invoqués depuis le process API (FastAPI). Le registry v7,
-# le buffer et l'état RAM vivent dans le process BOT. Ces fonctions ne
-# peuvent donc PAS s'appuyer sur le buffer : elles écrivent directement
-# en SQL. Le process bot, lui, passe par notify_tp_reached / lifecycle
-# pour toutes les opérations chaudes.
+# Remplace l'ancien member_capital.py (non fourni pour ce refactor).
+# Un membre qui clique "💾 Sauvegarder mon capital" dans Money
+# management (voir gold_followup.py) est ajouté ici — c'est la SEULE
+# façon d'entrer dans cette table. Sert de base à
+# gold_followup.notify_opted_in_members pour les notifs TP1/2/3.
 
-async def confirm_gold_entry(session_id: int, user_id: int, capital: float) -> dict:
-    """
-    Admin/manuel : force l'enregistrement d'une entrée pour un user.
-    Utilise le snapshot v7 SI la session courante correspond (process bot),
-    sinon reconstruit à partir du SQL (process API ou session déjà fermée).
-    """
-    from telegram_page.gold.lifecycle import current_snapshot
-    from telegram_page.gold.gold_buffer import gold_buffer
-    from telegram_page.gold.weekly_capital_cache import weekly_capital
-    from telegram_page.gold.gold_broadcast import build_calc_context, adjust_entry_sl
+MEMBER_CAPITAL_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS member_capital (
+    user_id     BIGINT NOT NULL PRIMARY KEY,
+    capital     DECIMAL(12,2) NOT NULL,
+    updated_at  DATETIME NOT NULL,
+    KEY idx_updated_at (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+"""
 
-    await weekly_capital.set(int(user_id), float(capital))
 
-    snap = current_snapshot()
-
-    # ── Chemin bot : snapshot v7 disponible → passe par le buffer versionné
-    if snap is not None and snap.session_id == session_id:
-        live_price = await get_live_gold_price()
-        effective_entry, effective_sl, _ = adjust_entry_sl(snap, live_price)
-        calc = build_calc_context(
-            snap, int(user_id), float(capital),
-            effective_entry, effective_sl,
-        )
-        # Signature v7 : (session_id, version, user_id, season_id, capital, ...)
-        gold_buffer.add_entry(
-            snap.session_id, snap.version, int(user_id), snap.season_id,
-            calc.capital, calc.risk_pct, calc.risk_usd,
-            calc.lot, calc.tp_level,
-            calc.perte_sl, calc.gain_tp1, calc.gain_tp2, calc.gain_tp3,
-        )
-        gold_buffer.add_step(snap.session_id, snap.version, int(user_id),
-                             "processed", calc.capital)
-        return {
-            "ok": True, "session_id": session_id, "user_id": user_id,
-            "capital": calc.capital, "lot": calc.lot, "tp_level": calc.tp_level,
-        }
-
-    # ── Chemin API/hors session : reconstruit depuis SQL et écrit directement
+async def ensure_member_capital_schema():
     async with get_db() as cur:
-        await cur.execute(
-            "SELECT * FROM gold_trade_sessions WHERE id = %s", (session_id,)
-        )
-        session_row = await cur.fetchone()
-    if not session_row:
-        raise RuntimeError(f"Session #{session_id} introuvable en base.")
-    s = dict(session_row)
-
-    entry = float(s["entry_price"])
-    sl    = float(s["sl"])
-    tp1   = float(s["tp1"]) if s.get("tp1") is not None else None
-    tp2   = float(s["tp2"]) if s.get("tp2") is not None else None
-    tp3   = float(s["tp3"]) if s.get("tp3") is not None else None
-
-    lot   = calculate_lot(float(capital), entry, sl)
-    gains = calculate_gains_losses(lot, entry, sl, tp1, tp2, tp3)
-    tp_level, risk_pct = await get_tp_level_for_capital(float(capital))
-    risk_usd = round(float(capital) * risk_pct / 100, 2)
-
-    async with _db_write_lock:
-        async with get_db() as cur:
-            await cur.execute("""
-                INSERT INTO gold_member_entries
-                    (session_id, user_id, season_id, capital_declared, risk_pct,
-                     risk_usd, lot_calculated, tp_level_assigned,
-                     perte_sl, gain_tp1, gain_tp2, gain_tp3,
-                     capital_before, step_reached, confirmed_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'confirmed',NOW())
-                AS new_vals
-                ON DUPLICATE KEY UPDATE
-                    capital_declared  = new_vals.capital_declared,
-                    risk_pct          = new_vals.risk_pct,
-                    risk_usd          = new_vals.risk_usd,
-                    lot_calculated    = new_vals.lot_calculated,
-                    tp_level_assigned = new_vals.tp_level_assigned,
-                    perte_sl          = new_vals.perte_sl,
-                    gain_tp1          = new_vals.gain_tp1,
-                    gain_tp2          = new_vals.gain_tp2,
-                    gain_tp3          = new_vals.gain_tp3,
-                    capital_before    = new_vals.capital_before,
-                    confirmed_at      = NOW()
-            """, (
-                session_id, int(user_id), s.get("season_id"),
-                float(capital), risk_pct, risk_usd, lot, tp_level,
-                gains["perte_sl"], gains["gain_tp1"], gains["gain_tp2"], gains["gain_tp3"],
-                float(capital),
-            ))
-
-    return {
-        "ok": True, "session_id": session_id, "user_id": int(user_id),
-        "capital": float(capital), "lot": lot, "tp_level": tp_level,
-    }
+        await cur.execute(MEMBER_CAPITAL_SCHEMA_SQL)
+    logger.info("[gold_core] schéma member_capital OK")
 
 
-async def trigger_tp_reached(session_id: int, tp_level: int) -> dict:
-    """
-    Shim admin : force le passage de phase en base. Écrit DIRECTEMENT en SQL
-    pour rester utilisable côté process API (où le buffer n'est pas attaché).
-    """
-    if tp_level not in (1, 2, 3):
-        raise ValueError("tp_level doit être 1, 2 ou 3")
-    tp_field = f"tp{tp_level}_reached_at"
-    async with get_db() as cur:
-        await cur.execute(
-            f"UPDATE gold_trade_sessions "
-            f"SET current_phase = %s, {tp_field} = NOW() "
-            f"WHERE id = %s",
-            (f"tp{tp_level}_reached", session_id),
-        )
-        await cur.execute(
-            "INSERT INTO gold_flow_events "
-            "(session_id, user_id, event_type, payload, created_at) "
-            "VALUES (%s, 0, %s, %s, NOW())",
-            (session_id, f"tp{tp_level}_reached",
-             f'{{"tp_level": {tp_level}, "source": "trigger_shim"}}'),
-        )
-    return {"ok": True, "session_id": session_id, "tp_level": tp_level}
-
-
-async def trigger_sl_touched(session_id: int) -> dict:
-    """Shim admin : force phase = sl_touched en base directement."""
+async def save_capital(user_id: int, capital: float):
     async with get_db() as cur:
         await cur.execute("""
-            UPDATE gold_trade_sessions
-            SET current_phase = 'sl_touched',
-                sl_touched_at = NOW(),
-                closed_at     = NOW()
-            WHERE id = %s
-        """, (session_id,))
-        await cur.execute(
-            "INSERT INTO gold_flow_events "
-            "(session_id, user_id, event_type, payload, created_at) "
-            "VALUES (%s, 0, 'sl_touched', %s, NOW())",
-            (session_id, '{"source": "trigger_shim"}'),
-        )
-    return {"ok": True, "session_id": session_id}
+            INSERT INTO member_capital (user_id, capital, updated_at)
+            VALUES (%s, %s, NOW())
+            AS new_vals
+            ON DUPLICATE KEY UPDATE
+                capital = new_vals.capital, updated_at = new_vals.updated_at
+        """, (user_id, capital))
 
 
-async def close_session(session_id: int, payload: dict) -> dict:
-    """
-    Shim v6 → v7 pour routes_gold.py : `gold_engine.close_session(sid, payload)`.
-
-    Écrit la phase de clôture en SQL. Le cleanup RAM v7 (buffer drain,
-    snapshot clear, registry finalize) est fait séparément par
-    lifecycle.close_session() côté bot dans routes_gold.py.
-    """
-    close_type = (payload or {}).get("close_type", "manual")
-    phase_map = {
-        "tp1": "tp1_reached", "tp2": "tp2_reached", "tp3": "tp3_reached",
-        "sl":  "sl_touched",  "manual": "closed",   "replaced": "closed",
-    }
-    new_phase = phase_map.get(close_type, "closed")
+async def get_all_capitals() -> dict:
+    """user_id -> capital. Utilisé une fois par déclenchement TP (pas
+    par membre) — voir gold_followup.notify_opted_in_members."""
     async with get_db() as cur:
-        await cur.execute("""
-            UPDATE gold_trade_sessions
-            SET current_phase = %s,
-                closed_at     = COALESCE(closed_at, NOW())
-            WHERE id = %s
-        """, (new_phase, session_id))
-    return {"ok": True, "session_id": session_id,
-            "close_type": close_type, "phase": new_phase}
+        await cur.execute("SELECT user_id, capital FROM member_capital")
+        rows = await cur.fetchall()
+    return {int(r["user_id"]): float(r["capital"]) for r in rows}

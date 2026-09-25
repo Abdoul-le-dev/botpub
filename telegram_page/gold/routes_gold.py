@@ -1,467 +1,315 @@
 """
-routes_gold.py — Routes FastAPI Gold v7.1
+routes_gold.py — API admin FastAPI pour le module Gold (v8).
 
-Changements v7.1 :
-  1. POST /sessions passe par lifecycle.open_new_session() (registry +
-     snapshot + state + buffer, tout en une opération atomique).
-     Le broadcast utilise send_teaser_broadcast() de gold_v7, qui précharge
-     le Weekly Capital Cache et envoie les disclaimers avec versionning.
-  2. POST /sessions/{id}/close et /tp/{n} et /sl passent par
-     lifecycle.close_session() en fin de logique pour drainer le buffer,
-     purger la RAM et retirer la session du registre.
-  3. signal_cache.reload() SUPPRIMÉ partout — le cache v6 n'est plus
-     utilisé côté bot.
-  4. Ouverture Gold déléguée au process bot via HTTP interne
-     (http://127.0.0.1:9100/internal/gold/open) pour éviter le problème
-     de registry RAM isolé entre process API et process bot.
+CHANGEMENTS PAR RAPPORT À LA VERSION PRÉCÉDENTE
+  - POST /sessions déclenche directement gold_broadcast.send_signal()
+    (via le pont HTTP interne 127.0.0.1:9100, côté process bot) — plus
+    d'appel à lifecycle.open_new_session().
+  - Un seul endpoint de fermeture (POST /sessions/{id}/close, avec
+    close_type dans le corps) remplace /confirm, /tp/{n}, /sl éclatés
+    — voir gold_followup.admin_force_close().
+  - Supprimé : POST /sessions/{id}/watch — la surveillance démarre
+    maintenant automatiquement à la fin de l'envoi, plus besoin de la
+    déclencher à la main.
+  - Le endpoint dashboard ne référence plus session_registry (RAM du
+    process bot, invisible depuis l'API) — le statut "session ouverte"
+    vient uniquement de MySQL (current_phase), qui est la même vérité
+    pour les deux process.
+
+Le process API (où tourne ce fichier) et le process bot Telegram
+(script.py) sont deux process séparés qui ne partagent aucune RAM.
+Seul le pont HTTP interne sur 127.0.0.1:9100 les relie, et uniquement
+pour DÉCLENCHER un envoi Telegram (ce qui doit forcément se faire dans
+le process qui détient la connexion Telegram) — plus aucune
+orchestration de cycle de vie à faire transiter par ce pont.
 """
 
-import asyncio
+from __future__ import annotations
+
+import logging
+import os
+
 import httpx
-from datetime import datetime
-from fastapi import APIRouter, HTTPException, Query
-from typing import Optional
-# lifecycle.close_session est le VRAI cleanup v7 (buffer drain + RAM purge).
-# gold_engine.close_session est un shim SQL utilisé quand on est côté API
-# (process séparé, pas de registry en RAM).
-from telegram_page.gold.lifecycle import close_session as lifecycle_close_session
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
-from telegram_page.gold.gold_engine import (
-    # Saisons
-    create_season, get_active_season, get_seasons, reset_season, get_season_stats,
-    # Sessions
-    create_gold_session, get_active_gold_session, get_gold_session_detail,
-    get_gold_sessions,
-    # Entrées membres
-    confirm_gold_entry,
-    # TP / SL
-    trigger_tp_reached, trigger_sl_touched,
-    # Prix live
-    get_live_gold_price, watch_gold_price,
-    # Comptes simulation
-    create_simulation_account, get_simulation_accounts, get_simulation_account_detail,
-    # Alertes
-    check_cramed_accounts, daily_cramed_check,
-    # Règles TP
-    get_tp_rules, create_tp_rule, update_tp_rule,
-    # Calcul lot
-    calculate_lot, calculate_gains_losses, get_tp_level_for_capital,
-)
+from telegram_page.gold import gold_core
+from telegram_page.gold.gold_followup import admin_force_close
 
-from db import get_db
-import telegram_page.gold.gold_engine as gold_engine
-
-# ── V7.1 ──────────────────────────────────────────────────────────────────
-from telegram_page.gold.lifecycle import (
-    open_new_session, mark_broadcast_done,
-    current_snapshot, current_version, is_open, is_ready_for_confirmations,
-    register_buffer,
-)
-from telegram_page.gold.session_registry import session_registry
-from telegram_page.gold.session_snapshot import SessionSnapshot
-
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/gold", tags=["gold"])
 
-# URL du serveur HTTP interne exposé par le process bot (script.py)
-BOT_INTERNAL_URL = "http://127.0.0.1:9100"
+INTERNAL_BOT_URL = os.getenv("GOLD_INTERNAL_BOT_URL", "http://127.0.0.1:9100/internal/gold/open")
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# SAISONS
-# ══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# Schémas
+# ══════════════════════════════════════════════════════════════════════════════
+
+class SeasonCreate(BaseModel):
+    name: str
+    description: str | None = None
+    start_date: str | None = None
+    initial_capital_ref: float | None = None
+
+
+class SeasonReset(BaseModel):
+    new_season_name: str
+    new_initial_capital: float | None = None
+
+
+class SessionCreate(BaseModel):
+    direction: str
+    entry_price: float
+    sl: float
+    tp1: float | None = None
+    tp2: float | None = None
+    tp3: float | None = None
+    timeframe: str = "M15"
+    confidence_level: int = 3
+    note: str | None = None
+    screenshot_url: str | None = None
+    signal_id: str | None = None
+    category: str | None = None   # défaut : gold_broadcast.CATEGORY_TARGET
+
+
+class SessionClose(BaseModel):
+    close_type: str = Field(..., description="manual | tp1 | tp2 | tp3 | sl")
+
+
+class SimulationAccountCreate(BaseModel):
+    name: str
+    description: str | None = None
+    initial_capital: float
+    risk_pct_default: float = 1.0
+
+
+class TpRuleCreate(BaseModel):
+    rule_name: str
+    tp_level: int
+    min_capital: float
+    max_capital: float | None = None
+    risk_pct: float
+    message_tp1_reached: str | None = None
+    message_tp2_reached: str | None = None
+    message_tp3_reached: str | None = None
+    message_sl_touched: str | None = None
+    message_breakeven: str | None = None
+    message_partial_close: str | None = None
+    message_teaser: str | None = None
+    message_confirmation: str | None = None
+
+
+class TpRuleUpdate(BaseModel):
+    rule_name: str | None = None
+    tp_level: int | None = None
+    min_capital: float | None = None
+    max_capital: float | None = None
+    risk_pct: float | None = None
+    message_tp1_reached: str | None = None
+    message_tp2_reached: str | None = None
+    message_tp3_reached: str | None = None
+    message_sl_touched: str | None = None
+    message_breakeven: str | None = None
+    message_partial_close: str | None = None
+    message_teaser: str | None = None
+    message_confirmation: str | None = None
+    is_active: bool | None = None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Saisons
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/seasons")
+async def api_create_season(payload: SeasonCreate):
+    return await gold_core.create_season(payload.model_dump(exclude_none=True))
+
 
 @router.get("/seasons")
 async def api_get_seasons(include_closed: bool = True):
-    return await get_seasons(include_closed)
+    return await gold_core.get_seasons(include_closed=include_closed)
 
 
 @router.get("/seasons/active")
-async def api_active_season():
-    season = await get_active_season()
-    if not season:
+async def api_get_active_season():
+    season = await gold_core.get_active_season()
+    if season is None:
         raise HTTPException(404, "Aucune saison active")
     return season
 
 
-@router.post("/seasons")
-async def api_create_season(payload: dict):
-    if not payload.get("name"):
-        raise HTTPException(400, "name requis")
-    return await create_season(payload)
-
-
 @router.get("/seasons/{season_id}/stats")
-async def api_season_stats(season_id: int):
-    result = await get_season_stats(season_id)
-    if "error" in result:
-        raise HTTPException(404, result["error"])
-    return result
+async def api_get_season_stats(season_id: int):
+    return await gold_core.get_season_stats(season_id)
 
 
 @router.post("/seasons/{season_id}/reset")
-async def api_reset_season(season_id: int, payload: dict):
-    if not payload.get("new_season_name"):
-        raise HTTPException(400, "new_season_name requis")
-    return await reset_season(season_id, payload)
+async def api_reset_season(season_id: int, payload: SeasonReset):
+    return await gold_core.reset_season(season_id, payload.model_dump(exclude_none=True))
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# SESSIONS DE TRADE GOLD (v7.1)
-# ══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# Sessions de trade
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/sessions")
+async def api_create_session(payload: SessionCreate):
+    """
+    Crée la session puis déclenche l'envoi du signal brut côté bot
+    (process séparé, via le pont HTTP interne). La création SQL est
+    synchrone ; l'envoi Telegram démarre en tâche de fond côté bot —
+    cette route répond dès que la session existe, sans attendre la fin
+    du broadcast (qui peut prendre plusieurs dizaines de secondes sur
+    30 000 membres).
+    """
+    data = payload.model_dump(exclude={"category"})
+    session = await gold_core.create_gold_session(data)
+
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.post(INTERNAL_BOT_URL, json={
+                "session_id": session["id"],
+                "category": payload.category,
+            })
+            resp.raise_for_status()
+    except Exception as e:
+        logger.error(f"[routes_gold] déclenchement envoi échoué sid={session['id']}: {e}")
+        raise HTTPException(502, f"Session créée (#{session['id']}) mais l'envoi n'a pas pu "
+                                  f"être déclenché côté bot : {e}")
+
+    return {"session": session, "broadcast": "started"}
+
 
 @router.get("/sessions")
-async def api_get_sessions(
-    season_id: Optional[int] = None,
-    phase:     Optional[str] = None,
-    limit:     int           = 20,
-    offset:    int           = 0,
-):
-    return await get_gold_sessions({
-        "season_id": season_id, "phase": phase,
-        "limit": limit, "offset": offset,
+async def api_get_sessions(season_id: int | None = None, phase: str | None = None,
+                            limit: int = 20, offset: int = 0):
+    return await gold_core.get_gold_sessions({
+        "season_id": season_id, "phase": phase, "limit": limit, "offset": offset,
     })
 
 
 @router.get("/sessions/active")
-async def api_active_session():
-    session = await get_active_gold_session()
-    if not session:
+async def api_get_active_session():
+    session = await gold_core.get_active_gold_session()
+    if session is None:
         raise HTTPException(404, "Aucune session Gold active")
     return session
 
 
 @router.get("/sessions/{session_id}")
-async def api_session_detail(session_id: int):
-    session = await get_gold_session_detail(session_id)
-    if not session:
+async def api_get_session_detail(session_id: int):
+    session = await gold_core.get_gold_session_detail(session_id)
+    if session is None:
         raise HTTPException(404, "Session introuvable")
     return session
 
 
-@router.post("/sessions")
-async def api_create_session(payload: dict):
-    """
-    v7.1 :
-      1. Crée la session en base (create_gold_session)
-      2. Délègue au process bot via HTTP interne :
-         - lifecycle.open_new_session() (registry + snapshot + state + buffer)
-         - send_teaser_broadcast() en tâche de fond
-         - mark_broadcast_done() → status ACTIVE
-      Cette délégation est nécessaire car le registry v7 vit en RAM du
-      process — le bot et l'API tournant dans deux process séparés, seul
-      le process bot doit posséder le registry actif.
-    """
-    required = ("direction", "entry_price", "sl")
-    for f in required:
-        if payload.get(f) is None:
-            raise HTTPException(400, f"{f} requis")
-
-    if payload["direction"] not in ("buy", "sell"):
-        raise HTTPException(400, "direction doit être 'buy' ou 'sell'")
-
-    if payload.get("confidence_level") and not (1 <= int(payload["confidence_level"]) <= 5):
-        raise HTTPException(400, "confidence_level doit être entre 1 et 5")
-
-    if not payload.get("tp1"):
-        raise HTTPException(400, "tp1 requis")
-
-    # 1. Crée en SQL
-    session = await create_gold_session(payload)
-    print(f"[DEBUG] create_gold_session OK: id={session['id']}")
-
-    # 2. Délègue au process bot (registry + snapshot + broadcast + mark_active)
-    try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.post(
-                f"{BOT_INTERNAL_URL}/internal/gold/open",
-                json={
-                    "session_id": session["id"],
-                    "category": payload.get("category"),
-                    "send_teaser": payload.get("send_teaser", True),
-                },
-            )
-        body = r.json()
-    except Exception as e:
-        raise HTTPException(500, f"Bot injoignable sur {BOT_INTERNAL_URL}: {e}")
-
-    if r.status_code != 200 or not body.get("ok"):
-        raise HTTPException(500, f"Bot a refusé l'ouverture: {body}")
-
-    session["v7_version"] = body["version"]
-    session["broadcast_status"] = body["broadcast_status"]
-    return session
-
-
 @router.post("/sessions/{session_id}/close")
-async def api_close_session(session_id: int, payload: dict):
-    if not payload.get("close_type"):
-        raise HTTPException(400, "close_type requis")
-    if payload["close_type"] not in ("tp1", "tp2", "tp3", "sl", "manual"):
-        raise HTTPException(400, "close_type invalide (tp1|tp2|tp3|sl|manual)")
-
-    # 1. Logique métier v6 (marquage SQL) — via shim
-    result = await gold_engine.close_session(session_id, payload)
-
-    # 2. Cleanup v7 (buffer flush + RAM purge + registry)
-    #    ⚠️ session_registry.current() renverra None côté API (process séparé).
-    #    Le cleanup v7 réel doit être fait côté bot — à migrer via
-    #    /internal/gold/close plus tard.
-    reg = session_registry.current()
-    if reg is not None and reg.session_id == session_id:
-        try:
-            await lifecycle_close_session(session_id, reg.version,
-                                          close_type=payload["close_type"])
-        except Exception as e:
-            print(f"[DEBUG] close_session v7 échoué: {e}")
-
+async def api_close_session(session_id: int, payload: SessionClose):
+    """
+    Fermeture manuelle — remplace les anciens /confirm, /tp/{n}, /sl.
+    Utile pour corriger une erreur de saisie ou fermer un trade à la
+    main ; en temps normal, gold_followup.watch_and_close ferme les
+    sessions tout seul via le sondage du prix live.
+    """
+    result = await admin_force_close(session_id, payload.close_type)
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("error", "Échec de la fermeture"))
     return result
 
 
-@router.post("/sessions/{session_id}/tp/{tp_level}")
-async def api_trigger_tp(session_id: int, tp_level: int):
-    if tp_level not in (1, 2, 3):
-        raise HTTPException(400, "tp_level doit être 1, 2 ou 3")
-
-    result = await trigger_tp_reached(session_id, tp_level)
-
-    # ── V7 : si TP3, on ferme définitivement la session ───────────────
-    if tp_level == 3:
-        reg = session_registry.current()
-        if reg is not None and reg.session_id == session_id:
-            try:
-                await lifecycle_close_session(session_id, reg.version, close_type="tp3")
-            except Exception as e:
-                print(f"[DEBUG] close_session v7 après tp3 échoué: {e}")
-
-    return result
-
-
-@router.post("/sessions/{session_id}/sl")
-async def api_trigger_sl(session_id: int):
-    result = await trigger_sl_touched(session_id)
-
-    # ── V7 : SL = fin de session, cleanup ─────────────────────────────
-    reg = session_registry.current()
-    if reg is not None and reg.session_id == session_id:
-        try:
-            await lifecycle_close_session(session_id, reg.version, close_type="sl")
-        except Exception as e:
-            print(f"[DEBUG] close_session v7 après SL échoué: {e}")
-
-    return result
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# PRIX LIVE
-# ══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# Prix live + calcul (outils admin)
+# ══════════════════════════════════════════════════════════════════════════════
 
 @router.get("/price/live")
-async def api_live_price():
-    price = await get_live_gold_price()
+async def api_get_live_price():
+    price = await gold_core.get_live_gold_price()
     if price is None:
-        raise HTTPException(503, "Prix live indisponible")
-    return {"price": price, "pair": "XAU/USD", "timestamp": datetime.now().isoformat()}
+        raise HTTPException(503, "Prix live indisponible pour le moment")
+    return {"symbol": "XAU/USD", "price": price}
 
-
-@router.post("/sessions/{session_id}/watch")
-async def api_start_watch(session_id: int):
-    asyncio.create_task(watch_gold_price(session_id))
-    return {"status": "watching", "session_id": session_id}
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# CALCUL LOT
-# ══════════════════════════════════════════════════════════════════════════
 
 @router.get("/calculate-lot")
-async def api_calculate_lot(
-    capital: float = Query(..., description="Capital en dollars"),
-    entry:   float = Query(..., description="Prix d'entrée"),
-    sl:      float = Query(..., description="Prix du Stop Loss"),
-    tp1:     Optional[float] = Query(None),
-    tp2:     Optional[float] = Query(None),
-    tp3:     Optional[float] = Query(None),
-):
-    if capital <= 0:
-        raise HTTPException(400, "capital doit être > 0")
-    if sl <= 0 or entry <= 0:
-        raise HTTPException(400, "entry et sl doivent être > 0")
-
-    sl_pips = abs(entry - sl)
-    if sl_pips <= 0:
-        raise HTTPException(400, "entry et sl doivent être différents")
-
-    lot   = calculate_lot(capital, entry, sl)
-    gains = calculate_gains_losses(lot, entry, sl, tp1, tp2, tp3)
-    tp_level, risk_pct = await get_tp_level_for_capital(capital)
-
-    import math
-    diviseur = 12 + math.floor((capital - 1001) / 500) if capital >= 1500 else 12
-    if capital < 500:
-        diviseur = None
-
-    return {
-        "lot":               lot,
-        "sl_pips":           round(sl_pips, 2),
-        "tp_level_assigned": tp_level,
-        "risk_pct":          risk_pct,
-        "perte_sl":          gains["perte_sl"],
-        "gain_tp1":          gains["gain_tp1"],
-        "gain_tp2":          gains["gain_tp2"],
-        "gain_tp3":          gains["gain_tp3"],
-        "diviseur":          diviseur,
-        "capital":           capital,
-    }
+async def api_calculate_lot(capital: float, entry: float, sl: float,
+                             tp1: float | None = None, tp2: float | None = None,
+                             tp3: float | None = None):
+    lot = gold_core.calculate_lot(capital, entry, sl)
+    gains = gold_core.calculate_gains_losses(lot, entry, sl, tp1, tp2, tp3)
+    tp_level, risk_pct = await gold_core.get_tp_level_for_capital(capital)
+    return {"lot": lot, "tp_level": tp_level, "risk_pct": risk_pct, **gains}
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# ENTRÉES MEMBRES (confirmation manuelle admin)
-# ══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# Comptes simulation
+# ══════════════════════════════════════════════════════════════════════════════
 
-@router.post("/sessions/{session_id}/confirm")
-async def api_confirm_entry(session_id: int, payload: dict):
-    """Chemin admin manuel — passe encore par v5. NE PAS utiliser pendant un pic."""
-    if not payload.get("user_id"):
-        raise HTTPException(400, "user_id requis")
-    if not payload.get("capital"):
-        raise HTTPException(400, "capital requis")
-    capital = float(payload["capital"])
-    if capital < 30:
-        raise HTTPException(400, "capital minimum 30$")
-    return await confirm_gold_entry(session_id, payload["user_id"], capital)
+@router.post("/simulation-accounts")
+async def api_create_simulation_account(payload: SimulationAccountCreate):
+    return await gold_core.create_simulation_account(payload.model_dump(exclude_none=True))
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# COMPTES SIMULATION
-# ══════════════════════════════════════════════════════════════════════════
-
-@router.get("/simulations")
-async def api_get_simulations(active_only: bool = True):
-    return await get_simulation_accounts(active_only)
+@router.get("/simulation-accounts")
+async def api_get_simulation_accounts(active_only: bool = True):
+    return await gold_core.get_simulation_accounts(active_only=active_only)
 
 
-@router.post("/simulations")
-async def api_create_simulation(payload: dict):
-    for f in ("name", "initial_capital"):
-        if not payload.get(f):
-            raise HTTPException(400, f"{f} requis")
-    if float(payload["initial_capital"]) <= 0:
-        raise HTTPException(400, "initial_capital doit être > 0")
-    return await create_simulation_account(payload)
-
-
-@router.get("/simulations/{account_id}")
-async def api_simulation_detail(account_id: int):
-    account = await get_simulation_account_detail(account_id)
-    if not account:
+@router.get("/simulation-accounts/{account_id}")
+async def api_get_simulation_account_detail(account_id: int):
+    account = await gold_core.get_simulation_account_detail(account_id)
+    if account is None:
         raise HTTPException(404, "Compte simulation introuvable")
     return account
 
 
-@router.delete("/simulations/{account_id}")
-async def api_delete_simulation(account_id: int):
-    async with get_db() as cur:
-        await cur.execute(
-            "SELECT id, name FROM simulation_accounts WHERE id = %s", (account_id,)
-        )
-        account = await cur.fetchone()
-        if not account:
-            raise HTTPException(404, "Compte simulation introuvable")
+# ══════════════════════════════════════════════════════════════════════════════
+# Règles TP
+# ══════════════════════════════════════════════════════════════════════════════
 
-        await cur.execute("DELETE FROM simulation_trades WHERE account_id = %s", (account_id,))
-        await cur.execute("DELETE FROM simulation_accounts WHERE id = %s", (account_id,))
-
-    return {"deleted": True, "account_id": account_id, "name": account["name"]}
+@router.get("/tp-rules")
+async def api_get_tp_rules():
+    return await gold_core.get_tp_rules()
 
 
-@router.patch("/simulations/{account_id}")
-async def api_update_simulation(account_id: int, payload: dict):
-    updatable = ("name", "description", "risk_pct_default", "is_active")
-    updates   = {k: v for k, v in payload.items() if k in updatable}
-    if not updates:
-        raise HTTPException(400, "Aucun champ valide à mettre à jour")
-
-    fields = ", ".join(f"{k} = %s" for k in updates)
-    values = list(updates.values()) + [account_id]
-
-    async with get_db() as cur:
-        await cur.execute(
-            f"UPDATE simulation_accounts SET {fields}, updated_at = NOW() WHERE id = %s",
-            values,
-        )
-        await cur.execute("SELECT * FROM simulation_accounts WHERE id = %s", (account_id,))
-        row = await cur.fetchone()
-        if not row:
-            raise HTTPException(404, "Compte simulation introuvable")
-        return dict(row)
+@router.post("/tp-rules")
+async def api_create_tp_rule(payload: TpRuleCreate):
+    return await gold_core.create_tp_rule(payload.model_dump(exclude_none=True))
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# ALERTES COMPTES CRAMÉS
-# ══════════════════════════════════════════════════════════════════════════
-
-@router.get("/sessions/{session_id}/danger-check")
-async def api_danger_check(session_id: int):
-    return await check_cramed_accounts(session_id)
+@router.patch("/tp-rules/{rule_id}")
+async def api_update_tp_rule(rule_id: int, payload: TpRuleUpdate):
+    return await gold_core.update_tp_rule(rule_id, payload.model_dump(exclude_none=True))
 
 
-@router.post("/daily-check")
-async def api_daily_check():
-    return await daily_cramed_check()
+# ══════════════════════════════════════════════════════════════════════════════
+# Alertes comptes en danger
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/cramed-check")
+async def api_cramed_check():
+    return await gold_core.daily_cramed_check()
 
 
-# ══════════════════════════════════════════════════════════════════════════
-# RÈGLES TP
-# ══════════════════════════════════════════════════════════════════════════
-
-@router.get("/rules")
-async def api_get_rules():
-    return await get_tp_rules()
-
-
-@router.post("/rules")
-async def api_create_rule(payload: dict):
-    required = ("rule_name", "tp_level", "min_capital", "risk_pct")
-    for f in required:
-        if payload.get(f) is None:
-            raise HTTPException(400, f"{f} requis")
-    if int(payload["tp_level"]) not in (1, 2, 3):
-        raise HTTPException(400, "tp_level doit être 1, 2 ou 3")
-    return await create_tp_rule(payload)
-
-
-@router.patch("/rules/{rule_id}")
-async def api_update_rule(rule_id: int, payload: dict):
-    return await update_tp_rule(rule_id, payload)
-
-
-# ══════════════════════════════════════════════════════════════════════════
-# DASHBOARD GOLD
-# ══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# Dashboard — vue d'ensemble
+# ══════════════════════════════════════════════════════════════════════════════
 
 @router.get("/dashboard")
-async def api_gold_dashboard():
-    active_session  = await get_active_gold_session()
-    active_season   = await get_active_season()
-    live_price      = await get_live_gold_price()
-    sim_accounts    = await get_simulation_accounts(active_only=True)
-    recent_sessions = await get_gold_sessions({"limit": 5, "offset": 0})
-
-    season_stats = None
-    if active_season:
-        season_stats = await get_season_stats(active_season["id"])
-
-    # v7 : ajout du status de la session courante en RAM
-    # ⚠️ côté API (process séparé), ce sera toujours None.
-    # Pour le vrai status, ajouter un endpoint /internal/gold/status côté bot.
-    v7_status = session_registry.snapshot()
+async def api_dashboard():
+    """
+    Statut basé UNIQUEMENT sur MySQL (current_phase) — la même vérité
+    quel que soit le process qui répond. Plus de référence à un
+    registre RAM du process bot, invisible depuis l'API.
+    """
+    active_session = await gold_core.get_active_gold_session()
+    active_season = await gold_core.get_active_season()
+    sim_accounts = await gold_core.get_simulation_accounts(active_only=True)
+    price = await gold_core.get_live_gold_price()
 
     return {
-        "active_session":      active_session,
-        "active_season":       active_season,
-        "live_price":          live_price,
+        "active_session": active_session,
+        "active_season": active_season,
         "simulation_accounts": sim_accounts,
-        "recent_sessions":     recent_sessions.get("sessions", []),
-        "season_stats":        season_stats,
-        "v7_session_status":   v7_status,
+        "live_price": price,
     }

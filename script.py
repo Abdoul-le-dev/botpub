@@ -23,20 +23,19 @@ from ai_agent import set_bot, log_unhandled_message
 from validation_handler import register_validation_handler
 from validation_formation import register_formation_handler
 from form.form_engine import register_form_handlers, setup_background_worker
-from telegram_page.gold.gold_engine import set_bot as set_gold_bot, daily_cramed_check
-from telegram_page.gold.trade_watcher import set_bot as set_watcher_bot
+from telegram_page.gold.gold_core import (
+    set_bot as set_gold_bot, daily_cramed_check, ensure_member_capital_schema,
+)
+from telegram_page.gold.gold_followup import (
+    set_bot as set_followup_bot, register_gold_followup_handlers,
+)
 from telegram_page.gold.error_handler import error_handler
 
 from aiohttp import web
-from telegram_page.gold.session_registry import session_registry
-from telegram_page.gold.signal_broadcast import send_signal
-from telegram_page.gold.interactive_tools import register_interactive_handlers
-from telegram_page.gold.disclaimer_gate import (
-    ensure_schema as ensure_disclaimer_schema,
-    weekend_scheduler_loop,
+from telegram_page.gold.gold_broadcast import (
+    send_signal, ensure_disclaimer_schema, weekend_scheduler_loop,
 )
-from member_capital import ensure_schema as ensure_member_capital_schema
-import telegram_page.gold.gold_engine as gold_engine_mod
+import telegram_page.gold.gold_core as gold_core_mod
 
 # ══════════════════════════════════════════════════════════════════════════════
 # NOUVEAU : moteur de relance externalisé (cf. reminder_engine.py)
@@ -50,6 +49,11 @@ from reminder_engine import (
     PROSPECT_CATEGORY,
     peek_daily_counter,
     get_and_reset_daily_counter,
+)
+
+from manual_revalidation import (
+    ensure_manual_revalidation_schema,
+    register_manual_revalidation_handlers,
 )
 
 load_dotenv()
@@ -810,43 +814,27 @@ async def approve_join_request(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# GOLD v8 — signal brut + disclaimer hebdo + outils à la demande
-#
-# ATTENTION — DÉPENDANCES NON REVUES :
-# lifecycle.py, session_registry.py et tp_notifier.py n'ont pas été
-# fournis pour ce refactor. gold_engine.watch_gold_price() (conservé
-# tel quel) s'appuie dessus pour détecter TP/SL et fermer la session
-# (session_registry.current() + lifecycle.close_session()). Comme le
-# nouvel endpoint interne n'appelle plus lifecycle.open_new_session(),
-# session_registry restera vide et ces fermetures automatiques ne se
-# déclencheront plus. Il faut revoir ces 3 fichiers pour rebrancher
-# correctement le suivi TP/SL sur le nouveau flux (voir échange avec
-# l'utilisateur — question posée en fin de réponse).
-# ══════════════════════════════════════════════════════════════════════════════
-from telegram_page.gold.lifecycle import register_buffer
-from telegram_page.gold.gold_buffer import gold_buffer
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # COMMANDES ADMIN
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def cmd_queue_status(update, context):
+async def cmd_gold_status(update, context):
     if update.effective_user.id not in ADMIN_IDS:
         return
     try:
-        s = gold_buffer.status()
+        session = await gold_core_mod.get_active_gold_session()
+        price = await gold_core_mod.get_live_gold_price()
+        if session is None:
+            await update.message.reply_text("📊 Aucune session Gold active actuellement.")
+            return
         await update.message.reply_text(
-            f"📊 Buffer Gold\n"
-            f"Attaché à : {s['attached']}\n"
-            f"En attente : {s['pending']} "
-            f"(entries {s['entries']} / steps {s['steps']} / events {s['events']})\n"
-            f"Agg dirty : {s['dirty_agg']}\n"
-            f"Worker actif : {'✅' if s['worker_running'] else '❌'}"
+            f"📊 Session Gold active\n"
+            f"#{session['id']} — {session['direction'].upper()} — phase: {session['current_phase']}\n"
+            f"Entrée: {session['entry_price']} | SL: {session['sl']}\n"
+            f"Prix live: {price}"
         )
     except Exception as e:
-        logger.exception("[cmd_queue_status] erreur")
-        log_error("Erreur /queue_status", str(e))
+        logger.exception("[cmd_gold_status] erreur")
+        log_error("Erreur /gold_status", str(e))
 
 
 async def cmd_incomplete_status(update, context):
@@ -1185,16 +1173,16 @@ async def _internal_open_gold(request: web.Request) -> web.Response:
         logger.exception("[internal] payload invalide")
         return web.json_response({"ok": False, "error": f"bad_payload: {e}"}, status=400)
 
-    if not gold_engine_mod._bot:
+    if not gold_core_mod._bot:
         return web.json_response({"ok": False, "error": "bot_unavailable"}, status=503)
 
     async def _run_send():
         try:
-            report = await send_signal(gold_engine_mod._bot, sid, category=category)
+            report = await send_signal(gold_core_mod._bot, sid, category=category)
             logger.info(f"[internal] signal envoyé sid={sid}: {report}")
         except Exception as e:
             logger.exception(f"[internal] envoi signal échoué sid={sid}")
-            await notify_admin_critical(gold_engine_mod._bot,
+            await notify_admin_critical(gold_core_mod._bot,
                 "Échec envoi signal (interne)", f"sid={sid}\n{e}")
 
     asyncio.create_task(_run_send())
@@ -1257,9 +1245,6 @@ if __name__ == "__main__":
             await setup_background_worker(application)
             _background_tasks.append(asyncio.create_task(schedule_daily_check(application.bot)))
 
-            gold_buffer.start(application.bot)
-            register_buffer(gold_buffer)
-
             _background_tasks.append(asyncio.create_task(weekend_scheduler_loop(application.bot)))
 
             # Boucle de relance — nouvelle logique (reminder_engine.py)
@@ -1272,6 +1257,8 @@ if __name__ == "__main__":
 
             await init_milestone_counter()
             await _start_internal_http_server()
+
+            await ensure_manual_revalidation_schema()
 
             print("[main] Gold v8 initialisé ✓")
         except Exception as e:
@@ -1293,10 +1280,6 @@ if __name__ == "__main__":
             t.cancel()
         if _background_tasks:
             await asyncio.gather(*_background_tasks, return_exceptions=True)
-        try:
-            await gold_buffer.stop()
-        except Exception:
-            logger.exception("[shutdown] échec arrêt gold_buffer")
         logger.info("[shutdown] tâches de fond arrêtées proprement")
 
     app.post_init = _post_init
@@ -1338,7 +1321,7 @@ if __name__ == "__main__":
     register_formation_handler(app)
     register_form_handlers(app, app.bot, ADMIN_ID)
 
-    register_interactive_handlers(app)
+    register_gold_followup_handlers(app)
 
     app.add_handler(
         MessageHandler(
@@ -1350,7 +1333,9 @@ if __name__ == "__main__":
         group=99,
     )
 
-    app.add_handler(CommandHandler("queue_status", cmd_queue_status))
+    register_manual_revalidation_handlers(app)
+
+    app.add_handler(CommandHandler("gold_status", cmd_gold_status))
     app.add_handler(CommandHandler("incomplete_status", cmd_incomplete_status))
     app.add_handler(CommandHandler("stats_now", cmd_stats_now))
     app.add_handler(CommandHandler("errors_now", cmd_errors_now))
@@ -1361,7 +1346,7 @@ if __name__ == "__main__":
 
     set_bot(app.bot)
     set_gold_bot(app.bot)
-    set_watcher_bot(app.bot)
+    set_followup_bot(app.bot)
 
     print("running...")
 
