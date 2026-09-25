@@ -1229,8 +1229,7 @@ if __name__ == "__main__":
            .read_timeout(30).write_timeout(30)
            .build())
 
-    me =  app.bot.get_me()
-    print(f"[DEBUG] Bot : @{me.username} / ID={me.id}")
+   
 
     updates = app.bot.get_updates(
         limit=100,
