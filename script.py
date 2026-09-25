@@ -1231,22 +1231,7 @@ if __name__ == "__main__":
 
    
 
-    updates = app.bot.get_updates(
-        limit=100,
-        timeout=1,
-        allowed_updates=["channel_post"]
-    )
-
-    print(f"[DEBUG] Updates reçues : {len(updates)}")
-
-    for u in updates:
-        if u.channel_post:
-            print("================================")
-            print("CANAL :", u.channel_post.chat.title)
-            print("ID    :", u.channel_post.chat.id)
-            print("TYPE  :", u.channel_post.chat.type)
-            print("================================")
-
+    
     _background_tasks: list[asyncio.Task] = []
 
     async def _post_init(application):
