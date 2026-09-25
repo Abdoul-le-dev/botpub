@@ -1229,6 +1229,23 @@ if __name__ == "__main__":
            .read_timeout(30).write_timeout(30)
            .build())
 
+    async def debug_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            if update.channel_post:
+                chat = update.channel_post.chat
+    
+                print("================================")
+                print(f"CHANNEL NAME : {chat.title}")
+                print(f"CHANNEL ID   : {chat.id}")
+                print(f"CHANNEL TYPE : {chat.type}")
+                print("================================")
+    
+    app.add_handler(
+            MessageHandler(
+                filters.UpdateType.CHANNEL_POST,
+                debug_channel_id
+            )
+        )
+
     _background_tasks: list[asyncio.Task] = []
 
     async def _post_init(application):
@@ -1369,22 +1386,7 @@ if __name__ == "__main__":
     # ─────────────────────────────────────────────
     # DEBUG : récupérer l'ID du canal Telegram
     # ─────────────────────────────────────────────
-    async def debug_channel_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if update.channel_post:
-            chat = update.channel_post.chat
-
-            print("================================")
-            print(f"CHANNEL NAME : {chat.title}")
-            print(f"CHANNEL ID   : {chat.id}")
-            print(f"CHANNEL TYPE : {chat.type}")
-            print("================================")
-
-    app.add_handler(
-        MessageHandler(
-            filters.UpdateType.CHANNEL_POST,
-            debug_channel_id
-        )
-    )
+    
 
     print("running...")
 
